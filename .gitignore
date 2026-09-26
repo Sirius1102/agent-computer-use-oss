@@ -1,0 +1,8 @@
+# runtime output (screenshots + audit log)
+shots/
+*.png
+
+# editor / OS noise
+Thumbs.db
+Desktop.ini
+.vscode/
