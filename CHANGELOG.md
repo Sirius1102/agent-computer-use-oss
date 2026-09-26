@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.1.0 — 2026-09-26
+
+### DPI: Per-Monitor V2 awareness
+- The process now opts into **Per-Monitor V2** DPI awareness at startup
+  (`SetProcessDpiAwarenessContext`, Windows 10 1703+), falling back to the
+  legacy `SetProcessDPIAware()` (System-aware) on older builds. System-aware
+  mode is still virtualized on secondary monitors with a different scale
+  factor, so screenshots and clicks were offset on mixed-DPI multi-monitor
+  setups; Per-Monitor V2 makes every monitor pixel-exact.
+- New read command `dpi`: prints the awareness mode actually obtained plus
+  every monitor's bounds in physical pixels — a one-call diagnosis when
+  coordinates look scaled.
+
 ## v1.0.0 — 2026-09-26
 
 First public release. Open-source edition distilled from a personal,

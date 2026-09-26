@@ -11,7 +11,7 @@
 - **刻意无状态。** 每次调用新起一个 PowerShell 进程（约 0.3–0.6 秒）。比常驻宿主慢，但没有会泄漏、会崩溃、难调试的后台进程。出错时，全部信息就在这一条命令的 stdout 和退出码里。
 - **默认带守卫。** 按键物理上永远落在"当前焦点窗口"上，所以 `type` / `keys` / `paste` / `paste-file` 带 `--to <sel>` 时，会**先校验目标确实拿到了前台，才发第一个键**；校验不过直接 `ERROR` + 退出码 1，一个键都不发（`--force` 可跳过，退回旧行为）。这条规则来自真实事故：`SetForegroundWindow` 可能被系统前台锁静默拒绝，盲发的按键落进了别的程序。
 - **有审计。** 每条实际执行的 act/text/clipboard/uia-settext 命令向 `shots/actions.log` 追加一行：UTC 时间戳、命令、参数、解析到的目标。只记文件**路径**，绝不记剪贴板内容和文件正文。
-- **DPI 安全。** 读取任何坐标前先执行 `SetProcessDPIAware()`。少了这句，Windows 会按显示缩放比例虚拟化所有数值（150% 缩放下，2100×1350 的窗口会被读成 1400×900），截图裁切、点击偏移。
+- **DPI 安全。** 读取任何坐标前，进程先声明 **Per-Monitor V2** DPI 感知（Windows 10 1703+；更老的系统自动回退 System-aware）。不做这一步，Windows 会按显示缩放比例虚拟化所有数值（150% 缩放下，2100×1350 的窗口会被读成 1400×900），截图裁切、点击偏移。Per-Monitor V2 还额外保证多块显示器**缩放比例不一致**（混合 DPI 多屏）时，副屏上的坐标与截图同样逐像素准确。用 `dpi` 命令可查看实际拿到的感知模式和每块显示器的物理像素边界。
 - **源码纯 ASCII。** PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 误读，所以脚本里没有任何非 ASCII 字面量。中文等非 ASCII 文本一律通过 `paste <file>` 或 `uia-settext <sel> <name> <file>` 从外部 UTF-8 文件进入。
 
 ## 环境要求
@@ -60,6 +60,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `info <sel>` | pid / 句柄 / 窗口与客户区矩形 / 是否最小化 / 是否前台 |
 | `rect-of <sel>` | 只输出 `x y w h`，方便算相对坐标 |
 | `cursor` | 当前光标位置 |
+| `dpi` | DPI 感知模式 + 各显示器物理像素边界（坐标疑似被缩放时先跑这条） |
 | `wait-win <sel> <timeoutSec>` | 轮询等窗口出现 |
 | `wait-gone <sel> <timeoutSec>` | 轮询等窗口消失（对话框关闭等） |
 

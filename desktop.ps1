@@ -1,5 +1,5 @@
 # desktop.ps1 - Agent Computer Use: a stateless Windows desktop automation CLI
-# version: 1.0.0
+# version: 1.1.0
 #
 # Single file, no dependencies beyond .NET Framework / Windows built-ins.
 # Designed to be driven by an AI agent (or a human) from a shell: every call is
@@ -33,6 +33,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 public class DT {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
@@ -58,7 +59,21 @@ public class DT {
 # Must run before any coordinate is read, otherwise Windows virtualizes every
 # value by the monitor scale factor (any non-100% display scaling) and clicks
 # land in the wrong place.
-[void][DT]::SetProcessDPIAware()
+# Preferred mode is Per-Monitor V2 (Windows 10 1703+, user32 context value -4):
+# with several monitors at DIFFERENT scale factors, the legacy System-aware
+# mode below is still virtualized on secondary monitors, so screenshots and
+# clicks there can be offset. Older builds throw EntryPointNotFoundException
+# and we fall back to SetProcessDPIAware() (System aware).
+# $DpiMode is reported by the `dpi` command for troubleshooting.
+$script:DpiMode = 'unaware'
+try {
+  if ([DT]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $script:DpiMode = 'per-monitor-v2' }
+} catch { }
+if ($script:DpiMode -eq 'unaware') {
+  try {
+    if ([DT]::SetProcessDPIAware()) { $script:DpiMode = 'system' }
+  } catch { }
+}
 
 $MOUSE_LDOWN = 0x0002
 $MOUSE_LUP = 0x0004
@@ -422,7 +437,7 @@ function Uia-SettableValue($el) {
 
 function Usage {
   @'
-desktop.ps1 v1.0.0 - Agent Computer Use (Windows, DPI-aware, absolute screen pixels)
+desktop.ps1 v1.1.0 - Agent Computer Use (Windows, DPI-aware, absolute screen pixels)
 
   read
     shot [outPath]                  capture whole virtual screen
@@ -432,6 +447,8 @@ desktop.ps1 v1.0.0 - Agent Computer Use (Windows, DPI-aware, absolute screen pix
     info <sel>                      pid / handle / window rect / client rect / title
     rect-of <sel>                   print "x y w h" of <sel> only
     cursor                          print current cursor position
+    dpi                             print DPI awareness mode + per-monitor bounds
+                                    (physical pixels; use when coords look scaled)
     wait-win <sel> <timeoutSec>     poll (500ms) until a matching window appears
     wait-gone <sel> <timeoutSec>    poll until it disappears (dialog closed etc.)
 
@@ -547,6 +564,18 @@ try {
       $p = New-Object DT+POINT
       [void][DT]::GetCursorPos([ref]$p)
       "cursor=($($p.X),$($p.Y))"
+    }
+
+    'dpi' {
+      # Reports the awareness mode actually obtained at startup plus every
+      # monitor's bounds in real physical pixels, so a mismatch between
+      # screenshot size and click coordinates can be diagnosed in one call.
+      $o = [System.Windows.Forms.SystemInformation]::VirtualScreen
+      "dpi-mode=$script:DpiMode  virtual-screen=($($o.X),$($o.Y)) $($o.Width)x$($o.Height)"
+      foreach ($s in [System.Windows.Forms.Screen]::AllScreens) {
+        $b = $s.Bounds
+        "$($s.DeviceName) primary=$($s.Primary) bounds=($($b.X),$($b.Y)) $($b.Width)x$($b.Height)"
+      }
     }
 
     'wait-win' {

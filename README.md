@@ -11,7 +11,7 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Stateless by choice.** Each call spawns a fresh PowerShell process (~0.3–0.6 s). Slower than a resident host, but there is no background process to leak, crash, or debug. When something goes wrong, the failure is fully contained in one command's stdout and exit code.
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. (`--force` opts out, legacy behavior.)
 - **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. It records file *paths* only — never clipboard contents or file bodies.
-- **DPI-safe.** `SetProcessDPIAware()` runs before any coordinate is read. Without it, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place.
+- **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals. Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
 ## Requirements
@@ -60,6 +60,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `info <sel>` | pid / handle / window & client rects / iconic / foreground |
 | `rect-of <sel>` | print `x y w h` only — handy for relative math |
 | `cursor` | current cursor position |
+| `dpi` | DPI awareness mode + per-monitor bounds in physical pixels |
 | `wait-win <sel> <timeoutSec>` | poll until a matching window appears |
 | `wait-gone <sel> <timeoutSec>` | poll until it disappears (dialog closed, etc.) |
 
