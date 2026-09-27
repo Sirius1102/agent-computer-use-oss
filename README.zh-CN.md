@@ -56,11 +56,13 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `shot [outPath]` | 整屏（虚拟屏全范围）截图 |
 | `win <sel> [outPath]` | 窗口截图 |
 | `rect <x> <y> <w> <h> [outPath]` | 区域截图 |
+| `zoom <x> <y> <w> <h> [scale] [outPath]` | 小区域截图并**放大**（默认 2x，最近邻），一条命令替代反复手动裁剪找按钮；回显自带换算式 `screen = (x + ix/scale, y + iy/scale)` |
 | `wins` | 列出可见窗口（pid、矩形、标题） |
 | `info <sel>` | pid / 句柄 / 窗口与客户区矩形 / 是否最小化 / 是否前台 |
 | `rect-of <sel>` | 只输出 `x y w h`，方便算相对坐标 |
 | `cursor` | 当前光标位置 |
 | `dpi` | DPI 感知模式 + 各显示器物理像素边界（坐标疑似被缩放时先跑这条） |
+| `ime` | 前台窗口的键盘布局 / IME 状态（`ime=yes` 表示中文输入法激活中，`type` 按键可能被候选窗吞掉） |
 | `wait-win <sel> <timeoutSec>` | 轮询等窗口出现 |
 | `wait-gone <sel> <timeoutSec>` | 轮询等窗口消失（对话框关闭等） |
 
@@ -75,7 +77,8 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | 命令 | 说明 |
 |---|---|
 | `focus <sel>` | 还原并置前，回显 `fg_ok=True/False` |
-| `type [--to <sel>] <文本...> [--force]` | ASCII 文本（SendKeys，特殊字符自动转义） |
+| `type [--to <sel>] <文本...> [--force]` | ASCII 文本（SendKeys，特殊字符自动转义）；目标线程 IME 处于中文态时，发送前临时请求切英文、发完恢复，实际发生了什么看回显 `[ime: ...]` |
+| `type-in <x> <y> [--tab <n>] <text...>` | 点击坐标 → 发 n 个 TAB → 打 ASCII 的组合命令，专为 **webview/Electron 表单「点击只给选中态、不给键盘焦点」** 的场景设计（见限制 7） |
 | `keys [--to <sel>] <spec> [--force]` | 原始 SendKeys：`^s`、`%{F4}`、`{ENTER}` |
 | `paste [--to <sel>] <file> [--force]` | UTF-8 文件 → 剪贴板 → Ctrl+V；事后恢复原剪贴板（文本和文件列表都支持） |
 
@@ -100,12 +103,18 @@ UIA 的根按**所选窗口的句柄**解析，与主窗口同 PID 的对话框�
 
 ## 已知限制（都是踩出来的）
 
-1. **Chromium 壳应用**（Electron/Tauri 系的编辑器、聊天客户端）的无障碍树常常只暴露到 `Pane` 一层，`uia-*` 无效，只能截图 + 坐标。
+1. **Chromium 壳应用**（Electron/Tauri 系的编辑器、聊天客户端）的无障碍树常常只暴露到 `Pane` 一层，`uia-*` 无效，只能截图 + 坐标。已实测钉死：打开 `SPI_SETSCREENREADER` 系统标志**不能**让 Chromium 展开无障碍树；唯一可靠路线是让目标应用带 `--force-renderer-accessibility` 启动参数重启。
 2. **"窗口置前"不等于"输入框有焦点"。** 往 Chromium 输入框粘贴，要先 `relclick` 点进输入框再 `paste`。判断成没成要看截图，不能只看命令回显。
 3. **Windows 通用文件对话框**的"文件名"框是一个不暴露任何可写 UIA 模式的 `Pane`，`uia-settext` 会如实报错并提示回退 `click` + `paste`。
 4. **`SetForegroundWindow` 有前台锁**——后台进程有时抢不到焦点（Windows 只闪任务栏）。守卫把这种静默失败变成响亮的 `ERROR`，而不是让按键落进无辜程序。向桌面（`Program Manager`）发键尤其容易触发，这是系统行为不是 bug。
 5. **单实例应用**（如 Win11 记事本会在既有进程里开标签页）：`Start-Process` 返回的 PID 可能没有顶层窗口，用 `wins` 找真正的。
 6. 按键是物理输入——**Agent 操作期间人别碰鼠标键盘**；执行不可逆动作（发消息、删除）前，Agent 应当用截图确认目标窗口。
+7. **webview/Electron 表单：点击只产生选中态，不给键盘焦点。** type/paste/Ctrl+V 会静默无效。解法是点完发一个 `{TAB}` 把焦点移进真正的输入框——`type-in <x> <y> --tab 1 <text>` 就是为此打包的组合命令。webview 界面输入失败，首选 Tab 移焦。
+8. **激活的输入法会吞按键**（一个空格可能变成"选第 1 候选"而不是打空格）。`ime` 命令看状态；`type`/`type-in` 会尝试临时切英文并在 `[ime: ...]` 回显里如实报告成败。切不动的宿主（Windows Terminal 是一例）改走 `paste`——剪贴板路径完全不经过 IME。
+
+## 截图坐标系（读一次，少踩所有脱靶）
+
+所有截图都是**物理像素 1:1 的屏幕抓取**——`shot` 是整块虚拟屏，`win`/`rect`/`zoom` 是自带原点的区域，换算式 `screen = image + (origin)` 由 `win` 在回显里自曝。聊天/AI 视图常把 4K 截图**显示**成一半大小，但文件本身没有缩放——量坐标永远以回显为准，别以"看起来多大"为准。窗口矩形取 `DWMWA_EXTENDED_FRAME_BOUNDS`（**可见**边框；`GetWindowRect` 那 7–11px 不可见调整边框会让 `win` 截图和 `relclick` 整体偏移），且 `win` 拍到什么取决于谁压在上面——怕遮挡就先 `focus` 再截。
 
 ## 目录结构
 

@@ -1,5 +1,5 @@
 # desktop.ps1 - Agent Computer Use: a stateless Windows desktop automation CLI
-# version: 1.1.0
+# version: 1.2.0
 #
 # Single file, no dependencies beyond .NET Framework / Windows built-ins.
 # Designed to be driven by an AI agent (or a human) from a shell: every call is
@@ -49,6 +49,9 @@ public class DT {
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT val, int cb);
+  [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   public delegate bool EnumProc(IntPtr h, IntPtr l);
   public struct RECT { public int Left, Top, Right, Bottom; }
   public struct POINT { public int X, Y; }
@@ -108,6 +111,16 @@ function Get-WinList {
       if ($t) {
         $r = New-Object DT+RECT
         [void][DT]::GetWindowRect($h, [ref]$r)
+        # Win10/11 GetWindowRect includes the INVISIBLE resize border (~7-11 px
+        # left/right/bottom), which makes `win` captures and `relclick` offsets
+        # sit shifted vs the VISIBLE window. DWMWA_EXTENDED_FRAME_BOUNDS (=9)
+        # is the real visible rect; use it whenever available, else keep the
+        # plain rect (some windows, e.g. the desktop, do not support it).
+        $er = New-Object DT+RECT
+        $sz = [System.Runtime.InteropServices.Marshal]::SizeOf($er)
+        if ([DT]::DwmGetWindowAttribute($h, 9, [ref]$er, $sz) -eq 0) {
+          $r = $er
+        }
         $procId = 0
         [void][DT]::GetWindowThreadProcessId($h, [ref]$procId)
         $w = $r.Right - $r.Left
@@ -218,10 +231,61 @@ function Get-ForegroundInfo {
   return "pid=$procId title='$([DT]::Text($h))'"
 }
 
+# --- IME observability ---------------------------------------------------
+# The keyboard layout belongs to the FOREGROUND window's thread. HIWORD of the
+# HKL != 0 means an IME is active over a base layout (e.g. Chinese) - plain
+# SendKeys then gets swallowed by the IME or pops a candidate window.
+# `ime` reports the state; type/type-in temporarily request the plain English
+# layout (WM_INPUTLANGCHANGEREQUEST = 0x0050, lParam = HKL 0x00000409) on the
+# foreground window and restore the original HKL after sending.
+function Get-FgThreadInfo {
+  $h = [DT]::GetForegroundWindow()
+  $procId = 0
+  $tid = [DT]::GetWindowThreadProcessId($h, [ref]$procId)
+  return @{ Hwnd = $h; Tid = $tid; Pid = $procId; Title = [DT]::Text($h); Hkl = [DT]::GetKeyboardLayout($tid) }
+}
+
+function Format-Hkl([IntPtr]$hkl) {
+  $v = $hkl.ToInt64()
+  $lang = $v -band 0xFFFF
+  $imeId = ($v -shr 16) -band 0xFFFF
+  $ime = if ($imeId -ne 0) { 'yes' } else { 'no' }
+  return "hkl=0x$($v.ToString('X8')) lang=0x$($lang.ToString('X4')) ime=$ime"
+}
+
+# Returns the original HKL when an IME was active and English was requested,
+# $null when nothing had to change (no IME) or on failure. Never throws.
+function Ensure-EnglishLayout() {
+  try {
+    $f = Get-FgThreadInfo
+    if ((($f.Hkl.ToInt64() -shr 16) -band 0xFFFF) -eq 0) { return $null }
+    [void][DT]::PostMessage($f.Hwnd, 0x0050, [IntPtr]::Zero, [IntPtr]0x00000409)
+    Start-Sleep -Milliseconds 250
+    return $f.Hkl
+  } catch { return $null }
+}
+
+# Returns '' | ' switched...]' | ' FAILED...' note for the command echo.
+function Restore-Layout([IntPtr]$origHkl) {
+  if ($null -eq $origHkl) { return '' }
+  try {
+    $f = Get-FgThreadInfo
+    $still = (([DT]::GetKeyboardLayout($f.Tid).ToInt64() -shr 16) -band 0xFFFF) -ne 0
+    [void][DT]::PostMessage($f.Hwnd, 0x0050, [IntPtr]::Zero, $origHkl)
+    if ($still) { return "  [ime: IME was active, English request did NOT take effect - keys may have been swallowed; restored $(Format-Hkl $origHkl)]" }
+    return "  [ime: temporarily switched to English for send, restored $(Format-Hkl $origHkl)]"
+  } catch { return '  [ime: restore failed]' }
+}
+
 # Snapshot of the current clipboard so commands that overwrite it can put the
 # old content back afterwards. Supported kinds: text and FileDrop (file list).
 # Anything else (images, custom formats) is reported as unsupported and left
 # alone; an empty clipboard is reported as empty.
+# NOTE: save/restore is strictly PER INVOCATION (each command captures its own
+# $clip local variable and restores it in the same process). There is no shared
+# queue: a "previous content was FileDrop" echo during a TEXT paste simply
+# means the clipboard held a file list when this paste started (e.g. left there
+# on purpose by an earlier copy-file) - restoring it is the correct behaviour.
 function Save-ClipboardState {
   $st = @{ Kind = 'none' }
   try {
@@ -242,7 +306,7 @@ function Restore-ClipboardState($st) {
   if ($null -eq $st) { return 'skipped clipboard restore (nothing saved)' }
   switch ($st.Kind) {
     'text' {
-      try { Set-Clipboard -Value $st.Text; return 'clipboard restored' }
+      try { Set-Clipboard -Value $st.Text; return "clipboard restored (previous content was text, $($st.Text.Length) chars)" }
       catch { return 'clipboard restore failed' }
     }
     'files' {
@@ -250,7 +314,7 @@ function Restore-ClipboardState($st) {
         $sc = New-Object System.Collections.Specialized.StringCollection
         foreach ($f in $st.Files) { [void]$sc.Add($f) }
         [System.Windows.Forms.Clipboard]::SetFileDropList($sc)
-        return "clipboard restored (FileDrop $($st.Files.Count) file(s))"
+        return "clipboard restored (previous content was FileDrop, $($st.Files.Count) file(s))"
       } catch { return 'clipboard restore failed' }
     }
     'none' { return 'skipped clipboard restore (empty)' }
@@ -437,16 +501,20 @@ function Uia-SettableValue($el) {
 
 function Usage {
   @'
-desktop.ps1 v1.1.0 - Agent Computer Use (Windows, DPI-aware, absolute screen pixels)
+desktop.ps1 v1.2.0 - Agent Computer Use (Windows, DPI-aware, absolute screen pixels)
 
   read
     shot [outPath]                  capture whole virtual screen
     win <sel> [outPath]             capture largest visible window of <sel>
     rect <x> <y> <w> <h> [outPath]  capture a region
+    zoom <x> <y> <w> <h> [scale] [outPath]
+                                    capture a small region enlarged (default 2x,
+                                    NearestNeighbor) + echo screen<->image mapping
     wins                            list visible windows (pid | rect | title)
     info <sel>                      pid / handle / window rect / client rect / title
     rect-of <sel>                   print "x y w h" of <sel> only
     cursor                          print current cursor position
+    ime                             foreground window's keyboard layout / IME state
     dpi                             print DPI awareness mode + per-monitor bounds
                                     (physical pixels; use when coords look scaled)
     wait-win <sel> <timeoutSec>     poll (500ms) until a matching window appears
@@ -470,7 +538,14 @@ desktop.ps1 v1.1.0 - Agent Computer Use (Windows, DPI-aware, absolute screen pix
           guard and send anyway, old behaviour with reconciliation output.)
     focus <sel>                     restore + bring to front, prints fg_ok=True/False
     type [--to <sel>] <text...> [--force]
-                                    type ASCII text (SendKeys, escapes specials)
+                                    type ASCII text (SendKeys, escapes specials);
+                                    if an IME is active on the target thread it
+                                    is temporarily switched to English for the
+                                    send and restored afterwards (echo [ime: ...])
+    type-in <x> <y> [--tab <n>] <text...>
+                                    click a spot, send n TABs (webview forms:
+                                    click alone gives no keyboard focus), type
+                                    ASCII; verify with a screenshot
     keys [--to <sel>] <spec> [--force]
                                     raw SendKeys spec, e.g. ^s  %{F4}  {ENTER}
     paste [--to <sel>] <file> [--force]
@@ -523,7 +598,11 @@ try {
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }
       $path = if ($Rest.Count -ge 2 -and $Rest[1]) { $Rest[1] } else { Join-Path $OutDir 'win.png' }
-      Save-Rect $w.Left $w.Top $w.W $w.H $path
+      $msg = Save-Rect $w.Left $w.Top $w.W $w.H $path
+      # Self-report the coordinate mapping so nobody clicks this image's pixels
+      # directly: it is a screen-region grab at origin (Left,Top), NOT a
+      # re-rendered window image. Occluded parts show whatever is on top.
+      "$msg  coords: screen = image + ($($w.Left),$($w.Top)); window-relative clicks -> relclick $($Rest[0]) <dx> <dy> (same origin); occluded areas show what covers them"
     }
 
     'rect' {
@@ -564,6 +643,49 @@ try {
       $p = New-Object DT+POINT
       [void][DT]::GetCursorPos([ref]$p)
       "cursor=($($p.X),$($p.Y))"
+    }
+
+    'ime' {
+      # ime - read-only: which keyboard layout/IME the FOREGROUND window's
+      # thread is using. ime=yes means plain `type` keys can be swallowed.
+      $f = Get-FgThreadInfo
+      "foreground pid=$($f.Pid) title='$($f.Title)'  $(Format-Hkl $f.Hkl)"
+    }
+
+    'zoom' {
+      # zoom <x> <y> <w> <h> [scale] [outPath] - capture a small region and
+      # enlarge it (NearestNeighbor) so tiny text/buttons are readable in one
+      # shot instead of iterating manual rect crops. Echo gives the mapping
+      # back to screen pixels: screen = (x + ix/scale, y + iy/scale).
+      if ($Rest.Count -lt 4) { throw 'usage: zoom <x> <y> <w> <h> [scale] [outPath]' }
+      $x = [int]$Rest[0]; $y = [int]$Rest[1]; $w = [int]$Rest[2]; $h = [int]$Rest[3]
+      if ($w -le 0 -or $h -le 0) { throw 'zoom: w and h must be positive' }
+      $scale = 2.0; $path = ''
+      if ($Rest.Count -gt 4) {
+        foreach ($a in @($Rest[4..($Rest.Count - 1)])) {
+          if ($a -match '^\d+(\.\d+)?$') { $scale = [double]$a }
+          elseif (-not $path) { $path = $a }
+        }
+      }
+      if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
+      if (-not $path) { $path = Join-Path $OutDir 'zoom.png' }
+      Ensure-OutDir
+      $src = New-Object System.Drawing.Bitmap($w, $h)
+      $gs = [System.Drawing.Graphics]::FromImage($src)
+      $gs.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+      $gs.Dispose()
+      $ow = [int]($w * $scale); $oh = [int]($h * $scale)
+      $dst = New-Object System.Drawing.Bitmap($ow, $oh)
+      $gd = [System.Drawing.Graphics]::FromImage($dst)
+      $gd.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+      $gd.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+      $gd.DrawImage($src, 0, 0, $ow, $oh)
+      $gd.Dispose(); $src.Dispose()
+      $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+      $dst.Dispose()
+      $size = (Get-Item $path).Length
+      "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
+      "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
     }
 
     'dpi' {
@@ -703,9 +825,47 @@ try {
       $text = ($p.Words -join ' ')
       $target = Resolve-Target $p.Sel $p.Force
       Log-Action ($Rest -join ' ') "pid=$($target.Pid) title='$($target.Title)'"
+      $origHkl = Ensure-EnglishLayout
       [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys $text))
       Start-Sleep -Milliseconds 300
-      "typed $($text.Length) chars, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))"
+      $imeNote = Restore-Layout $origHkl
+      "typed $($text.Length) chars, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))$imeNote"
+    }
+
+    'type-in' {
+      # type-in <x> <y> [--tab <n>] <text...>
+      # Compound command for webview/Electron forms where a click only produces
+      # a selection state and never gives the input element keyboard focus:
+      # click the spot -> optionally send <n> TABs to move focus to the real
+      # input -> type ASCII (IME handled like `type`). Verify with a screenshot.
+      # For CJK payloads click first with `click`, then run `paste` (no --to).
+      if ($Rest.Count -lt 3) { throw 'usage: type-in <x> <y> [--tab <n>] <text...>' }
+      $x = [int]$Rest[0]; $y = [int]$Rest[1]
+      $words = @($Rest[2..($Rest.Count - 1)])
+      $tabs = 0
+      $ti = [Array]::IndexOf($words, '--tab')
+      if ($ti -ge 0) {
+        if ($words.Count -lt $ti + 2) { throw 'type-in: --tab needs a number' }
+        $tabs = [int]$words[$ti + 1]
+        if ($tabs -lt 0 -or $tabs -gt 20) { throw 'type-in: --tab must be 0..20' }
+        $head = @(); if ($ti -gt 0) { $head = @($words[0..($ti - 1)]) }
+        $tail = @(); if ($ti + 2 -le $words.Count - 1) { $tail = @($words[($ti + 2)..($words.Count - 1)]) }
+        $words = @($head + $tail)
+      }
+      if ($words.Count -lt 1) { throw 'usage: type-in <x> <y> [--tab <n>] <text...>' }
+      $text = ($words -join ' ')
+      Log-Action ($Rest -join ' ') "click=$x,$y tabs=$tabs"
+      Move-Click $x $y 'left'
+      $before = Get-ForegroundInfo
+      for ($t = 0; $t -lt $tabs; $t++) {
+        [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+        Start-Sleep -Milliseconds 120
+      }
+      $origHkl = Ensure-EnglishLayout
+      [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys $text))
+      Start-Sleep -Milliseconds 300
+      $imeNote = Restore-Layout $origHkl
+      "type-in: clicked ($x,$y), tabs=$tabs, typed $($text.Length) chars  (fg before: $before; fg after: $(Get-ForegroundInfo))$imeNote"
     }
 
     'keys' {

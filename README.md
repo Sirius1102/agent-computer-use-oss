@@ -56,11 +56,13 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `shot [outPath]` | capture the whole virtual screen |
 | `win <sel> [outPath]` | capture one window |
 | `rect <x> <y> <w> <h> [outPath]` | capture a region |
+| `zoom <x> <y> <w> <h> [scale] [outPath]` | capture a small region **enlarged** (default 2x, nearest-neighbor) — one call instead of iterating manual crops to find a button; echo gives the mapping `screen = (x + ix/scale, y + iy/scale)` |
 | `wins` | list visible windows (pid, rect, title) |
 | `info <sel>` | pid / handle / window & client rects / iconic / foreground |
 | `rect-of <sel>` | print `x y w h` only — handy for relative math |
 | `cursor` | current cursor position |
 | `dpi` | DPI awareness mode + per-monitor bounds in physical pixels |
+| `ime` | foreground window's keyboard layout / IME state (`ime=yes` → plain `type` keys may be swallowed) |
 | `wait-win <sel> <timeoutSec>` | poll until a matching window appears |
 | `wait-gone <sel> <timeoutSec>` | poll until it disappears (dialog closed, etc.) |
 
@@ -75,7 +77,8 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | command | what it does |
 |---|---|
 | `focus <sel>` | restore + foreground; prints `fg_ok=True/False` |
-| `type [--to <sel>] <text...> [--force]` | ASCII text via SendKeys (specials escaped) |
+| `type [--to <sel>] <text...> [--force]` | ASCII text via SendKeys (specials escaped); if an IME is active on the target thread, English is requested for the send and the original layout restored afterwards — the echo's `[ime: ...]` says what really happened |
+| `type-in <x> <y> [--tab <n>] <text...>` | click a spot, send *n* TABs, type ASCII — built for webview/Electron forms where **a click alone never gives keyboard focus** (see limitation 7) |
 | `keys [--to <sel>] <spec> [--force]` | raw SendKeys spec: `^s`, `%{F4}`, `{ENTER}` |
 | `paste [--to <sel>] <file> [--force]` | UTF-8 file → clipboard → Ctrl+V; previous clipboard (text or file list) restored afterwards |
 
@@ -100,12 +103,18 @@ Exit codes: `0` success, `1` failure (`ERROR: <reason>` on stdout).
 
 ## Known limitations (learned the hard way)
 
-1. **Chromium-shell apps** (Electron/Taurin-style editors, chat clients) often expose an accessibility tree that stops at `Pane` — `uia-*` is useless there; fall back to screenshots + coordinates.
+1. **Chromium-shell apps** (Electron/Tauri-style editors, chat clients) often expose an accessibility tree that stops at `Pane` — `uia-*` is useless there; fall back to screenshots + coordinates. Setting the `SPI_SETSCREENREADER` system flag does **not** make Chromium expand its tree (tested); the only reliable route is restarting the target app with `--force-renderer-accessibility`.
 2. **"Window focused" ≠ "input box focused".** Pasting into a Chromium input requires clicking the input first (`relclick`), then `paste`. Verify with a screenshot, never trust the command echo alone.
 3. **Windows common file dialogs**: the "File name" field is a `Pane` that exposes no writable UIA pattern by design; `uia-settext` reports this and tells you to fall back to `click` + `paste`.
 4. **`SetForegroundWindow` has a foreground lock** — a background process sometimes cannot steal focus (Windows flashes the taskbar instead). The guard turns this silent failure into a loud `ERROR` instead of keystrokes landing in the wrong app. Targeting the desktop (`Program Manager`) is especially affected; this is Windows, not a bug.
 5. **Single-instance apps** (e.g., Windows 11 Notepad opens tabs in the existing process): the PID returned by `Start-Process` may own no top-level window. Use `wins` to find the real one.
 6. Keystrokes are physical input — **the user should not touch mouse/keyboard while an agent drives**, and an agent should confirm the target window from a screenshot before irreversible actions (sending messages, deleting things).
+7. **Webview/Electron forms: a click gives selection, not keyboard focus.** Typing/pasting silently does nothing. Fix: send one `{TAB}` after clicking to move focus into the real input — `type-in <x> <y> --tab 1 <text>` packages exactly this. Tab-first is the preferred recovery for any input failure in webview UIs.
+8. **Active IMEs swallow plain keystrokes** (a space may pick a candidate instead of typing). `ime` shows the state; `type`/`type-in` attempt a temporary switch to English and report honestly in `[ime: ...]`. On hosts that ignore the switch (Windows Terminal is one), fall back to `paste` — the clipboard path never goes through the IME.
+
+## Screenshot coordinate system (read once, saves misclicks)
+
+All captures are raw screen grabs in **physical pixels, 1:1 with the screen** — `shot` covers the whole virtual screen, `win`/`rect`/`zoom` cover a region at a self-reported origin. So: `screen = image + (origin)`, and `win` prints that mapping in its echo. Chat/AI viewers often *display* a 4K screenshot at 50 %, but the file itself is unscaled — measure from the echo, never from how big the image looks. Window rects come from `DWMWA_EXTENDED_FRAME_BOUNDS` (the *visible* frame; `GetWindowRect`'s invisible 7–11 px resize border would offset every `win` capture and `relclick`), and `win` shows whatever physically covers the window — bring it to front first if occlusion matters.
 
 ## Repository layout
 
