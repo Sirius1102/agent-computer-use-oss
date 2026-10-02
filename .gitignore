@@ -1,8 +1,14 @@
-# runtime output (screenshots + audit log)
+# runtime output (screenshots + audit log) — never commit
 shots/
 *.png
+*.jpg
+*.map.txt
+
+# --live run logs and one-off probe scripts: kept on disk, never committed
+.cowork-temp/
 
 # editor / OS noise
 Thumbs.db
 Desktop.ini
 .vscode/
+*.tmp
