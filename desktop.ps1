@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.4.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.5.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -4876,27 +4876,46 @@ function Invoke-SelfTest([string[]]$Rest) {
   $vUsage = 'missing'
   if ($src -match 'desktop\.ps1 v([0-9.]+) - Windows') { $vUsage = $Matches[1] }
   ST-Check 'version: desktop.ps1 header == Usage banner' (($vMain -ne 'missing') -and ($vUsage -eq $vMain))
+  # v2.5.0: the block below pins the REPOSITORY-level contract (version carriers +
+  # tracked inventory). From an installed copy - the skill ships desktop.ps1 on its
+  # own - there is no repository to check, so these checks report SKIP with a reason
+  # instead of FAIL. Inside a checkout (even with files deleted) they run as before.
+  $isRepoRoot = $false
+  try {
+    $tl = @(& git -C $PSScriptRoot rev-parse --show-toplevel 2>$null)
+    if (@($tl).Count -ge 1) {
+      $tlNorm = ("$($tl[0])" -replace '\\', '/').TrimEnd('/').ToLowerInvariant()
+      $prNorm = ("$PSScriptRoot" -replace '\\', '/').TrimEnd('/').ToLowerInvariant()
+      if ($tlNorm -eq $prNorm) { $isRepoRoot = $true }
+    }
+  } catch { $isRepoRoot = $false }
+  $skipNoRepo = 'not a repository checkout - repository-level check does not apply (installed copy)'
+  if ($isRepoRoot) {
   # The public repo carries no internal authority docs; the version lives in exactly
-  # three ASCII-named files. README.md and README.zh-CN.md are the SAME document in two
-  # languages, so both must carry it - bilingual drift is the failure mode here.
-  # -Encoding UTF8 is mandatory on the zh file: read as ANSI/GBK a fullwidth bracket's
-  # UTF-8 bytes swallow the following ASCII and the version regex silently misses.
+  # three ASCII-named files plus the two loadable-skill docs. README.md and
+  # README.zh-CN.md are the SAME document in two languages, so both must carry it -
+  # bilingual drift is the failure mode here. -Encoding UTF8 is mandatory on the zh
+  # file: read as ANSI/GBK a fullwidth bracket's UTF-8 bytes swallow the following
+  # ASCII and the version regex silently misses.
   $vDocList = @('README.md', 'README.zh-CN.md', 'CHANGELOG.md')
   $vMiss = @(@($vDocList) | Where-Object { -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $_)) })
   ST-Check 'version: all three version-carrying public docs exist (README + zh README + CHANGELOG)' (@($vMiss).Count -eq 0)
   if (@($vMiss).Count -gt 0) { Write-Output "      missing version carriers: $(@($vMiss) -join ', ')" }
   # Inventory guard in the same direction as the "exactly N content-marked docs" it
-  # replaces: a fourth tracked .md must not quietly join the version-carrying set, and
-  # a carrier must not be dropped from it. Enumerated from git, not from the disk, so
-  # an untracked scratch doc cannot pass by simply not existing.
+  # replaces: no tracked .md beyond the known set may quietly appear, and a member of
+  # the set must not be dropped from it. v2.5.0: the loadable skill's docs are the only
+  # addition to the set - they are NOT version carriers (they ship to other machines and
+  # deliberately carry no version token). Enumerated from git, not from the disk, so an
+  # untracked scratch doc cannot pass by simply not existing.
+  $mdAllowed = @('README.md', 'README.zh-CN.md', 'CHANGELOG.md', 'skill/agent-computer-use/SKILL.md', 'skill/agent-computer-use/reference.md')
   $mdTracked = @()
   try { $mdTracked = @((& git -C $PSScriptRoot ls-files '*.md' 2>$null) | Where-Object { "$_" -ne '' }) } catch { $mdTracked = @() }
-  $mdExtra = @(@($mdTracked) | Where-Object { $vDocList -notcontains $_ })
-  $mdGone = @(@($vDocList) | Where-Object { $mdTracked -notcontains $_ })
-  ST-Check 'version: the tracked .md set is EXACTLY the three version carriers (no fourth doc joins silently)' (
-    (@($mdTracked).Count -eq 3) -and (@($mdExtra).Count -eq 0) -and (@($mdGone).Count -eq 0))
+  $mdExtra = @(@($mdTracked) | Where-Object { $mdAllowed -notcontains $_ })
+  $mdGone = @(@($mdAllowed) | Where-Object { $mdTracked -notcontains $_ })
+  ST-Check 'version: the tracked .md set is the three carriers + the two skill docs (no other doc joins silently)' (
+    (@($mdExtra).Count -eq 0) -and (@($mdGone).Count -eq 0))
   if (@($mdExtra).Count -gt 0) { Write-Output "      extra tracked .md: $(@($mdExtra) -join ', ')" }
-  if (@($mdGone).Count -gt 0) { Write-Output "      carrier not tracked: $(@($mdGone) -join ', ')" }
+  if (@($mdGone).Count -gt 0) { Write-Output "      tracked doc missing: $(@($mdGone) -join ', ')" }
   $vEn = 'missing'; $vZh = 'missing'
   $pEn = Join-Path $PSScriptRoot 'README.md'
   $pZh = Join-Path $PSScriptRoot 'README.zh-CN.md'
@@ -4918,12 +4937,20 @@ function Invoke-SelfTest([string[]]$Rest) {
     }
   }
   ST-Check 'version: CHANGELOG latest entry == desktop.ps1 header' ($vChg -eq $vMain)
+  } else {
+    ST-Skip 'version: all three version-carrying public docs exist (README + zh README + CHANGELOG)' $skipNoRepo
+    ST-Skip 'version: the tracked .md set is the three carriers + the two skill docs (no other doc joins silently)' $skipNoRepo
+    ST-Skip 'version: README.md H1 == desktop.ps1 header' $skipNoRepo
+    ST-Skip 'version: README.zh-CN.md H1 == desktop.ps1 header' $skipNoRepo
+    ST-Skip 'version: CHANGELOG latest entry == desktop.ps1 header' $skipNoRepo
+  }
 
   # ---------- lint: the tracked-file count written in BOTH READMEs IS the real one ----------
   # Upstream finding: this number drifted three times in one day (9, then 17, then
   # written as 15 while the tree held 16) and nothing noticed, because it was prose no
   # gate measured - a cold-starting reader inherits the wrong count. Pinned in both
   # languages, so the two inventories cannot split.
+  if ($isRepoRoot) {
   $tfEn = -1
   if (Test-Path $pEn) {
     foreach ($l in @(Get-Content -LiteralPath $pEn -Encoding UTF8)) {
@@ -4941,6 +4968,9 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'lint: both READMEs state tracked=<N> and it equals git ls-files (no stale inventory)' (
     ($tfEn -gt 0) -and ($tfZh -gt 0) -and ($tfEn -eq $tfReal) -and ($tfZh -eq $tfReal))
   Write-Output ("      tracked files: README=$tfEn README.zh-CN=$tfZh git=$tfReal")
+  } else {
+    ST-Skip 'lint: both READMEs state tracked=<N> and it equals git ls-files (no stale inventory)' $skipNoRepo
+  }
 
   # ---------- lint: forbidden @()/$() wrapper on comma-returning helpers ----------
   # One pass over the real source lines, blanking everything inside a here-string.
@@ -7134,6 +7164,9 @@ function Invoke-SelfTest([string[]]$Rest) {
   # and the two language editions must document the SAME set - a one-language-only
   # update is the failure mode a single-README repository structurally cannot see.
   # Rows are read from either shape the docs use ("| `cmd args` |" or "- `cmd args`").
+  $rdPath = Join-Path $PSScriptRoot 'README.md'
+  $zhPath = Join-Path $PSScriptRoot 'README.zh-CN.md'
+  if ((Test-Path -LiteralPath $rdPath) -and (Test-Path -LiteralPath $zhPath)) {
   $rdLines = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Encoding UTF8)
   $rdAllText = $rdLines -join "`n"
   $dcStartPat = '^## Commands'
@@ -7184,6 +7217,12 @@ function Invoke-SelfTest([string[]]$Rest) {
     ($zhStart -ge 0) -and ($zhEnd -gt $zhStart) -and (@($zhNames).Count -ge 30) -and (@($dcZhOnly).Count -eq 0) -and (@($dcEnOnly).Count -eq 0))
   if (@($dcZhOnly).Count -gt 0) { Write-Output "      only in the zh README: $(@($dcZhOnly) -join ', ')" }
   if (@($dcEnOnly).Count -gt 0) { Write-Output "      only in the en README: $(@($dcEnOnly) -join ', ')" }
+  } else {
+    ST-Skip 'lint: the README-sweep exemptions are real dispatch targets (script/replay/selftest cases exist)' 'README documentation not present (installed copy) - the sweep cannot run'
+    ST-Skip 'lint: every command in the README quick reference exists in the dispatcher (no stale references)' 'README documentation not present (installed copy)'
+    ST-Skip 'lint: every dispatcher command appears in the README (no under-documented command)' 'README documentation not present (installed copy)'
+    ST-Skip 'lint: both README editions document the SAME command set (a one-language-only update cannot pass)' 'README documentation not present (installed copy)'
+  }
 
   # ---------- v1.8.0 CDP client and a11y route (task book A-0..A-6) ----------
   # Offline half of the acceptance set: the judgements that can be pinned without a
@@ -9282,8 +9321,14 @@ $f.Location = New-Object System.Drawing.Point(120, 1150)
       # through the real command line as a dry run, and its step count plus every
       # action name must parse. Nothing executes (dry run), nothing is clicked.
       $rsPath = $null
+      $rdFile = Join-Path $PSScriptRoot 'README.md'
+      if (-not (Test-Path -LiteralPath $rdFile)) {
+        ST-Skip 'live: README carries a fenced script step sample' 'README not present (installed copy)'
+        ST-Skip 'live: the README script sample parses as 5 steps under --dry-run' 'README not present (installed copy)'
+        ST-Skip 'live: every action name used in the README sample resolves' 'README not present (installed copy)'
+      } else {
       try {
-        $rdText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'README.md'), [System.Text.Encoding]::UTF8)
+        $rdText = [System.IO.File]::ReadAllText($rdFile, [System.Text.Encoding]::UTF8)
         $mJson = [regex]::Match($rdText, '```json\s*\r?\n(?<body>\[[\s\S]*?\])\s*\r?\n```')
         ST-Check 'live: README carries a fenced script step sample' ($mJson.Success)
         if ($mJson.Success) {
@@ -9303,6 +9348,7 @@ $f.Location = New-Object System.Drawing.Point(120, 1150)
         Write-Output "      README sample error: $($_.Exception.Message)"
       } finally {
         if ($rsPath -and (Test-Path -LiteralPath $rsPath)) { Remove-Item -LiteralPath $rsPath -Force -ErrorAction SilentlyContinue }
+      }
       }
 
       # ---------- live: v1.5.2 WP-4 clipboard round trips (audit R-05) ----------
@@ -11054,7 +11100,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.4.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.5.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

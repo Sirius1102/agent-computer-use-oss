@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.5.0 — 2026-10-02
+
+Skill packaging: the repository now ships a **loadable agent-skill wrapper** under
+`skill/agent-computer-use/` — `SKILL.md` (what it is / when to use it / quick command
+reference), `reference.md` (flags, exit codes, recipes), plus `install.ps1` /
+`uninstall.ps1` which copy the skill into an agent skill directory resolved at
+runtime (first existing of the known host roots; never a hard-coded user path).
+No command behaviour changed — v2.5.0 is an additive packaging layer.
+
+The offline self-test now reports its repository-level checks (version carriers,
+tracked-file inventory, README sweep) as SKIP-with-a-reason when the tool runs
+outside a checkout (an installed copy), so an installation can self-verify
+standalone; inside the repository nothing changed.
+
 ## v2.4.0 — 2026-10-02
 
 New affordances for the UIA family, shipped simultaneously in the private upstream

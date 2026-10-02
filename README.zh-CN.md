@@ -1,4 +1,4 @@
-# Agent Computer Use 开源版 v2.4.0
+# Agent Computer Use 开源版 v2.5.0
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -263,11 +263,13 @@ README.zh-CN.md        # 中文文档（命令集合与英文版一致，由门�
 CHANGELOG.md           # 版本历史
 LICENSE                # MIT
 samples/selftest.txt   # 验证粘贴写路径的中文样本
+skill/                 # 可装载 Agent 技能：agent-computer-use/{SKILL.md, reference.md,
+                       #   install.ps1, uninstall.ps1}
 shots/                 # 运行期目录（已 gitignore）：默认截图 + actions.log
 .cowork-temp/          # 运行期目录（已 gitignore）：--live 日志
 ```
 
-本仓库 git 在册文件共 7 个（`tracked=7`，该数字由离线门禁与 `git ls-files` 比对钉住）。
+本仓库 git 在册文件共 11 个（`tracked=11`，该数字由离线门禁与 `git ls-files` 比对钉住）。
 
 ## 许可
 

@@ -1,4 +1,4 @@
-# Agent Computer Use (Open Source Edition) v2.4.0
+# Agent Computer Use (Open Source Edition) v2.5.0
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -257,17 +257,19 @@ The offline gate is a hard requirement before committing: it pins the version st
 ## Repository layout
 
 ```
-desktop.ps1            # the entire tool (tracked=7 counts this file)
+desktop.ps1            # the entire tool
 README.md              # this document
 README.zh-CN.md        # the Chinese edition (same command set, enforced by a gate rule)
 CHANGELOG.md           # release history
 LICENSE                # MIT
 samples/selftest.txt   # CJK sample for verifying the paste path
+skill/                 # loadable agent skill: agent-computer-use/{SKILL.md, reference.md,
+                       #   install.ps1, uninstall.ps1}
 shots/                 # runtime dir (gitignored): default screenshots + actions.log
 .cowork-temp/          # runtime dir (gitignored): --live logs
 ```
 
-The tracked-file inventory of this repository is 7 files (`tracked=7`, asserted against `git ls-files`).
+The tracked-file inventory of this repository is 11 files (`tracked=11`, asserted against `git ls-files`).
 
 ## License
 
