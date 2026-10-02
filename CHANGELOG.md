@@ -2,6 +2,105 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.3.0 — 2026-10-02
+
+A **code sync, not an incremental release**: this edition's `desktop.ps1` is brought to
+feature parity with the private upstream tool at its v2.3.0, applied as a file-level
+squash (upstream commit history is deliberately not merged — see "What did NOT change").
+The Per-Monitor V2 DPI work from v1.1.0 and the `dpi` command were **re-applied on top**
+of the synced file rather than overwritten, and they are verified as still present by
+`selftest` and by the README command sweep.
+
+### Self-testing gate (new in this edition)
+- `selftest` runs ~590 offline checks — source lints for the PowerShell 5.1 `@(Fn)`
+  list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract
+  checks that pin the version string across all five carriers, pin the READMEs' stated
+  tracked-file count against `git ls-files`, and pin that **both language READMEs
+  document the same command set**. `selftest --live` adds real round-trips against
+  synthetic `DTX-*` fixture windows the tool creates and closes itself.
+- Rule set retargeted for this repository: the upstream gate bound the version-sync and
+  documentation-consistency checks to two internal Chinese-named working documents that
+  do not belong in a public repo. Here they bind to `README.md` + `README.zh-CN.md` +
+  `CHANGELOG.md`, enumerated from `git ls-files` so a fourth tracked `.md` cannot join
+  the version-carrying set silently.
+
+### Locate and verify, instead of guessing
+- `find` — composite locator (UIA first, OCR over the same rect as fallback) that reports
+  `source=uia|ocr`; a miss names what both roads measured.
+- `find-text` / `read-text` / `assert-text` / `find-click` — OCR road with line rects and
+  ready-to-use centres; tiled capture for regions above the OCR engine's dimension cap.
+- `imgclick` / `unmap` + `.map.txt` sidecars — the only supported path from a pixel read
+  off a saved (possibly fitted) image back to a screen click; a stale sidecar fails.
+- `zoom`, `--fit`, `--grid`, `--mark` — fitted captures with the scale printed, an
+  optional screen-pixel grid on the saved PNG only, and a crosshair to confirm a target
+  before clicking it.
+- `uia-find` re-contacts once before letting 0 hits become a verdict (UIA cold start), and
+  an empty needle is refused because it would match everything.
+
+### Occlusion self-reporting
+- Every pixel-reading command samples a 5×5 `WindowFromPoint` grid and prints
+  `scan=<role> occluded=N% coveredBy=pid 'title'`, naming every coverer; guards and
+  `assert-*` refuse while occluded, plain reads never fail on it.
+- A weak delivery receipt (window grew / new UIA node / line count changed) is refused
+  outright when the target is covered — previously such a receipt could be produced by the
+  covering window's own animation.
+
+### Act with proof
+- Landing self-report: every pointing command echoes `hit-window:` with the pid/proc/title
+  actually under the point; `--to` with a point outside the visible rect is refused.
+- `--expect-change`, `--expect`, `--expect-gone`, `assert-changed`, `assert-stable`,
+  `wait-stable`, `assert-color`, `assert-hash` — proof of effect rather than a delivery
+  receipt, each verdict naming the patience and interval actually used.
+- Mid-state input: `press-down` / `drag-to` / `press-up` (a held button is machine-wide
+  state, so it carries an in-process deadline, a release-on-next-invocation watchdog, and a
+  refusal when the press/release pair would go 1:2).
+- `menu-pick` and `open-and-pick` for popup menus and self-drawn dropdowns; a menu is
+  identified by class and shape, never by the `WS_POPUP` bit.
+- Window management: `win-move` / `win-resize` / `win-max` / `win-min` / `win-restore` /
+  `win-close`; selector ambiguity now refuses with all candidates instead of silently
+  picking the largest window.
+
+### Text, clipboard and receipts
+- `type` / `type-in` moved to SendInput Unicode: characters bypass the IME entirely and CJK
+  works without a clipboard round-trip; `--verify` OCR-reads the target afterwards.
+- `paste` / `paste-file` read back by default (`--no-expect` is the send-only escape). A
+  payload long enough to fold into an attachment chip cannot show its tail, so it is then
+  accepted on a **named** receipt — the echo always says which.
+- `--guard-text` / `--guard-region`: the tool enforces "only talk to this conversation";
+  an occluded guard region fails before the OCR runs.
+- `ime` / `ime-state` / `ime-en` / `ime-cn` read the conversion mode and switch it with
+  read-back, printing the exact command that restores the previous mode.
+
+### Page content
+- `chrome-a11y` (relaunch with `--force-renderer-accessibility`, measured before/after),
+  `chrome-menu-read` (list Chrome's own menu items, dismiss without clicking), and a
+  loopback-only CDP route: `chrome-tabs` / `chrome-read` / `chrome-find` / `chrome-click` /
+  `chrome-debug-off`. Tab logging prints host+port only — path and query are dropped,
+  because a token is as likely to sit in one as the other.
+- `a11y-probe` answers the prior question: can `uia-*` drive this app's content at all?
+
+### Batch, audit and hygiene
+- `script` runs a step array in one process with per-step foreground guards, content
+  guards, retry and a popup-survival guard (`require-popup` / `release-popup`) that aborts
+  the rest of the run when the popup it was working on dies.
+- `replay` re-runs recorded commands, dry run by default; it refuses redacted payloads and
+  any slice carrying an abort marker.
+- Payloads and guard needles are stored as `<redacted:Nchars>` unless `--log-payload` is
+  passed; the audit log rotates at 512 KB and `shots-cleanup` bounds the screenshot folder
+  by **moving** files to a quarantine folder with a manifest — it never deletes.
+- `challenge-probe` reads verification challenges and hands them to a human; **there is no
+  solver in this tool by design**, and one surviving attempt trips a fuse for that image.
+- Unknown `--flags` in needle commands are a hard error rather than being searched as text.
+
+### What did NOT change
+- License (MIT), author identity, the file layout, and the three pre-existing public
+  commits. Upstream commit history was not merged or cherry-picked: the upstream tool's
+  commit messages are an internal log, so this edition arrives as file-level squashes with
+  rewritten, public-facing commit messages. Nothing here should be read as "the public
+  history of that work".
+
+## v1.2.0 — 2026-09-27
+
 ## v1.2.0 — 2026-09-27
 
 ### New commands
