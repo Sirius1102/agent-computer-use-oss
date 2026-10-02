@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.3.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.4.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -4468,7 +4468,7 @@ function New-FindJsonEnvelope([string]$source, [string]$target, $gate, $hits) {
   return [pscustomobject]$map
 }
 
-function Uia-Line($el, [int]$depth) {
+function Uia-Line($el, [int]$depth, $path = $null, $actions = $null) {
   $ct = ''; $nm = ''; $aid = ''; $rect = '-'; $en = $false; $off = $true
   try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
   try { $nm = $el.Current.Name } catch { }
@@ -4479,17 +4479,49 @@ function Uia-Line($el, [int]$depth) {
     $r = $el.Current.BoundingRectangle
     if (-not $r.IsEmpty) { $rect = "$([int]$r.X),$([int]$r.Y),$([int]$r.Width)x$([int]$r.Height)" }
   } catch { }
-  return (' ' * ($depth * 2)) + "$ct | name='$nm' | id='$aid' | $rect | enabled=$en offscreen=$off"
+  # v2.4.0: path= and actions= are APPEND-ONLY fields - the six historical fields
+  # keep their order and spelling, and both new fields are $null-skipped, so
+  # callers that pass nothing (uia-find, the c40 fixtures) emit the exact
+  # pre-2.4.0 line. actions= is bracketed here so a probed-but-empty node prints
+  # actions=[] and stays distinguishable from a node that was never probed
+  # (no field at all).
+  $line = (' ' * ($depth * 2)) + "$ct | name='$nm' | id='$aid' | $rect | enabled=$en offscreen=$off"
+  if ($null -ne $path) { $line += " | path=$path" }
+  if ($null -ne $actions) { $line += " | actions=[$actions]" }
+  return $line
 }
 
-function Uia-Dump($el, [int]$depth, [int]$maxDepth) {
+# v2.4.0: $ctx (uia-tree only) carries the output knobs and the cost counters:
+#   NoPaths   - suppress the path= field (paths cost NO extra cross-process call:
+#               the child index exists in the walk itself, so they default on)
+#   NoActions - suppress pattern probing entirely
+#   AllActions- probe every node, not just the interactive-type allowlist
+#   Nodes / Probed / ProbeMs / Sw - what the actions-probed= footer reports
+# $basePath is the parent's own path (/0 for the root), so a child's field is
+# basePath + '/' + its sibling index, counted by the SAME enumeration the dump
+# prints - a path read off a uia-tree line addresses exactly that line.
+function Uia-Dump($el, [int]$depth, [int]$maxDepth, $ctx = $null, [string]$basePath = '') {
   if ($depth -gt $maxDepth) { return }
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $child = $walker.GetFirstChild($el)
+  $idx = 0
   while ($null -ne $child) {
-    Uia-Line $child $depth
-    Uia-Dump $child ($depth + 1) $maxDepth
+    $pField = $null
+    $aField = $null
+    if ($null -ne $ctx) {
+      if (-not $ctx.NoPaths) { $pField = "$basePath/$idx" }
+      if (-not $ctx.NoActions) {
+        $t0 = $ctx.Sw.Elapsed.TotalMilliseconds
+        $toks = Get-UiaActionTokens $child $ctx.AllActions
+        $ctx.ProbeMs += ($ctx.Sw.Elapsed.TotalMilliseconds - $t0)
+        if ($null -ne $toks) { $aField = "$toks"; $ctx.Probed++ }
+      }
+      $ctx.Nodes++
+    }
+    Uia-Line $child $depth $pField $aField
+    Uia-Dump $child ($depth + 1) $maxDepth $ctx $pField
     $child = $walker.GetNextSibling($child)
+    $idx++
   }
 }
 
@@ -4501,6 +4533,286 @@ function Uia-Find($root, [string]$nameSub, [string]$typeRe) {
     if ((Test-NameSubstring $nm $nameSub) -and (-not $typeRe -or $ct -match $typeRe)) { return $el }
   }
   return $null
+}
+
+# ---------- v2.4.0: action tokens + structural path handles ----------
+# What a node can DO (the read side belongs to read-text/uia-find). Every
+# GetCurrentPattern/GetSupportedPatterns call is a CROSS-PROCESS round trip, so
+# uia-tree probes only an interactive-type allowlist by default; --actions-all
+# lifts it and --no-actions skips probing entirely. Non-allowlisted nodes carry
+# NO actions= field at all, so "not probed" and "probed but none" (actions=[])
+# stay distinguishable.
+$script:UiaActionAllowRe = '^(Button|MenuItem|Edit|CheckBox|RadioButton|ComboBox|ListItem|TabItem|TreeItem|Hyperlink|Slider|SplitButton)$'
+
+# Pure: order an already-fetched pattern list into the fixed verb vocabulary.
+# Read-side patterns (Text/Window/...) are deliberately NOT mapped: what a node
+# can be read with is not an action. Returns a comma string ('' = probed and
+# none) - a string survives the function boundary where an empty array would
+# unwrap into a silent $null.
+function Get-UiaActionTokensFromPatterns($patterns) {
+  $found = @()
+  foreach ($p in @($patterns)) { if ($null -ne $p) { $found += @($p) } }
+  $toks = New-Object System.Collections.ArrayList
+  foreach ($pair in @(
+    @('invoke', [System.Windows.Automation.InvokePattern]::Pattern),
+    @('toggle', [System.Windows.Automation.TogglePattern]::Pattern),
+    @('select', [System.Windows.Automation.SelectionItemPattern]::Pattern),
+    @('expand', [System.Windows.Automation.ExpandCollapsePattern]::Pattern),
+    @('value',  [System.Windows.Automation.ValuePattern]::Pattern),
+    @('scroll', [System.Windows.Automation.ScrollPattern]::Pattern),
+    @('scroll', [System.Windows.Automation.ScrollItemPattern]::Pattern),
+    @('range',  [System.Windows.Automation.RangeValuePattern]::Pattern))) {
+    if (@($found) -contains $pair[1]) { if (-not $toks.Contains($pair[0])) { [void]$toks.Add($pair[0]) } }
+  }
+  return (@($toks) -join ',')
+}
+
+# Live probe: ONE GetSupportedPatterns call per probed node - that call IS the
+# cross-process cost the actions-probed= footer reports. Returns $null when the
+# node must not carry an actions= field (outside the allowlist and not
+# --actions-all), '' when probed and nothing is supported, else the verb string.
+function Get-UiaActionTokens($el, [bool]$all = $false) {
+  $ct = ''
+  try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { return '' }
+  if (-not $all -and ("$ct" -cnotmatch $script:UiaActionAllowRe)) { return $null }
+  $pats = @()
+  try { $pats = @($el.GetSupportedPatterns()) } catch { $pats = @() }
+  return (Get-UiaActionTokensFromPatterns $pats)
+}
+
+# Pure: a path token (already stripped of the @) must be /0 or /0/<i>... - digits
+# only, and the first segment is the root by definition. Anything else is
+# refused before any walk happens.
+function Test-UiaPathTokenShape([string]$tok) {
+  return ("$tok" -match '^/0(?:/\d+)*$')
+}
+
+# Walk a /0/2/1 route from the FIRST root, with the same ControlView walker,
+# enumeration order and sibling counting as the uia-tree dump, so a path read
+# off a uia-tree line lands on the node that line printed. maxDepth uses the
+# uia-tree convention (0 = unlimited; a node at depth D is reachable iff
+# D <= maxDepth), and a path needing more depth than the bound reports
+# "path depth N > walked M" instead of failing silently. Returns a hashtable
+# (hashtables survive the function boundary; string arrays do not):
+#   Ok / El / Path / Reason / Detail / Depth / WalkedDepth / AtPath
+function Resolve-UiaPath($roots, [string]$tok, [int]$maxDepth) {
+  $r = @{ Ok = $false; El = $null; Path = "$tok"; Reason = 'malformed'; Detail = ''; Depth = 0; WalkedDepth = 0; AtPath = '' }
+  if ("$tok" -notmatch '^@/') { $r.Detail = "path token must start with '@/' - got: $tok"; return $r }
+  $t = "$tok".Substring(1)
+  if (-not (Test-UiaPathTokenShape $t)) { $r.Detail = "path must look like /0/2/1 (digits, the root is /0) - got: $t"; return $r }
+  $segs = @("$t".TrimStart('/').Split('/') | ForEach-Object { [int]$_ })
+  $r.Depth = @($segs).Count - 1
+  $r.WalkedDepth = $maxDepth
+  if ($maxDepth -gt 0 -and $r.Depth -gt $maxDepth) {
+    $r.Reason = 'too-deep'; $r.Path = $t
+    $r.Detail = "path depth $($r.Depth) > walked $maxDepth"
+    return $r
+  }
+  $rootList = @($roots)
+  if ($rootList.Count -lt 1) { $r.Reason = 'no-root'; $r.Detail = 'no UIA root to walk from'; return $r }
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $cur = $rootList[0]
+  $curPath = '/0'
+  for ($i = 1; $i -lt @($segs).Count; $i++) {
+    $sibs = New-Object System.Collections.ArrayList
+    try {
+      $c = $walker.GetFirstChild($cur)
+      while ($null -ne $c) { [void]$sibs.Add($c); $c = $walker.GetNextSibling($c) }
+    } catch { }
+    if ($segs[$i] -ge @($sibs).Count) {
+      $r.Reason = 'dead-end'; $r.Path = $t; $r.AtPath = $curPath
+      $r.Detail = "dead-end at $curPath (child index $($segs[$i]) of $(@($sibs).Count))"
+      return $r
+    }
+    $cur = $sibs[$segs[$i]]
+    $curPath = "$curPath/$($segs[$i])"
+  }
+  $r.Ok = $true; $r.El = $cur; $r.Path = $curPath
+  return $r
+}
+
+# The three identity fields the path verification compares, in the exact shape
+# the uia-tree line prints them, so a refusal's expected/actual lines can be
+# diffed by eye against the tree the path came from.
+function Get-UiaIdentity($el) {
+  $ct = ''; $nm = ''; $rect = '-'; $parts = $null
+  try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+  try { $nm = $el.Current.Name } catch { }
+  try {
+    $r = $el.Current.BoundingRectangle
+    if (-not $r.IsEmpty) {
+      $parts = @([int]$r.X, [int]$r.Y, [int]$r.Width, [int]$r.Height)
+      $rect = "$($parts[0]),$($parts[1]),$($parts[2])x$($parts[3])"
+    }
+  } catch { }
+  return @{ Type = $ct; Name = "$nm"; Rect = $rect; RectParts = $parts }
+}
+
+# Pure: parse the expected-identity token "Type|nameSub|X,Y,WxH" carried by the
+# @path forms. The name field may be empty (nameless controls are the reason
+# path handles exist); the rect field accepts the tree line's shape with or
+# without surrounding parentheses, or '-' for an empty rect. Returns a
+# hashtable or $null - exactly three fields, no guessing.
+function Parse-UiaExpectToken([string]$tok) {
+  $parts = "$tok".Split('|')
+  if (@($parts).Count -ne 3) { return $null }
+  $type = "$($parts[0])".Trim()
+  if ($type.Length -lt 1) { return $null }
+  $name = "$($parts[1])"
+  $rectS = "$($parts[2])".Trim()
+  if ($rectS -eq '-') { return @{ Type = $type; Name = $name; Rect = '-'; RectParts = $null } }
+  if ($rectS -notmatch '^\(?(-?\d+),(-?\d+),(\d+)x(\d+)\)?$') { return $null }
+  $rp = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3], [int]$Matches[4])
+  return @{ Type = $type; Name = $name; Rect = "$($rp[0]),$($rp[1]),$($rp[2])x$($rp[3])"; RectParts = $rp }
+}
+
+# Pure: the three-field verification behind the @path forms. Every field that
+# disagrees names itself; the caller turns a $false into a REFUSED block and
+# never into a fallback action.
+function Test-UiaExpectMatch($expect, $identity) {
+  if ("$($expect.Type)" -cne "$($identity.Type)") {
+    return @{ Ok = $false; Field = 'ControlType'; Detail = "expected ControlType $($expect.Type), actual $($identity.Type)" }
+  }
+  # An EMPTY expect name means "expect an unnamed element" (nameless controls are
+  # the reason path handles exist) - it must NOT go through Test-NameSubstring,
+  # which refuses empty needles by design, or every empty-name expect would be
+  # refused forever (caught live on the calculator: a fully-matching node read
+  # stale). Empty expects an unnamed actual; non-empty keeps the substring rule.
+  if ("$($expect.Name)".Length -eq 0) {
+    if ("$($identity.Name)".Length -ne 0) {
+      return @{ Ok = $false; Field = 'Name'; Detail = "expected an unnamed element, actual '$($identity.Name)'" }
+    }
+  } elseif (-not (Test-NameSubstring $identity.Name $expect.Name)) {
+    return @{ Ok = $false; Field = 'Name'; Detail = "expected Name containing '$($expect.Name)', actual '$($identity.Name)'" }
+  }
+  $eR = $expect.RectParts; $aR = $identity.RectParts
+  if ($null -eq $eR -and $null -eq $aR) { return @{ Ok = $true; Field = ''; Detail = '' } }
+  if (($null -eq $eR) -or ($null -eq $aR)) {
+    return @{ Ok = $false; Field = 'rect'; Detail = "expected rect $($expect.Rect), actual rect $($identity.Rect)" }
+  }
+  for ($i = 0; $i -lt 4; $i++) {
+    if ($eR[$i] -ne $aR[$i]) {
+      return @{ Ok = $false; Field = 'rect'; Detail = "expected rect $($expect.Rect), actual rect $($identity.Rect)" }
+    }
+  }
+  return @{ Ok = $true; Field = ''; Detail = '' }
+}
+
+# Pure: the REFUSED block for every path-handle failure mode. One producer, so
+# uia-path and all three @path action routes refuse in the same shape, and every
+# refusal names the locate/OCR roads instead of silently falling back to
+# coordinates (a stale path must never become a click).
+function Format-UiaPathRefusal([string]$tok, $res, $expect, $identity) {
+  $path = "$($res.Path)"
+  $fb = 'fallback: uia-find / find <text> / find-text (OCR)'
+  if ($res.Reason -eq 'stale') {
+    $eLine = "expected: $($expect.Type) | name='$($expect.Name)' | rect=$($expect.Rect)"
+    $aLine = "actual: $($identity.Type) | name='$($identity.Name)' | rect=$($identity.Rect)"
+    return "REFUSED: path=$path stale`n$eLine`n$aLine`n$fb"
+  }
+  return "REFUSED: path=$path $($res.Reason)`nactual: $($res.Detail)`n$fb"
+}
+
+# Shared tail of both uia-click routes: InvokePattern first, else a centre click
+# on the VERIFIED element. Returns the echo line, in both routes' wording.
+function Invoke-UiaClickable($el) {
+  $nm = ''
+  try { $nm = $el.Current.Name } catch { }
+  try {
+    $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    return "InvokePattern ok: $nm"
+  } catch {
+    $r = $el.Current.BoundingRectangle
+    $x = [int]($r.X + $r.Width / 2)
+    $y = [int]($r.Y + $r.Height / 2)
+    Move-Click $x $y 'left'
+    return "no InvokePattern, clicked centre ($x,$y) of: $nm"
+  }
+}
+
+# v2.4.0 path-handle route for uia-click: uia-click <sel> @/0/2/1 "Type|nameSub|X,Y,WxH".
+# Walk -> re-verify -> act, in that order, and nothing acts on a failed verify:
+# the refusal block goes to stdout and the throw behind it turns into exit 1 at
+# the process boundary.
+function Invoke-UiaClickByPath($rest) {
+  if (@($rest).Count -lt 3) { throw 'usage: uia-click <sel> @/0/2/1 <Type|nameSub|X,Y,WxH>' }
+  $w = Resolve-Window $rest[0]
+  if (-not $w) { throw "no window matching: $($rest[0])" }
+  $rr = Uia-Roots $w
+  if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid)" }
+  $xp = Parse-UiaExpectToken $rest[2]
+  if ($null -eq $xp) { throw "uia-click: expected token must look like 'Button|OK|123,45,80x24' - got: $($rest[2])" }
+  $res = Resolve-UiaPath $rr.Roots $rest[1] 0
+  if (-not $res.Ok) {
+    Write-Output (Format-UiaPathRefusal $rest[1] $res $xp $null)
+    throw "uia-click: path $($res.Path) refused ($($res.Reason)) - nothing was clicked"
+  }
+  $id = Get-UiaIdentity $res.El
+  $m = Test-UiaExpectMatch $xp $id
+  if (-not $m.Ok) {
+    Write-Output (Format-UiaPathRefusal $rest[1] @{ Ok = $false; Reason = 'stale'; Path = "$($res.Path)" } $xp $id)
+    throw "uia-click: path $($res.Path) stale - nothing was clicked"
+  }
+  return (Invoke-UiaClickable $res.El)
+}
+
+# v2.4.0 path-handle route for uia-focus: uia-focus <sel> @/0/2/1 "Type|nameSub|X,Y,WxH".
+function Invoke-UiaFocusByPath($rest) {
+  if (@($rest).Count -lt 3) { throw 'usage: uia-focus <sel> @/0/2/1 <Type|nameSub|X,Y,WxH>' }
+  $w = Resolve-Window $rest[0]
+  if (-not $w) { throw "no window matching: $($rest[0])" }
+  $rr = Uia-Roots $w
+  if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid)" }
+  $xp = Parse-UiaExpectToken $rest[2]
+  if ($null -eq $xp) { throw "uia-focus: expected token must look like 'Button|OK|123,45,80x24' - got: $($rest[2])" }
+  $res = Resolve-UiaPath $rr.Roots $rest[1] 0
+  if (-not $res.Ok) {
+    Write-Output (Format-UiaPathRefusal $rest[1] $res $xp $null)
+    throw "uia-focus: path $($res.Path) refused ($($res.Reason)) - nothing was focused"
+  }
+  $id = Get-UiaIdentity $res.El
+  $m = Test-UiaExpectMatch $xp $id
+  if (-not $m.Ok) {
+    Write-Output (Format-UiaPathRefusal $rest[1] @{ Ok = $false; Reason = 'stale'; Path = "$($res.Path)" } $xp $id)
+    throw "uia-focus: path $($res.Path) stale - nothing was focused"
+  }
+  $res.El.SetFocus()
+  return "focused element: $($res.Path) ($($id.Type) name='$($id.Name)')"
+}
+
+# v2.4.0 path-handle route for uia-settext:
+# uia-settext <sel> @/0/2/1 <file> "Type|nameSub|X,Y,WxH" - same
+# re-verify-then-act contract, then the existing readback-verified SetValue.
+function Invoke-UiaSettextByPath($rest) {
+  if (@($rest).Count -lt 4) { throw 'usage: uia-settext <sel> @/0/2/1 <file> <Type|nameSub|X,Y,WxH>' }
+  $w = Resolve-Window $rest[0]
+  if (-not $w) { throw "no window matching: $($rest[0])" }
+  if (-not (Test-Path -LiteralPath $rest[2] -PathType Leaf)) { throw "file not found: $($rest[2])" }
+  $text = (Read-SendFileUtf8 $rest[2]).Text
+  $rr = Uia-Roots $w
+  if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid)" }
+  $xp = Parse-UiaExpectToken $rest[3]
+  if ($null -eq $xp) { throw "uia-settext: expected token must look like 'Button|OK|123,45,80x24' - got: $($rest[3])" }
+  $res = Resolve-UiaPath $rr.Roots $rest[1] 0
+  if (-not $res.Ok) {
+    Write-Output (Format-UiaPathRefusal $rest[1] $res $xp $null)
+    throw "uia-settext: path $($res.Path) refused ($($res.Reason)) - nothing was written"
+  }
+  $id = Get-UiaIdentity $res.El
+  $m = Test-UiaExpectMatch $xp $id
+  if (-not $m.Ok) {
+    Write-Output (Format-UiaPathRefusal $rest[1] @{ Ok = $false; Reason = 'stale'; Path = "$($res.Path)" } $xp $id)
+    throw "uia-settext: path $($res.Path) stale - nothing was written"
+  }
+  $vp = Uia-SettableValue $res.El
+  if ($null -eq $vp) { throw "element at $($res.Path) ($($id.Type) name='$($id.Name)') exposes no settable ValuePattern; fall back to: click the field then paste <file>" }
+  Log-Action @('uia-settext', "$($rest[1])", "$($rest[2])", "$($rest[3])") "pid=$($w.Pid) title='$($w.Title)' path=$($res.Path) file=$($rest[2])"
+  $vp.SetValue($text)
+  $back = $null
+  try { $back = $res.El.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value } catch { }
+  if ($null -eq $back) { try { $back = $res.El.Current.Name } catch { } }
+  if ($back -ne $text) { throw "uia-settext readback mismatch on path $($res.Path) (wrote $($text.Length) chars)" }
+  return "set text via ValuePattern on path $($res.Path) ($($id.Type) name='$($id.Name)'): wrote $($text.Length) chars, readback match=True"
 }
 
 # Returns the ValuePattern of $el when it is present AND not read-only,
@@ -10655,6 +10967,86 @@ $gaTimer.Start()
     Write-Output 'SKIP  live OCR checks (pass --live to run them)'
   }
 
+  # ---------- v2.4.0: action tokens + structural path handles (pure rules, no UIA) ----------
+  # The pattern singletons need the UIA assemblies: load them here (idempotent) -
+  # the runtime loads them lazily inside Uia-Roots, but this block must also pass
+  # in an offline selftest run that never dispatched a UIA command.
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $v24Invoke = [System.Windows.Automation.InvokePattern]::Pattern
+  $v24Value = [System.Windows.Automation.ValuePattern]::Pattern
+  $v24ScrollItem = [System.Windows.Automation.ScrollItemPattern]::Pattern
+  ST-Check 'unit: uia action tokens map an invoke-only pattern list to the invoke verb' (
+    (Get-UiaActionTokensFromPatterns @($v24Invoke)) -ceq 'invoke')
+  ST-Check 'unit: uia action tokens keep the canonical verb order regardless of pattern order' (
+    (Get-UiaActionTokensFromPatterns @($v24ScrollItem, $v24Value)) -ceq 'value,scroll')
+  ST-Check 'unit: uia action tokens for a probed pattern-less node are the empty (probed-none) string' (
+    (Get-UiaActionTokensFromPatterns @()) -ceq '')
+  ST-Check 'unit: uia path token shape accepts /0 and /0/2/1/4, refuses 0/2, /1 (root must be /0), /0//2 and /0/2/' (
+    (Test-UiaPathTokenShape '/0') -and (Test-UiaPathTokenShape '/0/2/1/4') -and
+    (-not (Test-UiaPathTokenShape '0/2')) -and (-not (Test-UiaPathTokenShape '/1')) -and
+    (-not (Test-UiaPathTokenShape '/0//2')) -and (-not (Test-UiaPathTokenShape '/0/2/')))
+  $v24E1 = Parse-UiaExpectToken 'Button|OK|123,45,80x24'
+  $v24E2 = Parse-UiaExpectToken 'Pane||10,20,30x40'
+  ST-Check 'unit: uia expect token parses Type|nameSub|rect incl. an empty name and parentheses' (
+    ($null -ne $v24E1) -and ($v24E1.Type -ceq 'Button') -and ($v24E1.Name -ceq 'OK') -and ($v24E1.Rect -ceq '123,45,80x24') -and
+    ($null -ne $v24E2) -and ($v24E2.Name -ceq ''))
+  ST-Check 'unit: uia expect token refuses 2-field shapes, empty types and bad rects, tolerates a parenthesised rect' (
+    ($null -eq (Parse-UiaExpectToken 'Button|OK')) -and ($null -eq (Parse-UiaExpectToken '|OK|1,2,3x4')) -and
+    ($null -eq (Parse-UiaExpectToken 'Button|OK|123,45')) -and
+    ($null -ne (Parse-UiaExpectToken 'Button|OK|(123,45,80x24)')))
+  $v24Id = @{ Type = 'Button'; Name = 'OK, confirm'; Rect = '123,45,80x24'; RectParts = @(123, 45, 80, 24) }
+  ST-Check 'unit: uia expect match passes when all three fields agree' ((Test-UiaExpectMatch $v24E1 $v24Id).Ok)
+  ST-Check 'unit: uia expect match refuses a type mismatch, a name mismatch and a rect mismatch' (
+    (-not (Test-UiaExpectMatch (Parse-UiaExpectToken 'Pane|OK|123,45,80x24') $v24Id).Ok) -and
+    (-not (Test-UiaExpectMatch (Parse-UiaExpectToken 'Button|Cancel|123,45,80x24') $v24Id).Ok) -and
+    (-not (Test-UiaExpectMatch (Parse-UiaExpectToken 'Button|OK|9,9,9x9') $v24Id).Ok))
+  ST-Check 'unit: an empty-name expect matches an unnamed element and refuses a named one' (
+    (Test-UiaExpectMatch (Parse-UiaExpectToken 'Button||123,45,80x24') @{ Type = 'Button'; Name = ''; Rect = '123,45,80x24'; RectParts = @(123, 45, 80, 24) }).Ok -and
+    (-not (Test-UiaExpectMatch (Parse-UiaExpectToken 'Button||123,45,80x24') @{ Type = 'Button'; Name = 'X'; Rect = '123,45,80x24'; RectParts = @(123, 45, 80, 24) }).Ok))
+  $v24Ref = Format-UiaPathRefusal '/0/2/1/4' @{ Ok = $false; Reason = 'stale'; Path = '/0/2/1/4' } (Parse-UiaExpectToken 'Button|OK|123,45,80x24') @{ Type = 'Pane'; Name = ''; Rect = '9,8,7x6'; RectParts = $null }
+  ST-Check 'unit: the stale refusal names the path, both identities and the fallback roads' (
+    ("$v24Ref".Contains('REFUSED: path=/0/2/1/4 stale')) -and
+    ("$v24Ref".Contains("expected: Button | name='OK' | rect=123,45,80x24")) -and
+    ("$v24Ref".Contains("actual: Pane | name='' | rect=9,8,7x6")) -and
+    ("$v24Ref".Contains('fallback: uia-find / find <text> / find-text (OCR)')))
+  $v24Td = Resolve-UiaPath @() '@/0/2/1/4' 2
+  ST-Check 'unit: a path deeper than the walked bound refuses with "path depth N > walked M", never silently' (
+    (-not $v24Td.Ok) -and ($v24Td.Reason -ceq 'too-deep') -and ("$($v24Td.Detail)".Contains('path depth 3 > walked 2')))
+  $v24De = Resolve-UiaPath @() '@/0/2/1/9' 0
+  ST-Check 'unit: an empty root list refuses as no-root instead of crashing or faking a hit' (
+    (-not $v24De.Ok) -and ($v24De.Reason -ceq 'no-root'))
+  $v24Dead = Format-UiaPathRefusal '/0/2/1/9' @{ Ok = $false; Reason = 'dead-end'; Path = '/0/2/1/9'; Detail = 'dead-end at /0/2/1 (child index 9 of 5)' } $null $null
+  ST-Check 'unit: the dead-end refusal reports the parent, the index and the fallback roads' (
+    ("$v24Dead".Contains('REFUSED: path=/0/2/1/9 dead-end')) -and ("$v24Dead".Contains('child index 9 of 5')) -and ("$v24Dead".Contains('fallback:')))
+  ST-Check 'lint: the @-mark routes all three uia action commands through the verify-then-act helpers' (
+    ((@($codeLines | Where-Object { $_ -match '\.StartsWith\(.@.\)' }).Count) -ge 3) -and
+    ((@($codeLines | Where-Object { $_ -match 'Invoke-UiaClickByPath' }).Count) -ge 2) -and
+    ((@($codeLines | Where-Object { $_ -match 'Invoke-UiaFocusByPath' }).Count) -ge 2) -and
+    ((@($codeLines | Where-Object { $_ -match 'Invoke-UiaSettextByPath' }).Count) -ge 2) -and
+    ((@($codeLines | Where-Object { $_ -match 'Format-UiaPathRefusal' }).Count) -ge 4))
+  ST-Check 'lint: uia-tree strips its three v2.4.0 flags before the positional shape and refuses unknown --words' (
+    ((@($codeLines | Where-Object { $_ -match "--eq '--actions-all'" }).Count) -ge 1) -and
+    ((@($codeLines | Where-Object { $_ -match "--eq '--no-actions'" }).Count) -ge 1) -and
+    ((@($codeLines | Where-Object { $_ -match "--eq '--no-paths'" }).Count) -ge 1) -and
+    ((@($codeLines | Where-Object { $_ -match 'unknown flag ''\$w0''' }).Count) -ge 1))
+  $v24Ci = -1
+  for ($v24i = 0; $v24i -lt @($codeLines).Count; $v24i++) { if ("$($codeLines[$v24i])" -match '^function Invoke-UiaClickByPath') { $v24Ci = $v24i; break } }
+  $v24Cj = -1; $v24Ck = -1
+  if ($v24Ci -ge 0) {
+    for ($v24j = $v24Ci + 1; $v24j -lt [Math]::Min($v24Ci + 50, @($codeLines).Count); $v24j++) {
+      if ("$($codeLines[$v24j])" -match 'Invoke-UiaClickable') { $v24Cj = $v24j; break }
+    }
+    for ($v24k = $v24Ci + 1; $v24k -lt $v24Cj; $v24k++) {
+      if ("$($codeLines[$v24k])" -match 'Test-UiaExpectMatch') { $v24Ck = $v24k; break }
+    }
+  }
+  ST-Check 'lint: uia-click @path verifies the expected token BEFORE the click helper can run (verify-then-act)' (
+    ($v24Ci -ge 0) -and ($v24Cj -gt $v24Ci) -and ($v24Ck -gt $v24Ci) -and ($v24Ck -lt $v24Cj))
+  ST-Check 'contract: the usage block documents uia-path and the uia-tree action flags' (
+    ((@($codeLines | Where-Object { $_ -match 'uia-path <sel> @/0/2/1 \[maxDepth\]' }).Count) -ge 1) -and
+    ((@($codeLines | Where-Object { $_ -match '--actions-all' }).Count) -ge 2))
+
   ST-Check 'contract: selftest PASS line count equals passed summary count' (@($script:StPassLines).Count -eq $script:StPass)
   Write-Output "----- selftest: $script:StPass passed, $script:StFail failed, $script:StSkip skipped -----"
   if ($script:StFail -gt 0) { throw "selftest: $($script:StFail) check(s) FAILED" }
@@ -10662,7 +11054,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.3.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.4.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11060,7 +11452,26 @@ desktop.ps1 v2.3.0 - Windows desktop automation (DPI-aware, absolute screen pixe
   ui automation (works only if the app exposes its a11y tree; roots are resolved
                  from the SELECTED window handle, not just the first pid window)
     uia-tree <sel> [maxDepth]       dump control tree (header shows scanned hwnd
-                                    and the depth actually walked: depth=N)
+                                    and the depth actually walked: depth=N).
+                                    v2.4.0: lines gain path=/0/2/1 (child-index
+                                    route from the root, --no-paths off) and, for
+                                    interactive-type nodes, actions=[invoke,...]
+                                    (invoke|toggle|select|expand|value|scroll|range).
+                                    Pattern probing is allowlisted by default
+                                    (each probe is a cross-process call);
+                                    --actions-all probes every node, --no-actions
+                                    turns probing off and keeps stdout byte-
+                                    identical to the previous release. The cost
+                                    self-reports on STDERR:
+                                    actions-probed=K of M nodes (allowlist|all)
+                                    elapsed=Xms. actions= appears only on probed
+                                    nodes, so "not probed" and "probed but none"
+                                    stay distinguishable
+    uia-path <sel> @/0/2/1 [maxDepth]
+                                    READ-ONLY: resolve a path taken from a
+                                    uia-tree line and print that node's line
+                                    (same fields) - the handle for controls
+                                    that have no Name
     uia-find <sel> <nameSub> [typeRe]
                                     <nameSub> must not be empty: an empty substring
                                     matches EVERY element, so a hit would prove nothing
@@ -11074,11 +11485,20 @@ desktop.ps1 v2.3.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     re-contact that still finds nothing prints a NOTE
                                     saying UIA genuinely has no such Name AND pointing at
                                     the OCR road - zero is never evidence of absence.
-    uia-click <sel> <nameSub>       InvokePattern, falls back to clicking its centre
-    uia-focus <sel> <nameSub>       SetFocus
+    uia-click <sel> <nameSub>       InvokePattern, falls back to clicking its centre.
+                                    @path form: uia-click <sel> @/0/2/1 "T|n|X,Y,WxH"
+                                    walks the route, re-verifies ControlType/Name/rect
+                                    against the expected token copied from the
+                                    uia-tree line, and REFUSES with exit 1 on any
+                                    mismatch or a path deeper than maxDepth - a
+                                    stale path never becomes a silent click
+    uia-focus <sel> <nameSub>       SetFocus. @path form like uia-click:
+                                    uia-focus <sel> @/0/2/1 "T|n|X,Y,WxH"
     uia-settext <sel> <nameSub> <file>
                                     ValuePattern.SetValue from a UTF-8 file,
-                                    readback-verified (no keyboard, no clipboard)
+                                    readback-verified (no keyboard, no clipboard).
+                                    @path form: uia-settext <sel> @/0/2/1 <file>
+                                    "T|n|X,Y,WxH"
     a11y-probe <sel> [bigDepth]     READ-ONLY: control counts at default vs big
                                     depth + interactive controls in the page
                                     area -> page-tree=exposed|collapsed, i.e.
@@ -13882,19 +14302,67 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
     }
 
     'uia-tree' {
-      if ($Rest.Count -lt 1) { throw 'usage: uia-tree <sel> [maxDepth]' }
-      $w = Resolve-Window $Rest[0]
-      if (-not $w) { throw "no window matching: $($Rest[0])" }
-      $depth = if ($Rest.Count -ge 2 -and $Rest[1]) { [int]$Rest[1] } else { 6 }
+      # v2.4.0: --actions-all / --no-actions / --no-paths are stripped before the
+      # positional shape <sel> [maxDepth] is applied; an unknown --word is refused
+      # (a swallowed flag is how a fake knob ships).
+      $aAll = $false; $aOff = $false; $pOff = $false
+      $pos = New-Object System.Collections.ArrayList
+      foreach ($w0 in $Rest) {
+        if ("$w0" -eq '--actions-all') { $aAll = $true }
+        elseif ("$w0" -eq '--no-actions') { $aOff = $true }
+        elseif ("$w0" -eq '--no-paths') { $pOff = $true }
+        elseif ("$w0".StartsWith('--')) { throw "uia-tree: unknown flag '$w0' (valid: --actions-all | --no-actions | --no-paths)" }
+        else { [void]$pos.Add($w0) }
+      }
+      if ($aAll -and $aOff) { throw 'uia-tree: --actions-all and --no-actions are mutually exclusive' }
+      if (@($pos).Count -lt 1) { throw 'usage: uia-tree <sel> [maxDepth] [--actions-all|--no-actions] [--no-paths]' }
+      $w = Resolve-Window $pos[0]
+      if (-not $w) { throw "no window matching: $($pos[0])" }
+      $depth = if (@($pos).Count -ge 2 -and $pos[1]) { [int]$pos[1] } else { 6 }
       $rr = Uia-Roots $w
       if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid)" }
       "scan: handle=$($w.Handle) title='$($w.Title)' pick=$($w.Pick) roots=$($rr.Roots.Count) via=$($rr.Via) depth=$depth"
+      # Paths are per-root unambiguous only when there is exactly ONE root (the
+      # normal FromHandle case); the pid-enum fallback can list several, and
+      # identical /0/... labels on different roots would be a lie, so there the
+      # path fields stay off (actions still probe).
+      $usePaths = (-not $pOff) -and (@($rr.Roots).Count -eq 1)
+      $ctx = @{ NoActions = $aOff; AllActions = $aAll; NoPaths = (-not $usePaths); Nodes = 0; Probed = 0; ProbeMs = 0.0; Sw = [System.Diagnostics.Stopwatch]::StartNew() }
       foreach ($r in $rr.Roots) {
         $rn = ''
         try { $rn = $r.Current.Name } catch { }
         "root: $rn"
-        Uia-Dump $r 0 $depth
+        Uia-Dump $r 0 $depth $ctx '/0'
       }
+      $ctx.Sw.Stop()
+      # Cost self-report on STDERR, so --no-actions keeps stdout byte-identical to
+      # the pre-2.4.0 output (the disabled marker still prints, on the diagnostic
+      # stream where cost accounting belongs).
+      if ($aOff) {
+        [Console]::Error.WriteLine('actions-probed=0 (disabled)')
+      } else {
+        $tag = 'allowlist'; if ($aAll) { $tag = 'all' }
+        [Console]::Error.WriteLine('actions-probed=' + $ctx.Probed + ' of ' + $ctx.Nodes + ' nodes (' + $tag + ') elapsed=' + [int]$ctx.ProbeMs + 'ms')
+      }
+    }
+
+    'uia-path' {
+      # v2.4.0: READ-ONLY resolver for the path handles uia-tree prints. Shares the
+      # walk and the refusal shapes with the @path action routes, so a path that
+      # fails here fails there for the SAME reason.
+      if ($Rest.Count -lt 2) { throw 'usage: uia-path <sel> @/0/2/1 [maxDepth]' }
+      $w = Resolve-Window $Rest[0]
+      if (-not $w) { throw "no window matching: $($Rest[0])" }
+      $maxD = if ($Rest.Count -ge 3 -and $Rest[2]) { [int]$Rest[2] } else { 0 }
+      $rr = Uia-Roots $w
+      if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid)" }
+      $res = Resolve-UiaPath $rr.Roots $Rest[1] $maxD
+      if (-not $res.Ok) {
+        Write-Output (Format-UiaPathRefusal $Rest[1] $res $null $null)
+        throw "uia-path: path refused ($($res.Reason))"
+      }
+      $toks = Get-UiaActionTokens $res.El
+      Uia-Line $res.El 0 $res.Path $toks
     }
 
     'uia-find' {
@@ -13931,6 +14399,10 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
     }
 
     'uia-click' {
+      # v2.4.0 path-handle form routed to Invoke-UiaClickByPath: the @ prefix is
+      # the ONLY routing mark, so without it the historical nameSub route below
+      # runs with unchanged semantics.
+      if ($Rest.Count -ge 2 -and "$($Rest[1])".StartsWith('@')) { Invoke-UiaClickByPath $Rest; return }
       if ($Rest.Count -lt 2) { throw 'usage: uia-click <sel> <nameSub>' }
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }
@@ -13953,6 +14425,8 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
     }
 
     'uia-focus' {
+      # v2.4.0 path-handle form: same @-prefix routing as uia-click.
+      if ($Rest.Count -ge 2 -and "$($Rest[1])".StartsWith('@')) { Invoke-UiaFocusByPath $Rest; return }
       if ($Rest.Count -lt 2) { throw 'usage: uia-focus <sel> <nameSub>' }
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }
@@ -13967,6 +14441,8 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
     'uia-settext' {
       # uia-settext <sel> <nameSub> <file> - ValuePattern.SetValue with the UTF-8
       # content of <file>; no keyboard, no clipboard. Readback-verified.
+      # v2.4.0 path-handle form: uia-settext <sel> @/0/2/1 <file> "Type|nameSub|X,Y,WxH".
+      if ($Rest.Count -ge 2 -and "$($Rest[1])".StartsWith('@')) { Invoke-UiaSettextByPath $Rest; return }
       if ($Rest.Count -lt 3) { throw 'usage: uia-settext <sel> <nameSub> <file>' }
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }

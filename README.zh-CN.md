@@ -1,4 +1,4 @@
-# Agent Computer Use 开源版 v2.3.0
+# Agent Computer Use 开源版 v2.4.0
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -163,11 +163,12 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 
 | 命令 | 作用 |
 |---|---|
-| `uia-tree <sel> [maxDepth]` | 打印控件树；表头说明扫的是哪个句柄、实际走到了第几层 |
+| `uia-tree <sel> [maxDepth] [--actions-all\|--no-actions] [--no-paths]` | 打印控件树；表头说明扫的是哪个句柄、实际走到了第几层。每行还追加 `path=/0/2/1`（自根起的子下标路径——下标在遍历里就有，零额外跨进程调用，`--no-paths` 关）与交互类型节点的 `actions=[invoke,...]`（invoke/toggle/select/expand/value/scroll/range；不列 Text/Window 这类"能读什么"的模式——那是 read-text 的活）。pattern 探测**默认只探交互类型白名单**（每次探测都是一次跨进程调用）：Button/MenuItem/Edit/CheckBox/RadioButton/ComboBox/ListItem/TabItem/TreeItem/Hyperlink/Slider/SplitButton；`--actions-all` 探全树，`--no-actions` 完全关闭且 stdout 与上一版逐字节一致。成本在 **stderr** 自报：`actions-probed=K of M nodes (allowlist) elapsed=Xms`。`actions=` 只出现在真探过的节点——「没探」（无字段）与「探到空」（`actions=[]`）可区分 |
+| `uia-path <sel> @/0/2/1 [maxDepth]` | 只读：把 `uia-tree` 行里的路径解析回那个节点，按同款字段打印——**没有 Name 的控件就用它够** |
 | `uia-find <sel> <nameSub> [typeRe]` | 按名称/类型查找元素。空串一律**拒绝**（它匹配一切，命中不能证明任何事）；首次 0 命中且树很浅时**再接触一次**才让 0 成为结论（UIA 冷启动） |
-| `uia-click <sel> <nameSub>` | InvokePattern，失败则回退为点击该元素的中心 |
-| `uia-focus <sel> <nameSub>` | SetFocus |
-| `uia-settext <sel> <nameSub> <文件>` | 用 ValuePattern 写入 UTF-8 文件内容并读回校验——不碰键盘、不碰剪贴板 |
+| `uia-click <sel> <nameSub>` | InvokePattern，失败则回退为点击该元素的中心。`@path` 形态：`uia-click <sel> @/0/2/1 "T\|n\|X,Y,WxH"`——期望三元组 `Type\|nameSub\|rect` 从 `uia-tree` 行复制，`@` 前缀是唯一分流标记；走完路径**先重验证** ControlType/Name/rect，任一不符打印 `REFUSED: path=... stale` + 期望/实际 + 定位/OCR 回退提示，并 **exit 1 不点**。路径深度超出 maxDepth 自报 `path depth N > walked M`。失效路径绝不静默变成坐标点击 |
+| `uia-focus <sel> <nameSub>` | SetFocus。`@path` 形态同 uia-click：`uia-focus <sel> @/0/2/1 "T\|n\|X,Y,WxH"` |
+| `uia-settext <sel> <nameSub> <文件>` | 用 ValuePattern 写入 UTF-8 文件内容并读回校验——不碰键盘、不碰剪贴板。`@path` 形态：`uia-settext <sel> @/0/2/1 <文件> "T\|n\|X,Y,WxH"`，同样先验证后写入 |
 
 UIA 根节点从**被选中的那个窗口句柄**解析，所以与主窗口共用 PID 的对话框能被精确寻址。
 

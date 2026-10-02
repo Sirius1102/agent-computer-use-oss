@@ -1,4 +1,4 @@
-# Agent Computer Use (Open Source Edition) v2.3.0
+# Agent Computer Use (Open Source Edition) v2.4.0
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -163,11 +163,12 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 
 | command | what it does |
 |---|---|
-| `uia-tree <sel> [maxDepth]` | dump the control tree; the header shows which hwnd was scanned and the depth actually walked |
+| `uia-tree <sel> [maxDepth] [--actions-all\|--no-actions] [--no-paths]` | dump the control tree; the header shows which hwnd was scanned and the depth actually walked. Each line also gains `path=/0/2/1` (child-index route from the root — it exists in the walk itself, so it costs no extra cross-process call; `--no-paths` turns it off) and `actions=[invoke,...]` (invoke/toggle/select/expand/value/scroll/range — the read-side patterns are deliberately not listed, that is read-text's job). Pattern probing is **allowlisted by default** (every probe is a cross-process call): Button/MenuItem/Edit/CheckBox/RadioButton/ComboBox/ListItem/TabItem/TreeItem/Hyperlink/Slider/SplitButton; `--actions-all` probes every node, `--no-actions` disables probing and keeps stdout byte-identical to the previous release. The cost self-reports on **stderr** as `actions-probed=K of M nodes (allowlist) elapsed=Xms`. `actions=` appears only on probed nodes — "not probed" (no field) and "probed but none" (`actions=[]`) stay distinguishable |
+| `uia-path <sel> @/0/2/1 [maxDepth]` | read-only: resolve a path taken from a `uia-tree` line and print that node's line (same fields) — the handle for controls that have **no Name** |
 | `uia-find <sel> <nameSub> [typeRe]` | search elements by name/type. An empty needle is **refused** (it would match everything and prove nothing); a first 0-hit contact with a shallow tree is re-probed **once** before 0 becomes a verdict (UIA cold start) |
-| `uia-click <sel> <nameSub>` | InvokePattern, falling back to clicking the element's centre |
-| `uia-focus <sel> <nameSub>` | SetFocus |
-| `uia-settext <sel> <nameSub> <file>` | write a UTF-8 file's content via ValuePattern, readback-verified — no keyboard, no clipboard |
+| `uia-click <sel> <nameSub>` | InvokePattern, falling back to clicking the element's centre. `@path` form: `uia-click <sel> @/0/2/1 "Button|OK|123,45,80x24"` — the expected `Type\|nameSub\|rect` token is copied from the `uia-tree` line, the `@` prefix is the only routing mark; the walked node is **re-verified** against ControlType/Name/rect and any mismatch prints `REFUSED: path=... stale` with expected/actual plus the locate/OCR fallback hint and **exits 1 without clicking**. A path deeper than maxDepth self-reports `path depth N > walked M`. A stale path never becomes a silent coordinate click |
+| `uia-focus <sel> <nameSub>` | SetFocus. `@path` form like uia-click: `uia-focus <sel> @/0/2/1 "T\|n\|X,Y,WxH"` |
+| `uia-settext <sel> <nameSub> <file>` | write a UTF-8 file's content via ValuePattern, readback-verified — no keyboard, no clipboard. `@path` form: `uia-settext <sel> @/0/2/1 <file> "T\|n\|X,Y,WxH"`, same verify-then-write contract |
 
 UIA roots are resolved from the **selected window handle**, so dialogs that share a PID with their main window are addressed precisely.
 

@@ -2,6 +2,45 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.4.0 — 2026-10-02
+
+New affordances for the UIA family, shipped simultaneously in the private upstream
+and here. Both changes are **append-only**: no existing output field moved or
+changed, and the `@` prefix is the only routing mark — without it, every existing
+command behaves exactly as before.
+
+- **`uia-tree` action lists.** Each line gains `actions=[invoke,...]` — the verb
+  set is invoke / toggle / select / expand / value / scroll / range; the read-side
+  patterns (Text, Window, ...) are deliberately not listed, since what a node can
+  be *read* with belongs to `read-text`. Every pattern probe is a cross-process
+  call, so probing is **allowlisted by default** (Button, MenuItem, Edit,
+  CheckBox, RadioButton, ComboBox, ListItem, TabItem, TreeItem, Hyperlink,
+  Slider, SplitButton). `--actions-all` probes every node; `--no-actions` disables
+  probing and keeps stdout byte-identical to the previous release. The cost
+  self-reports on stderr: `actions-probed=K of M nodes (allowlist) elapsed=Xms`
+  (or `actions-probed=0 (disabled)`). An `actions=` field appears only on nodes
+  that were actually probed, so "not probed" and "probed but none" (`actions=[]`)
+  stay distinguishable.
+- **Structural path handles.** `uia-tree` lines gain `path=/0/2/1/4` — the
+  child-index route from the root, counted by the same enumeration the dump
+  prints, so it costs no extra cross-process call (`--no-paths` turns it off;
+  with the rare multi-root fallback it is suppressed rather than labeled
+  ambiguously). The new read-only `uia-path <sel> @/0/2/1 [maxDepth]` resolves a
+  path and prints that node's line — the handle for controls that have no Name.
+  `uia-click` / `uia-focus` / `uia-settext` accept `@path` with an expected
+  identity token `Type|nameSub|X,Y,WxH` copied from the `uia-tree` line: the
+  walked node is re-verified field by field, and ANY mismatch prints
+  `REFUSED: path=... stale` with expected/actual plus the locate/OCR fallback
+  hint, and exits 1 without acting. A path deeper than the walked bound
+  self-reports `path depth N > walked M` instead of failing silently. **A stale
+  path must never become a click** — a wrong click costs more than a failed one.
+
+What was deliberately NOT done: opaque element handles (they silently die across
+calls and the death is undetectable — the verified path is the checkable form of
+the same need), semantic tree diffs ("did it change" is already covered by the
+pixel-level `assert-changed` / `hash` route), silent fallbacks of any kind, and
+new third-party dependencies (still one file, zero dependencies).
+
 ## v2.3.0 — 2026-10-02
 
 A **code sync, not an incremental release**: this edition's `desktop.ps1` is brought to
