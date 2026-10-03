@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.5.3 — 2026-10-03
+
+Fix to the v2.5.2 value chain, measured on the machine that set the variable: a
+process environment block is a **startup snapshot**, so a long-lived host (and
+everything it spawns) never sees a User-level environment variable written after it
+started — with v2.5.2's env-only chain, `shots-cleanup --go` refused on exactly the
+machine that had configured `DTX_QUARANTINE`.
+
+- The resolution order is now: explicit `--quarantine <dir>` → `DTX_QUARANTINE` from
+  the **process environment** → `DTX_QUARANTINE` from the **User-scope registry** →
+  **Machine-scope registry** → refuse (exit 2, both remedies named, no path echoed).
+- The resolver returns the target together with the tier that answered (the command
+  echoes `resolved by: flag / env / user / machine`), and every precedence tier is
+  unit-pinned with injected probe values — the real registry is never touched by a
+  test. One additional check pins the live wiring on a process whose env block
+  predates the User value (the exact defect this release fixes); it skips with a
+  reason where that fixture does not exist.
+- The all-empty live refusal (every source empty for real) is verified once, manually
+  — making it testable in place would require deleting the User-scope value, which a
+  selftest must never do.
+
+Version bit 2.5.2 → 2.5.3 (a published command's default-behaviour fix).
+
 ## v2.5.2 — 2026-10-03
 
 Two behaviour-facing changes, both about not lying to the user or the maintainer.
