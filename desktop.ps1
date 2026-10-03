@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.5.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.5.2  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -235,6 +235,19 @@ function Get-ShotCleanupPlan($files, [int]$keep) {
   $bytes = 0L
   foreach ($m in $moveCol) { $bytes += [long]$m.Length }
   return @{ Keep = @($keepCol); Move = @($moveCol); Bytes = $bytes; KeptNames = @($stayNames); SidecarPairs = @($boundPairs) }
+}
+
+# v2.5.2: where shots-cleanup --go sends files. Pure on purpose: explicit --quarantine
+# wins, then the DTX_QUARANTINE environment variable, else $null (the CALLER refuses
+# with exit 2 and both remedy names, echoing no path - the refusal text lives with the
+# caller so this decision stays unit-testable without console writes). The previous
+# default was a machine-specific folder baked into the script; the iteration log for
+# v2.5.2 records how that slipped past the outbound scanner's WORK-ROOT shape.
+function Resolve-ShotsCleanupQuarantine([string]$Explicit) {
+  if (-not [string]::IsNullOrWhiteSpace("$Explicit")) { return "$Explicit" }
+  $envQ = $env:DTX_QUARANTINE
+  if (-not [string]::IsNullOrWhiteSpace("$envQ")) { return "$envQ" }
+  return $null
 }
 
 # Manifest line for a quarantined file: original path, SHA256, size, times and a
@@ -5150,6 +5163,69 @@ function Invoke-SelfTest([string[]]$Rest) {
     $scBody.Contains('$shown -lt 12') -and $scBody.Contains('... and $($plan.Move.Count - $shown) more') -and
     $scBody.Contains('if ($plan.Move.Count -gt $shown)'))
   Write-Output "      shot plan: keep=$(@($plan2.Keep).Count) move=$(@($plan2.Move).Count) bytes=$($plan2.Bytes)"
+
+  # ---------- unit + e2e: v2.5.2 shots-cleanup quarantine resolution (flag > env > refuse) ----------
+  # The resolver is pure, so the three branches are pinned as unit checks with the env
+  # var saved/cleared/restored AROUND each call - the branch taken never depends on how
+  # the OUTER process was launched (once the User-level DTX_QUARANTINE exists, a fresh
+  # shell inherits it, and a test that only worked because the var was absent would be
+  # a lying green). The refusal TEXT itself is user-visible behavior, so it is pinned
+  # end-to-end: a real child powershell strips the variable, runs the real dispatcher
+  # with --go, and must exit 2 naming both remedies without echoing any path. Safe by
+  # construction: the refusal fires before a single file is touched, and dry-run (the
+  # default) never needed the target in the first place.
+  $oldQ = $env:DTX_QUARANTINE
+  try {
+    $env:DTX_QUARANTINE = 'Q-env-value'
+    ST-Check 'unit: shots-cleanup quarantine resolver prefers an explicit --quarantine over DTX_QUARANTINE' ((Resolve-ShotsCleanupQuarantine 'Q-flag-value') -ceq 'Q-flag-value')
+    ST-Check 'unit: shots-cleanup quarantine resolver falls back to DTX_QUARANTINE when no flag is passed' ((Resolve-ShotsCleanupQuarantine '') -ceq 'Q-env-value')
+    $env:DTX_QUARANTINE = $null
+    ST-Check 'unit: shots-cleanup quarantine resolver refuses (no target) when neither flag nor env is present' ($null -eq (Resolve-ShotsCleanupQuarantine ''))
+    ST-Check 'unit: shots-cleanup quarantine resolver treats a whitespace-only env value as absent' ($null -eq (Resolve-ShotsCleanupQuarantine '   '))
+  } finally {
+    $env:DTX_QUARANTINE = $oldQ
+  }
+  # ---------- e2e: v2.5.2 the refusal is real user-visible behavior ----------
+  # The refusal text is user-facing, so it is pinned END-TO-END: a child powershell
+  # strips DTX_QUARANTINE from its environment and runs shots-cleanup --go --keep 0
+  # against a THROWAWAY COPY of this script in a temp dir. A copy's shots\ belongs to
+  # the copy (OutDir is $PSScriptRoot\shots), so the real shots dir and every real
+  # capture file stay out of this test by construction - even a resolver bug could not
+  # move a real file. --keep 0 guarantees the plan has something to move (otherwise
+  # "nothing to do" would exit 0 before the resolver is ever reached). The child must:
+  # exit 2, name both remedies, and echo no path in the refusal line.
+  $qTmp = Join-Path $env:TEMP ('st_qe2e_' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $qTmp | Out-Null
+  $qScriptCopy = Join-Path $qTmp 'desktop.ps1'
+  Copy-Item -LiteralPath $self -Destination $qScriptCopy
+  $qE2eDir = Join-Path $qTmp 'shots'
+  New-Item -ItemType Directory -Force -Path $qE2eDir | Out-Null
+  $qProbe = Join-Path $qE2eDir 'st-qe2e-probe.png'
+  [void](New-Item -ItemType File -Force -Path $qProbe)
+  try {
+    $qPsi = New-Object System.Diagnostics.ProcessStartInfo
+    $qPsi.FileName = 'powershell.exe'
+    $qPsi.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $qScriptCopy + '" shots-cleanup --go --keep 0'
+    $qPsi.UseShellExecute = $false
+    $qPsi.RedirectStandardOutput = $true
+    $qPsi.RedirectStandardError = $true
+    # A REBUILT environment block (machine + user registry, DTX_QUARANTINE explicitly
+    # removed): the branch-3 refusal must not depend on how THIS process was launched,
+    # and the child must be a -File invocation so the script's `exit 2` becomes the
+    # process exit code (a -Command + & wrapper swallows it).
+    foreach ($kv in [Environment]::GetEnvironmentVariables('Machine').GetEnumerator()) { $qPsi.EnvironmentVariables[$kv.Key] = $kv.Value }
+    foreach ($kv in [Environment]::GetEnvironmentVariables('User').GetEnumerator()) { $qPsi.EnvironmentVariables[$kv.Key] = $kv.Value }
+    [void]$qPsi.EnvironmentVariables.Remove('DTX_QUARANTINE')
+    $qProc = [System.Diagnostics.Process]::Start($qPsi)
+    $qOut = $qProc.StandardOutput.ReadToEnd() + $qProc.StandardError.ReadToEnd()
+    $qProc.WaitForExit()
+    $qErrLine = @($qOut -split "`r?`n" | Where-Object { $_ -match '^ERROR: shots-cleanup' } | Select-Object -First 1)
+    ST-Check 'e2e: shots-cleanup --go with no flag and no DTX_QUARANTINE exits 2, names both remedies, echoes no path' (
+      ($qProc.ExitCode -eq 2) -and ("$qOut").Contains('--quarantine') -and ("$qOut").Contains('DTX_QUARANTINE') -and
+      ("$qOut") -notmatch 'cleanup_quarantine' -and @($qErrLine).Count -eq 1 -and ("$qErrLine" -notmatch '[A-Za-z]:\\'))
+  } finally {
+    Remove-Item -LiteralPath $qTmp -Recurse -Force -ErrorAction SilentlyContinue
+  }
 
   # ---------- unit: v1.5.3 R-06 same-process popup delta ----------
   # The RULE is pure (which handles count as newly on top), the enumeration is
@@ -11104,7 +11180,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.5.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.5.2 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11620,12 +11696,16 @@ desktop.ps1 v2.5.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     without limit - 100MB/213 files in 3 days was
                                     measured). DRY RUN by default: lists what
                                     would go. --go MOVES the files into the
-                                    machine's quarantine folder and appends
+                                    quarantine folder and appends
                                     MANIFEST.md with original path + SHA256 +
                                     size + times, so nothing is ever deleted and
                                     every move can be undone. A .map.txt sidecar
                                     always travels with its own image. Newest n
-                                    images stay (default 100).
+                                    images stay (default 100). The --go target:
+                                    --quarantine <dir> wins, else the
+                                    DTX_QUARANTINE environment variable, else the
+                                    command refuses (exit 2) naming both remedies -
+                                    no baked-in machine path (v2.5.2).
 
     help [<cmd>|--<flag>]           this page with no argument; ONE command's entry as
                                     'help shot'; every line that mentions a flag as
@@ -14609,13 +14689,17 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
       # default; --go does NOT delete - it moves the files into the machine's
       # designated quarantine folder and appends a MANIFEST.md line per file
       # (original path + SHA256 + size + times), so every move can be undone.
-      $keepN = 100; $go = $false
-      $quar = 'D:\' + [char]0x5DE5 + [char]0x4F5C + [char]0x73AF + [char]0x5883 + '\' + '_cleanup_quarantine_2026-09-26'
+      # v2.5.2: the --go target is no longer a machine-specific folder baked into
+      # the script - an explicit --quarantine wins, then the DTX_QUARANTINE
+      # environment variable, else the command REFUSES (exit 2) naming both
+      # remedies and echoing no path. Dry run never needed the target, so it
+      # works unchanged on a machine with neither source configured.
+      $keepN = 100; $go = $false; $quarFlag = ''
       $words = @($Rest)
       for ($i = 0; $i -lt $words.Count; $i++) {
         if ($words[$i] -eq '--keep') { $i++; $keepN = [int]$words[$i] }
         elseif ($words[$i] -eq '--go') { $go = $true }
-        elseif ($words[$i] -eq '--quarantine') { $i++; $quar = $words[$i] }
+        elseif ($words[$i] -eq '--quarantine') { $i++; $quarFlag = $words[$i] }
         else { throw "shots-cleanup: unknown flag '$($words[$i])' (valid: --keep <n> | --go | --quarantine <dir>)" }
       }
       if ($keepN -lt 0) { throw "shots-cleanup: --keep must be >= 0, got: $keepN" }
@@ -14633,6 +14717,16 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
       }
       if ($plan.Move.Count -gt $shown) { "  ... and $($plan.Move.Count - $shown) more" }
       if (-not $go) { 'DRY RUN - nothing moved. Pass --go to MOVE them to the quarantine folder (never delete).'; exit 0 }
+      # v2.5.2: resolve the --go target here (only --go needs one). Refusal and the
+      # missing-folder branch below are DIFFERENT failures and stay separate: this one
+      # means "no target was configured at all", that one means "the configured target
+      # is not there".
+      $quar = Resolve-ShotsCleanupQuarantine $quarFlag
+      if (-not $quar) {
+        Write-Output 'ERROR: shots-cleanup --go refused: no quarantine target. Pass --quarantine <dir> or set the DTX_QUARANTINE environment variable; the baked-in machine default was removed on purpose.'
+        exit 2
+      }
+      "shots-cleanup: quarantine target resolved by: $(if ('' -ne "$quarFlag") { '--quarantine flag' } else { 'DTX_QUARANTINE environment variable' })"
       $stamp = (Get-Date).ToString('yyyyMMddTHHmmss')
       $dest = Join-Path $quar ('shots_' + $stamp)
       if (-not (Test-Path -LiteralPath $quar)) { throw "shots-cleanup: quarantine folder does not exist: $quar - create it first or pass --quarantine <existing parent>" }

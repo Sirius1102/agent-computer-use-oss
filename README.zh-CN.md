@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v2.5.1
+# Agent Computer Use 开源版 v2.5.2
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=617%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=622%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -153,7 +153,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `a11y-probe <sel> [bigDepth]` | 只读：两个深度下的控件数 + 页面区可交互控件数 → `page-tree=exposed|collapsed`，即 `uia-*` 到底能不能驱动这个应用 |
 | `challenge-probe <sel>` | 只读：对验证码做 OCR，给出匹配 / 置信度 / 是否陈旧 + 人工接管信息块。**设计上不含求解器**（见限制 12） |
 | `status-summary [--json]` | 只读汇总一次工作区状态：HEAD、是否干净 / 领先、离线 selftest 三数、最新一次 live 日志及其红位数、残留的夹具窗口 |
-| `shots-cleanup [--keep n] [--go] [--quarantine <目录>]` | 给运行期截图目录封顶 —— **默认空跑**；`--go` 是把文件**移入**隔离目录并写清单，不是删除 |
+| `shots-cleanup [--keep n] [--go] [--quarantine <目录>]` | 给运行期截图目录封顶 —— **默认空跑**；`--go` 是把文件**移入**隔离目录并写清单，不是删除。`--go` 的目标：`--quarantine <目录>` 优先，其次 `DTX_QUARANTINE` 环境变量，两者都没有就拒绝执行（exit 2）并点名两条出路——不再内置任何机器专属路径 |
 | `help [<命令>|--<旗标>]` | 不带参数是本页；`help shot` 只看一条；`help --grid` 打印提到该旗标的所有行 |
 
 ### 断言（退出码检查点，绝不点击）

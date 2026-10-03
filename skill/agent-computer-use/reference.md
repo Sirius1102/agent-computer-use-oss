@@ -120,7 +120,7 @@ Clipboard write-back is verified; a clipboard that cannot be confirmed is report
 
 - `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]` — a JSON array of steps in ONE process; `"to"` per step = foreground guard; asserts as checkpoints; `require-popup` arms a popup survival guard for later steps; `press-down`/`drag-to`/`press-up` are valid steps.
 - `replay [<actions.log>] [--last n] [--grep s] [--go]` — re-run recorded act/text/clipboard commands; DRY by default. Redacted payloads (`<redacted:Nchars>`) are refused, never typed as placeholders.
-- `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` — bound the screenshot folder; dry by default; `--go` moves files into a quarantine dir with a MANIFEST (nothing is deleted).
+- `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` — bound the screenshot folder; dry by default; `--go` moves files into a quarantine dir with a MANIFEST (nothing is deleted). The `--go` target: `--quarantine <dir>` wins, else the `DTX_QUARANTINE` environment variable, else the command refuses (exit 2) naming both remedies — no baked-in machine path.
 
 ## Occlusion (reads and guards)
 

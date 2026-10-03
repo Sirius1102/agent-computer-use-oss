@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.5.2 — 2026-10-03
+
+Two behaviour-facing changes, both about not lying to the user or the maintainer.
+
+- **`shots-cleanup --go` no longer carries a machine-specific default target.** The
+  previous default was a personal folder baked into the script (spelled in character
+  codes, which is exactly how it slipped past the outbound content scanner's
+  drive-letter-path rules — see the project iteration log for that blind spot). The
+  target is now resolved per call: an explicit `--quarantine <dir>` wins, then the
+  `DTX_QUARANTINE` environment variable, else the command **refuses** (exit 2) naming
+  both remedies and echoing no path. The refusal ("no target configured") and the
+  pre-existing "quarantine folder does not exist" failure are separate branches. Dry
+  run — the default — never needed the target and works unchanged. The resolver is a
+  pure function pinned by unit checks, and the refusal is pinned end-to-end by a
+  subprocess check that strips the variable and demands exit 2 with no path echoed.
+- **The README selftest badge is now pinned by a lint.** The badge is a count, not a
+  status (`617 checks` was an honest snapshot with no teeth); the selftest's final
+  check asserts both README badges state the same number AND that it equals the run's
+  own passed total, so the badge can no longer drift from reality when checks are
+  added. With this release's six new checks the badge reads **623 checks**.
+
+Version bit 2.5.1 → 2.5.2 (a published command's default behaviour changed); no other
+command's behaviour moved.
+
 ## v2.5.1 — 2026-10-03
 
 Project page and engineering shell: documentation and repo scaffolding only —

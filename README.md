@@ -1,10 +1,10 @@
-# Agent Computer Use (Open Source Edition) v2.5.1
+# Agent Computer Use (Open Source Edition) v2.5.2
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=617%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=622%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -161,7 +161,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `a11y-probe <sel> [bigDepth]` | read-only: control counts at two depths + interactive controls in the page area → `page-tree=exposed|collapsed`, i.e. whether `uia-*` can drive this app at all |
 | `challenge-probe <sel>` | read-only: OCR a verification challenge and report match/confidence/staleness + a handoff block. **There is no solver, by design** (see limitation 12) |
 | `status-summary [--json]` | read-only checkpoint of a working copy: HEAD, clean/ahead, offline selftest counts, newest live log and its red count, leftover fixture windows |
-| `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` | bound the runtime screenshot folder — **dry run by default**, and `--go` *moves* files to a quarantine folder with a manifest instead of deleting them |
+| `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` | bound the runtime screenshot folder — **dry run by default**, and `--go` *moves* files to a quarantine folder with a manifest instead of deleting them; the `--go` target is `--quarantine <dir>`, else the `DTX_QUARANTINE` environment variable, else the command refuses (exit 2) naming both — no baked-in machine path |
 | `help [<cmd>|--<flag>]` | this page, one command's entry, or every line mentioning one flag |
 
 ### assertions (exit-code checkpoints, nothing is clicked)
