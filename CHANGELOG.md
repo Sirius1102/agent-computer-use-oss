@@ -31,6 +31,11 @@ Project page and engineering shell: documentation and repo scaffolding only —
   markdown files.
 - Version bit 2.5.0 → 2.5.1 across the five carriers (header comment, usage banner,
   both README H1s, this changelog's top entry); historical version numbers unchanged.
+- Same-day addendum (badge honesty): the static selftest badge now states a **count**,
+  not a state — "selftest | 617 checks" in a neutral colour, replacing the ever-green
+  "offline gate" image, so nothing on the page reads as continuous verification. The
+  count is the offline gate's check total at this release; update the badge in the same
+  commit as any future change to that total.
 
 ## v2.5.0 — 2026-10-02
 
