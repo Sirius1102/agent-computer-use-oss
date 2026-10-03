@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.5.4  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.6.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -254,6 +254,100 @@ function Resolve-ShotsCleanupQuarantine([string]$Explicit, [string]$EnvProbe = $
   if (-not [string]::IsNullOrWhiteSpace("$UserProbe")) { return @{ Dir = "$UserProbe"; Source = 'user' } }
   if (-not [string]::IsNullOrWhiteSpace("$MachineProbe")) { return @{ Dir = "$MachineProbe"; Source = 'machine' } }
   return @{ Dir = $null; Source = $null }
+}
+
+# v2.6.0: the move-and-record body, extracted from the 'shots-cleanup --go' branch so the
+# automatic trim and the manual command share ONE implementation. Two copies of a loop
+# that touches a user's files is how a fix lands in one path and silently not the other.
+# Never deletes: each file is moved within the volume (so CreationTime survives) and gets
+# a MANIFEST line with its SHA256, which is what makes an automatic action undoable.
+function Move-ShotsToQuarantine($moveItems, [string]$quar, [string]$prefix, [string]$heading) {
+  $items = @($moveItems)
+  if (-not (Test-Path -LiteralPath $quar)) { throw "quarantine folder does not exist: $quar" }
+  $dest = Join-Path $quar ($prefix + (Get-Date -Format 'yyyyMMddTHHmmss'))
+  [void](New-Item -ItemType Directory -Force -Path $dest)
+  $manifest = Join-Path $quar 'MANIFEST.md'
+  $logLines = New-Object System.Collections.ArrayList
+  $failTxt = New-Object System.Collections.ArrayList
+  $movedN = 0; $failN = 0
+  foreach ($m in $items) {
+    $target = Join-Path $dest $m.Name
+    try {
+      $sha = (Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash
+      Move-Item -LiteralPath $m.FullName -Destination $target -Force
+      [void]$logLines.Add((Get-QuarantineManifestEntry $m.FullName $target $sha $m))
+      $movedN++
+    } catch {
+      $failN++
+      [void]$failTxt.Add("  FAILED to move $($m.Name): $($_.Exception.Message)")
+    }
+  }
+  if ($logLines.Count -gt 0) {
+    $header = ''
+    if (-not (Test-Path -LiteralPath $manifest)) { $header = "# Cleanup manifest - $quar" + "`r`n`r`n" }
+    $body = $header + ($heading + "`r`n`r`n") + (($logLines -join "`r`n") + "`r`n")
+    [System.IO.File]::AppendAllText($manifest, $body, (New-Object System.Text.UTF8Encoding($false)))
+  }
+  # Nothing is written to the success stream: the manual command prints these, and the
+  # capture path appends them to its own echo array. A function that returns a value must
+  # not also Write-Output, or the caller's array silently gains lines it never asked for.
+  return @{ Moved = $movedN; Failed = $failN; Dest = $dest; Quar = $quar; Manifest = $manifest; Failures = @($failTxt) }
+}
+
+# v2.6.0: policy for the automatic trim, as a PURE function so both knobs are unit-pinned
+# without moving a single file. DTX_SHOT_AUTOTRIM=0|off|false turns the mechanism off;
+# DTX_SHOT_KEEP=<n> sets how many newest captures stay. Defaults match the manual
+# command's own --keep default so there is exactly one number to remember.
+# NOTE on the env tiers: the default is ON, and the variables only ever turn it DOWN or
+# off, so the "resident host cannot see a later-set variable" trap (v2.5.3) fails SAFE
+# here - an unapplied setting keeps trimming at the default rather than stopping.
+function Get-ShotAutoTrimPolicy([string]$switchProbe = $env:DTX_SHOT_AUTOTRIM, [string]$keepProbe = $env:DTX_SHOT_KEEP, [int]$defaultKeep = 100) {
+  $on = $true
+  $s = "$switchProbe".Trim().ToLowerInvariant()
+  if ($s -eq '0' -or $s -eq 'off' -or $s -eq 'false' -or $s -eq 'no') { $on = $false }
+  $keep = $defaultKeep
+  $k = "$keepProbe".Trim()
+  if ($k -ne '') {
+    $parsed = 0
+    if ([int]::TryParse($k, [ref]$parsed)) { if ($parsed -lt 0) { $parsed = 0 }; $keep = $parsed }
+  }
+  return @{ Enabled = $on; Keep = $keep }
+}
+
+# v2.6.0: bound the capture folder WITHOUT being asked. `shots-cleanup` has existed since
+# v1.5.2 and nobody ever ran it: the folder reached 455 PNGs / 132 MB by 2026-10-03. The
+# audit log has self-archived on size since v1.4.1 (Invoke-LogRotation), so the pattern is
+# already in this file - captures now follow it.
+# Runs after a capture is written, so the file the caller just asked for is inside the
+# newest $keep and cannot be swept. Skips entirely (no side effect, one line of output)
+# when nothing is over the bound, when the quarantine is not configured, or during
+# selftest - a live run must never have its own fixtures moved out from under it.
+# $Dir is a parameter so the whole path is testable against a temp folder; -Keep and
+# -QuarOverride let a test pin the policy and the target WITHOUT touching the registry or
+# the process env, so the e2e exercises the real move code on a throwaway directory.
+function Trim-ShotDir([string]$Dir = $OutDir, [string]$why = 'after-capture', [int]$Keep = -1, [string]$QuarOverride = '') {
+  if ($script:NoAutoTrim) { return $null }
+  $pol = Get-ShotAutoTrimPolicy
+  if ($Keep -ge 0) { $pol = @{ Enabled = $pol.Enabled; Keep = $Keep } }
+  if (-not $pol.Enabled) { return $null }
+  if (-not (Test-Path -LiteralPath $Dir)) { return $null }
+  $all = @(Get-ChildItem -LiteralPath $Dir -File | Where-Object { $_.Name -like '*.png' -or $_.Name -like '*.jpg' -or $_.Name -like '*.map.txt' })
+  $plan = Get-ShotCleanupPlan $all $pol.Keep
+  if (@($plan.Move).Count -eq 0) { return $null }
+  $q = Resolve-ShotsCleanupQuarantine $QuarOverride
+  if (-not $q.Dir) {
+    return @{ Moved = 0; Failed = 0; Skipped = 'no-target'; Note = ('auto-trim: skipped, no quarantine target for ' + @($plan.Move).Count + ' file(s) - pass --quarantine or set DTX_QUARANTINE (see ''help shots-cleanup'')') }
+  }
+  if (-not (Test-Path -LiteralPath $q.Dir)) {
+    return @{ Moved = 0; Failed = 0; Skipped = 'missing-dir'; Note = ('auto-trim: skipped, the ' + $q.Source + '-scope quarantine folder does not exist') }
+  }
+  $heading = '## auto-trim v2.6.0 ' + (Get-Date).ToString('yyyy-MM-dd HH:mm') + ' UTC (' + $why + ', keep newest ' + $pol.Keep + ', moved ' + @($plan.Move).Count + ')'
+  $r = Move-ShotsToQuarantine $plan.Move $q.Dir 'shots_auto_' $heading
+  $r.Skipped = $null
+  $r.Keep = $pol.Keep
+  $r.Note = ('auto-trim: moved ' + $r.Moved + ' capture file(s) to the quarantine folder (keep newest ' + $pol.Keep + ', ' + $why + ') - nothing was deleted')
+  Log-Action @('auto-trim', '--keep', "$($pol.Keep)", $why) "moved=$($r.Moved) failed=$($r.Failed) dest=$($r.Dest)"
+  return $r
 }
 
 # Manifest line for a quarantined file: original path, SHA256, size, times and a
@@ -746,6 +840,9 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     }
   }
   if ($mapKind) { [void]$lines.Add("map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only - no manual ix/scale math)") }
+  # v2.6.0: the capture-folder trim is NOT hooked here - it runs once at the tail of
+  # Invoke-DesktopCommand, because `zoom` saves its own bitmap and would have slipped a
+  # hook placed here (proved by a real run, not by reading the code).
   return ,$lines
 }
 
@@ -4884,6 +4981,12 @@ function Get-BadgeCheckTotal([int]$Passed, [int]$Failed, [int]$Skipped) {
 }
 
 function Invoke-SelfTest([string[]]$Rest) {
+  # v2.6.0: a selftest run must never have its own captures moved out from under it -
+  # `--live` writes st-* fixtures early and reads them back later, and the automatic
+  # trim after each capture would sweep exactly the files still to be asserted. The flag
+  # is never cleared: selftest is terminal for the process, and the worst a later command
+  # in the same process can suffer is one skipped trim.
+  $script:NoAutoTrim = $true
   $live = @($Rest) -contains '--live'
   $script:StPass = 0; $script:StFail = 0; $script:StSkip = 0
   $script:StPassLines = New-Object System.Collections.ArrayList
@@ -5218,6 +5321,107 @@ function Invoke-SelfTest([string[]]$Rest) {
   } else {
     ST-Skip 'unit: shots-cleanup quarantine resolver live run reaches the registry fallback when the env block predates the User value (fixture = this machine)' 'fixture absent here (process env carries the variable, or no User-scope value) - precedence itself is pinned by the injected-probe checks above'
   }
+
+  # ---------- v2.6.0: the automatic capture-folder trim ----------
+  # Policy is pure, so both knobs are pinned with injected probes and no file moves.
+  ST-Check 'unit: auto-trim defaults to on, with the same keep as the manual command' (
+    ((Get-ShotAutoTrimPolicy '').Enabled -eq $true) -and ((Get-ShotAutoTrimPolicy '').Keep -eq 100))
+  ST-Check 'unit: auto-trim switches off on 0/off/false/no, case and space insensitive' (
+    ((Get-ShotAutoTrimPolicy '0').Enabled -eq $false) -and ((Get-ShotAutoTrimPolicy ' OFF ').Enabled -eq $false) -and ((Get-ShotAutoTrimPolicy 'False').Enabled -eq $false) -and ((Get-ShotAutoTrimPolicy 'no').Enabled -eq $false))
+  ST-Check 'unit: auto-trim treats any other switch value as ON - a typo must not silently stop it' (
+    ((Get-ShotAutoTrimPolicy '1').Enabled -eq $true) -and ((Get-ShotAutoTrimPolicy 'on').Enabled -eq $true) -and ((Get-ShotAutoTrimPolicy 'maybe').Enabled -eq $true))
+  ST-Check 'unit: auto-trim keep honours a number, clamps negatives to zero, ignores garbage' (
+    ((Get-ShotAutoTrimPolicy '' '25').Keep -eq 25) -and ((Get-ShotAutoTrimPolicy '' '0').Keep -eq 0) -and ((Get-ShotAutoTrimPolicy '' '-5').Keep -eq 0) -and ((Get-ShotAutoTrimPolicy '' 'abc').Keep -eq 100) -and ((Get-ShotAutoTrimPolicy '' '').Keep -eq 100))
+
+  # The MOVE touches user files, so it runs END-TO-END on a temp folder against a temp
+  # quarantine: the assertions are about files on disk, and nothing here can reach the
+  # real shots\ or the real quarantine. The guard flag is saved and cleared around it,
+  # which also pins the flag itself: ON must refuse, OFF must move.
+  $atTmp = Join-Path $env:TEMP ('st_autotrim_' + [guid]::NewGuid().ToString('N'))
+  $atShots = Join-Path $atTmp 'shots'; $atQuar = Join-Path $atTmp 'quar'
+  New-Item -ItemType Directory -Force -Path $atShots | Out-Null
+  New-Item -ItemType Directory -Force -Path $atQuar | Out-Null
+  $atBase = (Get-Date).AddHours(-3)
+  foreach ($an in @('a1', 'a2', 'a3')) {
+    $p = Join-Path $atShots ($an + '.png'); $s = Join-Path $atShots ($an + '.png.map.txt')
+    [System.IO.File]::WriteAllBytes($p, (New-Object byte[] 200))
+    [System.IO.File]::WriteAllText($s, "screen = image + (0,0)`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $t = $atBase.AddMinutes(([int]($an.Substring(1)) * 10))
+    (Get-Item -LiteralPath $p).LastWriteTime = $t; (Get-Item -LiteralPath $s).LastWriteTime = $t
+  }
+  [System.IO.File]::WriteAllText((Join-Path $atShots 'actions.log'), "audit line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  try {
+    # The guard is ON here because Invoke-SelfTest armed it, so the run below has to
+    # disarm it EXPLICITLY - "save and restore" would restore it to ON and the whole
+    # e2e would pass by moving nothing (which is exactly how these four checks first
+    # presented: green-looking assertions over a null result).
+    $script:NoAutoTrim = $true
+    $atBlocked = Trim-ShotDir -Dir $atShots -why 'selftest' -Keep 1 -QuarOverride $atQuar
+    $script:NoAutoTrim = $false
+    $atRun1 = Trim-ShotDir -Dir $atShots -why 'selftest' -Keep 1 -QuarOverride $atQuar
+    $atRun2 = Trim-ShotDir -Dir $atShots -why 'selftest' -Keep 1 -QuarOverride $atQuar
+    $script:NoAutoTrim = $true
+    $atManifest = Join-Path $atQuar 'MANIFEST.md'
+    $atDest = @($atRun1.Dest)
+    $atMovedFiles = @()
+    if ($atRun1) { $atMovedFiles = @(Get-ChildItem -LiteralPath $atRun1.Dest -File | ForEach-Object { $_.Name }) }
+    ST-Check 'unit: auto-trim refuses while the selftest guard flag is set (live fixtures stay put)' ($null -eq $atBlocked)
+    ST-Check 'e2e: auto-trim moves the over-bound images WITH their sidecars and keeps the newest' (
+      ($null -ne $atRun1) -and ($atRun1.Moved -eq 4) -and ($atRun1.Failed -eq 0) -and (Test-Path -LiteralPath (Join-Path $atShots 'a3.png')) -and (-not (Test-Path -LiteralPath (Join-Path $atShots 'a1.png'))) -and (-not (Test-Path -LiteralPath (Join-Path $atShots 'a2.png.map.txt'))))
+    ST-Check 'e2e: auto-trim leaves the audit log alone - it is not a capture' (Test-Path -LiteralPath (Join-Path $atShots 'actions.log'))
+    ST-Check 'e2e: auto-trim lands the files in the quarantine folder, nothing is deleted' (
+      (@($atMovedFiles | Where-Object { $_ -in @('a1.png', 'a1.png.map.txt', 'a2.png', 'a2.png.map.txt') }).Count -eq 4) -and ($atRun1.Moved -eq $atMovedFiles.Count))
+    ST-Check 'e2e: auto-trim writes a MANIFEST section naming every original path with its SHA256' (
+      (Test-Path -LiteralPath $atManifest) -and ((Get-Content -Raw -LiteralPath $atManifest) -match 'auto-trim v2\.6\.0') -and (((Get-Content -Raw -LiteralPath $atManifest) -split "`n" | Where-Object { $_ -match '^\- ' -and $_ -match 'sha256: ' }).Count -eq 4))
+    ST-Check 'e2e: auto-trim is a no-op once the folder is under the bound (it does not churn)' ($null -eq $atRun2)
+    ST-Check 'e2e: auto-trim states its own bound and the no-deletion promise in the note' (
+      ("$($atRun1.Note)" -match 'keep newest 1') -and ("$($atRun1.Note)" -match 'nothing was deleted'))
+  } finally {
+    if (Test-Path -LiteralPath $atTmp) { Remove-Item -LiteralPath $atTmp -Recurse -Force }
+  }
+  # Tokens are assembled at runtime so THIS check's own lines never satisfy the shapes it
+  # counts - the same evasion the README badge lint uses, and for the same reason.
+  $mvTok = '= Move-ShotsTo' + 'Quarantine '
+  $trTok = 'Trim-ShotDir $O' + 'utDir'
+  $miTok = 'Move-Item -LiteralPath $m.Fu' + 'llName'
+  $gdTok = 'script:NoAutoTrim = $t' + 'rue'
+  $stDefIdx = -1
+  for ($gi = 0; $gi -lt $codeLines.Count; $gi++) {
+    if ($codeLines[$gi] -match '^function Invoke-SelfTest') { $stDefIdx = $gi; break }
+  }
+  $guardArmed = $false
+  if ($stDefIdx -ge 0) {
+    for ($gj = $stDefIdx; $gj -lt [math]::Min($stDefIdx + 14, $codeLines.Count); $gj++) {
+      if ($codeLines[$gj].Contains($gdTok)) { $guardArmed = $true }
+    }
+  }
+  ST-Check 'lint: the move-and-manifest loop exists exactly once, shared by the command and the trim' (
+    (@($codeLines | Where-Object { $_.Contains($mvTok) }).Count -eq 2) -and (@($codeLines | Where-Object { $_.Contains($miTok) }).Count -eq 1))
+  # The trim must have EXACTLY ONE call site and it must be the dispatch tail - a hook on
+  # Save-RectEx alone was the v2.6.0 first draft and a real `zoom` (which saves its own
+  # bitmap) proved files could be written without ever reaching it.
+  $idcStart = -1; $idcEnd = $codeLines.Count
+  for ($ki = 0; $ki -lt $codeLines.Count; $ki++) {
+    if ($codeLines[$ki] -match '^function Invoke-DesktopCommand') { $idcStart = $ki; continue }
+    if ($idcStart -ge 0 -and $ki -gt $idcStart -and $codeLines[$ki] -match '^function ') { $idcEnd = $ki; break }
+  }
+  $trAll = @($codeLines | Where-Object { $_.Contains($trTok) })
+  $trInDispatch = @($codeLines[$idcStart..($idcEnd - 1)] | Where-Object { $_.Contains($trTok) })
+  ST-Check 'lint: the capture path actually calls the trim, and Invoke-SelfTest actually arms the guard' (
+    ($idcStart -ge 0) -and (@($trAll).Count -eq 1) -and (@($trInDispatch).Count -eq 1) -and $guardArmed)
+  # The whole safety property of an AUTOMATIC pass is that it moves. M6 in the mutation
+  # rig (swap Move-Item for Copy-Item + Remove-Item) was only caught by the "one loop"
+  # lint as a side effect, so the promise gets its own direct check: scan the mover's own
+  # body for any deletion primitive.
+  $mvStart = -1; $mvEnd = $codeLines.Count
+  for ($mi = 0; $mi -lt $codeLines.Count; $mi++) {
+    if ($codeLines[$mi] -match '^function Move-ShotsToQuarantine') { $mvStart = $mi; continue }
+    if ($mvStart -ge 0 -and $mi -gt $mvStart -and $codeLines[$mi] -match '^function ') { $mvEnd = $mi; break }
+  }
+  $mvBody = ''
+  if ($mvStart -ge 0) { $mvBody = ($codeLines[$mvStart..($mvEnd - 1)] -join "`n") }
+  ST-Check 'lint: the quarantine mover contains no deletion primitive - an automatic pass may only move' (
+    ($mvStart -ge 0) -and ($mvBody.Length -gt 200) -and (-not $mvBody.Contains('Remove-Item')) -and (-not $mvBody.Contains('Remove-ItemRecursively')) -and (-not $mvBody.Contains('[System.IO.File]::Delete')) -and (-not $mvBody.Contains('del ')))
 
   # ---------- unit: v1.5.3 R-06 same-process popup delta ----------
   # The RULE is pure (which handles count as newly on top), the enumeration is
@@ -11204,7 +11408,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.5.4 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.6.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11731,6 +11935,25 @@ desktop.ps1 v2.5.4 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     from the User-scope registry, then Machine-scope,
                                     else the command refuses (exit 2) naming both
                                     remedies - no baked-in machine path (v2.5.2/v2.5.3).
+                                    SINCE v2.6.0 THIS ALSO RUNS BY ITSELF: every
+                                    capture (shot / zoom / imgclick / chrome-* /
+                                    challenge-probe) trims the folder to the newest
+                                    100 images right after writing its own file, so
+                                    nobody has to remember this command. Same rules as
+                                    --go - MOVE, never delete, one MANIFEST line per
+                                    file with its SHA256, sidecars travel with their
+                                    image. It says nothing when there is nothing over
+                                    the bound, and it prints 'auto-trim: moved N ...'
+                                    when it acts. It skips itself during selftest (a
+                                    live run's own fixtures must not move) and when no
+                                    quarantine is configured - then it prints why.
+                                    Knobs: DTX_SHOT_KEEP=<n> changes the bound,
+                                    DTX_SHOT_AUTOTRIM=0|off|false|no stops the automatic
+                                    pass (the command still works by hand). Both are
+                                    read from the process environment, so a host that
+                                    was already running when you set them needs a
+                                    restart - and the default is ON, so a setting that
+                                    did not land keeps trimming rather than stopping.
 
     help [<cmd>|--<flag>]           this page with no argument; ONE command's entry as
                                     'help shot'; every line that mentions a flag as
@@ -14756,39 +14979,26 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
         exit 2
       }
       "shots-cleanup: quarantine target resolved by: $($qResolved.Source)"
-      $stamp = (Get-Date).ToString('yyyyMMddTHHmmss')
-      $dest = Join-Path $quar ('shots_' + $stamp)
       if (-not (Test-Path -LiteralPath $quar)) { throw "shots-cleanup: quarantine folder does not exist: $quar - create it first or pass --quarantine <existing parent>" }
-      [void](New-Item -ItemType Directory -Force -Path $dest)
-      $manifest = Join-Path $quar 'MANIFEST.md'
-      $logLines = New-Object System.Collections.ArrayList
-      $movedN = 0; $failN = 0
-      foreach ($m in $plan.Move) {
-        $target = Join-Path $dest $m.Name
-        try {
-          $sha = (Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash
-          Move-Item -LiteralPath $m.FullName -Destination $target -Force
-          $entry = Get-QuarantineManifestEntry $m.FullName $target $sha $m
-          [void]$logLines.Add($entry)
-          $movedN++
-        } catch {
-          $failN++
-          Write-Output "  FAILED to move $($m.Name): $($_.Exception.Message)"
-        }
-      }
-      if ($logLines.Count -gt 0) {
-        $header = ''
-        if (-not (Test-Path -LiteralPath $manifest)) { $header = "# Cleanup manifest - $quar" + "`r`n`r`n" }
-        $body = $header + ("## shots-cleanup v1.5.2 " + (Get-Date).ToString('yyyy-MM-dd HH:mm') + " UTC (keep newest $keepN, moved $movedN)" + "`r`n`r`n") + (($logLines -join "`r`n") + "`r`n")
-        [System.IO.File]::AppendAllText($manifest, $body, (New-Object System.Text.UTF8Encoding($false)))
-      }
-      Log-Action @("shots-cleanup", "--keep", "$keepN", '--go') "moved=$movedN failed=$failN dest=$dest"
-      "shots-cleanup: moved $movedN file(s) to $dest (manifest: $manifest), $failN failed - nothing was deleted"
-      if ($failN -gt 0) { exit 1 }
+      # v2.6.0: the loop moved into Move-ShotsToQuarantine so the automatic trim uses the
+      # same code. The heading text, the MANIFEST format and both echo lines are unchanged.
+      $qHeading = "## shots-cleanup v1.5.2 " + (Get-Date).ToString('yyyy-MM-dd HH:mm') + " UTC (keep newest $keepN, moved $(@($plan.Move).Count))"
+      $qRes = Move-ShotsToQuarantine $plan.Move $quar 'shots_' $qHeading
+      foreach ($ft in @($qRes.Failures)) { "$ft" }
+      Log-Action @("shots-cleanup", "--keep", "$keepN", '--go') "moved=$($qRes.Moved) failed=$($qRes.Failed) dest=$($qRes.Dest)"
+      "shots-cleanup: moved $($qRes.Moved) file(s) to $($qRes.Dest) (manifest: $($qRes.Manifest)), $($qRes.Failed) failed - nothing was deleted"
+      if ($qRes.Failed -gt 0) { exit 1 }
     }
 
     default { throw "unknown command: $Cmd (run 'desktop.ps1 help')" }
   }
+  # v2.6.0: bound the capture folder after EVERY command, not just the ones that go
+  # through Save-RectEx - the first version of this hook sat in Save-RectEx and a real
+  # `zoom` proved it missed: zoom builds its own bitmap and saves it directly. Putting it
+  # here means no current or future command can produce a file the trim never sees, and
+  # there is exactly one call site to keep honest (a lint pins it).
+  $trimNote = Trim-ShotDir $OutDir 'after-command'
+  if ($trimNote) { "$($trimNote.Note)"; foreach ($ft in @($trimNote.Failures)) { "$ft" } }
   # v1.5.7 (D-7) safety net: 22 commands resolve a window and only 9 used to print the
   # note channel, so `focus <pid>` landing on a promo popup printed nothing about it -
   # the exact thing D-7 reported. Every case that already calls Emit-ResolveNote clears

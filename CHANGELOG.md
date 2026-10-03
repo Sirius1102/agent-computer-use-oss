@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.6.0 — 2026-10-03
+
+The screenshot folder grew without limit because the command that bounds it was never
+run. `shots-cleanup` has existed since v1.5.2 and nobody remembered it: 690 files /
+132 MB measured on 2026-10-03. The audit log has self-archived on size since v1.4.1;
+captures now follow the same pattern instead of waiting to be asked.
+
+- **Every capture trims the folder afterwards.** `shot`, `zoom`, `imgclick`, the
+  `chrome-*` family and `challenge-probe` bound it to the newest 100 images right after
+  writing their own file - so the capture you just asked for is always inside the bound
+  and can never be swept by its own trim.
+- **Move, never delete.** The automatic pass calls the SAME code as `shots-cleanup --go`:
+  one `Move-Item` per file into the quarantine folder, one `MANIFEST.md` line per file
+  with its SHA256 and timestamps, `.map.txt` sidecars travelling with their image. There
+  is exactly one copy of that loop in the file, and a lint keeps it that way.
+- **Quiet when there is nothing to do, explicit when it acts** (`auto-trim: moved N ...`),
+  and it **skips with a stated reason** when no quarantine is configured - a capture never
+  fails because the cleanup could not run. It also switches itself off during `selftest`,
+  because a `--live` run writes fixtures early and reads them back later.
+- **Knobs**: `DTX_SHOT_KEEP=<n>` for the bound, `DTX_SHOT_AUTOTRIM=0|off|false|no` to stop
+  the automatic pass (the command still works by hand). Unlike the quarantine target these
+  are read from the process environment only - the default is ON and the variables only
+  ever lower it, so a setting that has not reached a long-lived host fails safe towards
+  trimming rather than towards stopping.
+- 640 checks in this release, up from 626: four unit checks pin the policy knobs (including
+  "a typo in the switch must not silently stop the trim"), four end-to-end checks move real
+  files in a temp folder against a temp quarantine and assert on the disk afterwards, and
+  three lints pin the shape - the move loop existing exactly once, the trim having exactly
+  one call site and that site being the tail of the command dispatcher, and the mover
+  containing no deletion primitive at all.
+- The trim hook lives at the **one place every command must pass**, not next to the
+  function that writes most images. The first draft hooked the common capture helper and a
+  lint said "the capture path calls the trim" - green, and wrong: `zoom` builds its own
+  bitmap and never enters that helper, so a real `zoom` left its file behind. Two lessons,
+  both recorded because they were not obvious from reading the code: a wiring check only
+  proves the wiring it looks at, and the way to find the rest is to run the command that
+  least looks like the main path.
+
 ## v2.5.4 — 2026-10-03
 
 The selftest badge check was a machine probe. It compared the README badge against the
