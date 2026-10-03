@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.6.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.7.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -1132,6 +1132,52 @@ function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScal
     }
     return ,$lines
   } finally { $cap.Bitmap.Dispose() }
+}
+
+# v2.7.0: OCR a SAVED capture instead of a live screen region. Two reasons this exists:
+#   1. it makes OCR quality MEASURABLE. Until now every claim about the OCR road was
+#      backed only by live checks that need the desktop, so "our OCR reads this well"
+#      could not be tested at all, let alone A/B'd against another recognizer language
+#      pack. A stored PNG can be re-read by any agent, on any machine, offline.
+#   2. it decouples measuring from driving: no window is raised, nothing is clicked, and
+#      another automation cannot collide with the measurement.
+# Lines come back in IMAGE pixel coordinates with the origin at the image's own top-left.
+# There is no screen, so there is no offset to add - which is exactly why the caller must
+# never present these as screen rects (read-text labels them img-rect= and refuses
+# --json here, because the pinned read-text envelope carries no provenance field).
+function Invoke-OcrFile([string]$Path, [double]$scale) {
+  if (-not (Test-Path -LiteralPath $Path)) { throw "OCR file not found: $Path" }
+  $item = Get-Item -LiteralPath $Path
+  if ($item.PSIsContainer) { throw "OCR file is a folder, not an image: $Path" }
+  if ($scale -le 0) { $scale = 1.0 }
+  $bmp = $null; $src = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap($item.FullName)
+    $iw = [int]$bmp.Width; $ih = [int]$bmp.Height
+    if ($iw -le 0 -or $ih -le 0) { throw "OCR file decoded to ${iw}x${ih}, nothing to read: $Path" }
+    if ($scale -ne 1.0) {
+      $src = New-Object System.Drawing.Bitmap([int]($iw * $scale), [int]($ih * $scale))
+      $g = [System.Drawing.Graphics]::FromImage($src)
+      $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+      $g.DrawImage($bmp, 0, 0, $src.Width, $src.Height)
+      $g.Dispose()
+    } else { $src = $bmp }
+    $r = Invoke-OcrBitmap $src
+    $out = New-Object System.Collections.ArrayList
+    foreach ($ln in $r.Lines) {
+      [void]$out.Add([pscustomobject]@{
+        Text = $ln.Text
+        X = [int][math]::Round($ln.X / $scale)
+        Y = [int][math]::Round($ln.Y / $scale)
+        W = [int][math]::Round($ln.W / $scale)
+        H = [int][math]::Round($ln.H / $scale)
+      })
+    }
+    return @{ Lines = @($out); W = $iw; H = $ih; Scale = $scale }
+  } finally {
+    if ($null -ne $src -and -not [object]::ReferenceEquals($src, $bmp)) { $src.Dispose() }
+    if ($null -ne $bmp) { $bmp.Dispose() }
+  }
 }
 
 # Pure tiling planner (v1.5.0 WP-1): splits a source region into overlapping
@@ -5422,6 +5468,88 @@ function Invoke-SelfTest([string[]]$Rest) {
   if ($mvStart -ge 0) { $mvBody = ($codeLines[$mvStart..($mvEnd - 1)] -join "`n") }
   ST-Check 'lint: the quarantine mover contains no deletion primitive - an automatic pass may only move' (
     ($mvStart -ge 0) -and ($mvBody.Length -gt 200) -and (-not $mvBody.Contains('Remove-Item')) -and (-not $mvBody.Contains('Remove-ItemRecursively')) -and (-not $mvBody.Contains('[System.IO.File]::Delete')) -and (-not $mvBody.Contains('del ')))
+
+  # ---------- v2.7.0: OCR a saved capture (read-text --file) ----------
+  # This is the check that finally makes the OCR road MEASURABLE: it renders a known
+  # string to a PNG with GDI+ and reads it back through the same engine the live road
+  # uses, with no window raised and no desktop touched. It is NOT gated behind --live,
+  # because the whole point is that it can run anywhere, any time - and it is the harness
+  # the recognizer A/B (en-US vs zh-Hans language pack) is meant to be run through.
+  # On a box with no OCR language pack it SKIPS with a reason; skipping must not move the
+  # badge total (that is the v2.5.4 fix, and this check is one of its first users).
+  $ocrPackTag = ''
+  try {
+    $oe = Get-OcrEngine
+    if ($null -ne $oe) { $ocrPackTag = "$($oe.RecognizerLanguage.LanguageTag)" }
+  } catch { $ocrPackTag = '' }
+  $ocDir = Join-Path $env:TEMP ('st_ocrfile_' + [guid]::NewGuid().ToString('N'))
+  if ($ocrPackTag -eq '') {
+    ST-Skip 'e2e: read-text --file round-trips a rendered string back through the recognizer' 'no OCR language pack installed on this machine - the road itself is unavailable, so this is not a regression'
+  } else {
+    New-Item -ItemType Directory -Force -Path $ocDir | Out-Null
+    $ocPng = Join-Path $ocDir 'render.png'
+    $ocWant = 'File Edit View Run Terminal Help'
+    $ab = New-Object System.Drawing.Bitmap(1200, 90)
+    $ag = [System.Drawing.Graphics]::FromImage($ab)
+    $ag.Clear([System.Drawing.Color]::White)
+    $ag.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
+    $af = New-Object System.Drawing.Font('Segoe UI', 28, [System.Drawing.FontStyle]::Regular)
+    $ag.DrawString($ocWant, $af, [System.Drawing.Brushes]::Black, 10, 20)
+    $ag.Dispose(); $af.Dispose()
+    $ab.Save($ocPng, [System.Drawing.Imaging.ImageFormat]::Png)
+    $ocW = [int]$ab.Width; $ocH = [int]$ab.Height
+    $ab.Dispose()
+    try {
+      # The round trip goes through the REAL command line, not the function: the first
+      # version of this check called Invoke-OcrFile directly and passed while the CLI was
+      # broken (Split-Path -LiteralPath -Leaf dies on PowerShell 5.1, and it only lives in
+      # the CLI's header). A check must exercise the path a caller exercises.
+      $cliOut = Join-Path $ocDir 'cli.txt'
+      $cliArgs = '-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" read-text --file "' + $ocPng + '"'
+      $cli = Start-Process -FilePath 'powershell.exe' -ArgumentList $cliArgs -RedirectStandardOutput $cliOut -RedirectStandardError "$cliOut.err" -Wait -PassThru -NoNewWindow
+      $cliTxt = ''
+      if (Test-Path -LiteralPath $cliOut) { $cliTxt += (Get-Content -Raw -LiteralPath $cliOut) }
+      if (Test-Path -LiteralPath "$cliOut.err") { $cliTxt += (Get-Content -Raw -LiteralPath "$cliOut.err") }
+      $cliGot = ''
+      foreach ($cl in ($cliTxt -split "`r?`n")) {
+        if ($cl -match '^L\d\d img-rect=') { $cliGot += (($cl -replace '^L\d\d img-rect=\([0-9,\-x]+\)\s*', '') + ' ') }
+      }
+      $gotNorm = ($cliGot -replace '\s+', ' ').Trim()
+      $wantNorm = ($ocWant -replace '\s+', ' ').Trim()
+      ST-Check 'e2e: read-text --file round-trips a rendered string back through the recognizer' (
+        ($cli.ExitCode -eq 0) -and ("$gotNorm" -ceq "$wantNorm") -and ($cliTxt -match 'source=file') -and ($cliTxt -match 'NOT a screen rect'))
+      Write-Output ("      ocr-file: pack=$ocrPackTag exit=$($cli.ExitCode) wanted=[$wantNorm] got=[$gotNorm]")
+      $fr = Invoke-OcrFile $ocPng 1.0
+      ST-Check 'e2e: read-text --file reports the image size and keeps every rect inside it' (
+        ($fr.W -eq $ocW) -and ($fr.H -eq $ocH) -and (@($fr.Lines | Where-Object { $_.X -lt 0 -or $_.Y -lt 0 -or ($_.X + $_.W) -gt $ocW -or ($_.Y + $_.H) -gt $ocH }).Count -eq 0))
+      # The refusal is user-visible behavior, so it is pinned end to end: a child that
+      # exits non-zero AND names both the img-rect label and the pinned-contract reason.
+      # The argument string carries EMBEDDED quotes on purpose: PS 5.1's Start-Process
+      # -ArgumentList array form does not quote elements containing spaces, and this
+      # repo's own path has spaces, so the array form launches nothing and the child's
+      # exit code then proves nothing (it cost one red run to learn that here).
+      $jrOut = Join-Path $ocDir 'jsonrefusal.txt'
+      $jrArgs = '-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" read-text --file "' + $ocPng + '" --json'
+      $jr = Start-Process -FilePath 'powershell.exe' -ArgumentList $jrArgs -RedirectStandardOutput $jrOut -RedirectStandardError "$jrOut.err" -Wait -PassThru -NoNewWindow
+      $jrTxt = ''
+      if (Test-Path -LiteralPath $jrOut) { $jrTxt += (Get-Content -Raw -LiteralPath $jrOut) }
+      if (Test-Path -LiteralPath "$jrOut.err") { $jrTxt += (Get-Content -Raw -LiteralPath "$jrOut.err") }
+      ST-Check 'e2e: read-text --file refuses --json instead of emitting an ambiguous coordinate space' (
+        ($jr.ExitCode -ne 0) -and ("$jrTxt" -match 'img-rect') -and ("$jrTxt" -match 'pinned'))
+      # The header and the per-line label are the only things standing between a caller
+      # and clicking a glyph's image px, so the documentation of them is a check, not a
+      # comment: the strings must be present in the Usage page this command prints.
+      # Whitespace MUST be collapsed before matching: the Usage page is an array of
+      # indented lines, so joining with a single space still leaves each line's own
+      # indentation, and a phrase that wraps across a line break would never be found
+      # (this cost one red run - the phrase was in the help all along).
+      $usageTxt = ((@(Get-UsageLines)) -join ' ') -replace '\s+', ' '
+      ST-Check 'lint: the file-mode help names the img-rect label and says the coords are not a screen rect' (
+        ($usageTxt.Contains('img-rect=')) -and ($usageTxt.Contains('NOT a screen rect')) -and ($usageTxt.Contains('--file <png>')))
+    } finally {
+      Remove-Item -LiteralPath $ocDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
 
   # ---------- unit: v1.5.3 R-06 same-process popup delta ----------
   # The RULE is pure (which handles count as newly on top), the enumeration is
@@ -11408,7 +11536,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.6.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.7.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11506,7 +11634,7 @@ desktop.ps1 v2.6.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     selects lines - when those two numbers
                                     differ the command prints a hint saying so
                                     (v1.5.7 J-05, line granularity is deliberate)
-    read-text <sel|x y w h> [--max-lines n | --all-lines] [--filter needle] [--scale a|1|2|tiled]
+    read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle]
                                     OCR the region, print lines + screen rects;
                                     --filter keeps matching lines (line numbers
                                     preserved), --max-lines caps the output.
@@ -11517,6 +11645,20 @@ desktop.ps1 v2.6.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     self-report names band and threshold). Text mode
                                     only; --min-line-density tunes either band or
                                     silences it, 0 = off.
+                                    v2.7.0 --file <png>: OCR a SAVED capture instead
+                                    of a live region, so OCR quality becomes something
+                                    you can measure offline, replay, and A/B between
+                                    recognizers - no window is raised, nothing is
+                                    clicked, no other automation can collide with the
+                                    measurement. Lines then carry img-rect=(x,y,WxH),
+                                    IMAGE px from the image's own top-left - NOT a
+                                    screen rect, and deliberately a different label from
+                                    rect= so a file read cannot be pasted into a click.
+                                    --json is refused in file
+                                    mode: the read-text envelope is a pinned key set
+                                    with no field to say which coordinate space it is
+                                    in, and an ambiguous one is worse than a refusal.
+                                    --scale 2 upscales the image before reading.
     hash <sel|x y w h>              MD5 of the region PNG (assert-hash input)
     ime                             foreground thread HKL / IME active
     ime-state                       CONVERSION mode (alphanumeric vs native) -
@@ -13211,6 +13353,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $filter = ''
       $scaleMode = 'auto'; $maxTiles = 16; $noTile = $false
       $minLineDensity = 1.5
+      $filePath = ''
       $words = New-Object System.Collections.ArrayList
       $i = 0
       while ($i -lt $Rest.Count) {
@@ -13220,6 +13363,11 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         elseif ($Rest[$i] -eq '--scale') { $i++; $scaleMode = $Rest[$i]; if ($scaleMode -notin @('auto', '1', '2', 'tiled')) { throw "--scale must be auto|1|2|tiled, got: $scaleMode" } }
         elseif ($Rest[$i] -eq '--max-tiles') { $i++; $maxTiles = [int]$Rest[$i] }
         elseif ($Rest[$i] -eq '--no-tile') { $noTile = $true }
+        elseif ($Rest[$i] -eq '--file') {
+          $i++
+          if ($i -ge $Rest.Count) { throw 'read-text: --file needs a path to a saved capture (png/jpg)' }
+          $filePath = $Rest[$i]
+        }
         elseif ($Rest[$i] -eq '--min-line-density') { $i++; $minLineDensity = [double]$Rest[$i]; if ($minLineDensity -lt 0) { throw "--min-line-density must be >= 0, got: $minLineDensity" } }
         elseif ($Rest[$i] -eq '--needle') {
           $i++
@@ -13233,20 +13381,35 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         $i++
       }
       $Rest = @($words)
-      if ($Rest.Count -lt 1) { throw 'usage: read-text <sel|x y w h> [--max-lines n | --all-lines] [--filter needle] [--scale auto|1|2|tiled] [--max-tiles n] [--no-tile] [--min-line-density n]' }
-      $region = Resolve-Region $Rest 0
-      $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
+      $region = $null
       $gate = $null
       $owners = $null
-      if ($null -ne $region.Win) { $gate = Invoke-OcclusionGate $region $region.Win.Handle $occAct $of.OcclGrid $region.Win.Title $Rest[0] 'read' }
-      else { $owners = Invoke-OcclusionOwners $region $occAct $of.OcclGrid }
       $tiledInfo = ''
-      if (($scaleMode -eq '2' -or $scaleMode -eq 'tiled') -and -not $noTile) {
-        $t = Invoke-OcrRegionTiled $region.X $region.Y $region.W $region.H 2.0 $maxTiles
-        $lines = $t.Lines
-        $tiledInfo = ", tiled: $($t.Tiles) tile(s), $([math]::Round($t.Ms / 1000.0, 1)) s$(if (@($t.Notes).Count -gt 0) { ' ' + (@($t.Notes) -join ' ') })"
+      $fileResult = $null
+      if ($filePath) {
+        # v2.7.0: OCR a SAVED capture. No screen is involved, so region resolution, the
+        # occlusion gate and the tiled fallback are all skipped - and --json is REFUSED,
+        # because the read-text envelope keys are a pinned contract with no field that
+        # could say "these are image pixels, not screen pixels". Reusing the envelope
+        # silently would let a machine consumer click where a glyph merely sits.
+        if ($script:Json) { throw 'read-text --file: --json is not accepted in file mode - the pinned read-text envelope (schemaVersion+occluded+coveredBy+lines) has no provenance field, so image px would be indistinguishable from screen px. Drop --json: text mode labels every rect img-rect= and states the origin.' }
+        $fScale = 1.0
+        if ($scaleMode -eq '2' -or $scaleMode -eq 'tiled') { $fScale = 2.0 }
+        $fileResult = Invoke-OcrFile $filePath $fScale
+        $lines = @($fileResult.Lines)
       } else {
-        $lines = Invoke-OcrRegion $region.X $region.Y $region.W $region.H
+        if ($Rest.Count -lt 1) { throw 'usage: read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle] [--scale auto|1|2|tiled] [--max-tiles n] [--no-tile] [--min-line-density n]' }
+        $region = Resolve-Region $Rest 0
+        $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
+        if ($null -ne $region.Win) { $gate = Invoke-OcclusionGate $region $region.Win.Handle $occAct $of.OcclGrid $region.Win.Title $Rest[0] 'read' }
+        else { $owners = Invoke-OcclusionOwners $region $occAct $of.OcclGrid }
+        if (($scaleMode -eq '2' -or $scaleMode -eq 'tiled') -and -not $noTile) {
+          $t = Invoke-OcrRegionTiled $region.X $region.Y $region.W $region.H 2.0 $maxTiles
+          $lines = $t.Lines
+          $tiledInfo = ", tiled: $($t.Tiles) tile(s), $([math]::Round($t.Ms / 1000.0, 1)) s$(if (@($t.Notes).Count -gt 0) { ' ' + (@($t.Notes) -join ' ') })"
+        } else {
+          $lines = Invoke-OcrRegion $region.X $region.Y $region.W $region.H
+        }
       }
       $total = @($lines).Count
       $shown = New-Object System.Collections.ArrayList
@@ -13263,8 +13426,11 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       # v1.5.9 (P-4): sparse-read hint on the negative path, TEXT MODE ONLY - the --json
       # envelope keys are a pinned contract and machine consumers count lines themselves.
       $sparseWarn = ''
-      if (-not $script:Json -and (Test-SparseReadability $region.W $region.H $total $minLineDensity)) {
-        $sparseWarn = Build-SparseReadWarn $region.W $region.H $total $minLineDensity
+      # The density hint needs a box: screen px in region mode, IMAGE px in file mode.
+      $boxW = $region.W; $boxH = $region.H
+      if ($fileResult) { $boxW = $fileResult.W; $boxH = $fileResult.H }
+      if (-not $script:Json -and (Test-SparseReadability $boxW $boxH $total $minLineDensity)) {
+        $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity
       }
       if ($script:Json) {
         # CONTRACT keys: schemaVersion + occluded + coveredBy + lines. Same rule as
@@ -13275,8 +13441,22 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         $occSeg = ''
         if ($null -ne $gate) { $occSeg = " [occ: $($gate.Echo)]" }
         elseif ($null -ne $owners -and $owners.Ran) { $occSeg = " [occ: $($owners.Echo)]" }
+        if ($fileResult) {
+          # Image px, origin at the image's own top-left. The label is deliberately a
+          # DIFFERENT shape from the screen mode's rect= - "img-rect=" - so a file read
+          # cannot be pasted into a click by a caller who skimmed, and the header says
+          # in as many words that these are not screen coordinates.
+          # [IO.Path]::GetFileName, NOT Split-Path: on PowerShell 5.1 `-LiteralPath` and
+          # `-Leaf` belong to different parameter sets and the call dies with "Parameter
+          # set cannot be resolved" (they were unified in PS 7). This tool is 5.1-only, and
+          # GetFileName is also wildcard-safe where -Path would not be.
+          $fn = [System.IO.Path]::GetFileName($filePath)
+          "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" }) - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
+          foreach ($e in $shown) { "L{0:D2} img-rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
+        } else {
         "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
         foreach ($e in $shown) { "L{0:D2} rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
+        }
         if ($sparseWarn) { Write-Output $sparseWarn }
       }
     }

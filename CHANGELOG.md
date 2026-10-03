@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.7.0 — 2026-10-03
+
+`read-text --file <png>`: OCR a **saved capture** instead of a live screen region.
+
+Until now every claim about the OCR road rested on live checks that need the desktop, so
+"our OCR reads this well" was not testable at all - and certainly not comparable between
+recognizers. Reading a stored image makes OCR quality something you can measure offline,
+replay, and A/B, with no window raised, nothing clicked, and no other automation able to
+collide with the measurement.
+
+- Lines come back in **image pixels from the image's own top-left**, and the label is
+  deliberately a different shape - `img-rect=` rather than `rect=` - so a file read cannot
+  be pasted into a click by a caller who skimmed. The header says in as many words that
+  these are not screen coordinates.
+- **`--json` is refused in file mode** rather than answered. The `read-text` envelope keys
+  are a pinned contract (`schemaVersion+occluded+coveredBy+lines`) with no field that could
+  name the coordinate space; emitting it anyway would hand a machine consumer image pixels
+  dressed as screen pixels. The refusal message explains why and points at text mode.
+- `--scale 2` upscales the image before reading, for small text in a saved capture.
+- Four new checks (644 total, up from 640): an end-to-end round trip that renders a known
+  string with GDI+ and reads it back through the real recognizer - **not** gated behind
+  `--live`, since running anywhere is the point; a bounds check that every returned rect
+  sits inside the reported image size; an end-to-end test of the `--json` refusal through a
+  child process; and a lint that the help actually names `img-rect=` and states the
+  coordinates are not a screen rect. On a machine with no OCR language pack the round trip
+  **skips with a reason** and the badge total does not move - the first use of the v2.5.4
+  counting fix.
+- Measured while building this, on a box with only the `zh-Hans-CN` recognizer installed: a
+  28px rendered English menu bar (`File Edit View Run Terminal Help`) round-trips
+  **exactly**. So the Chinese-only-pack worry is not a blanket English-reading failure; it
+  is an open question about smaller and mixed text, and `--file` is now the way to answer
+  it with numbers instead of opinion.
+
 ## v2.6.0 — 2026-10-03
 
 The screenshot folder grew without limit because the command that bounds it was never
