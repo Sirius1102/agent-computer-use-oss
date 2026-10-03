@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.5.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.5.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -4907,12 +4907,16 @@ function Invoke-SelfTest([string[]]$Rest) {
   # addition to the set - they are NOT version carriers (they ship to other machines and
   # deliberately carry no version token). Enumerated from git, not from the disk, so an
   # untracked scratch doc cannot pass by simply not existing.
-  $mdAllowed = @('README.md', 'README.zh-CN.md', 'CHANGELOG.md', 'skill/agent-computer-use/SKILL.md', 'skill/agent-computer-use/reference.md')
+  # v2.5.1: the engineering shell joins the same pin - CONTRIBUTING.md and SECURITY.md at
+  # the root, the two issue templates and the pull-request template under .github\. (The
+  # CI workflow is YAML, not .md, so it enters through the tracked-count lint instead.)
+  # None of them is a version carrier.
+  $mdAllowed = @('README.md', 'README.zh-CN.md', 'CHANGELOG.md', 'skill/agent-computer-use/SKILL.md', 'skill/agent-computer-use/reference.md', 'CONTRIBUTING.md', 'SECURITY.md', '.github/ISSUE_TEMPLATE/bug_report.md', '.github/ISSUE_TEMPLATE/feature_request.md', '.github/pull_request_template.md')
   $mdTracked = @()
   try { $mdTracked = @((& git -C $PSScriptRoot ls-files '*.md' 2>$null) | Where-Object { "$_" -ne '' }) } catch { $mdTracked = @() }
   $mdExtra = @(@($mdTracked) | Where-Object { $mdAllowed -notcontains $_ })
   $mdGone = @(@($mdAllowed) | Where-Object { $mdTracked -notcontains $_ })
-  ST-Check 'version: the tracked .md set is the three carriers + the two skill docs (no other doc joins silently)' (
+  ST-Check 'version: the tracked .md set is exactly the pinned carriers, skill docs and engineering-shell docs (no other doc joins silently)' (
     (@($mdExtra).Count -eq 0) -and (@($mdGone).Count -eq 0))
   if (@($mdExtra).Count -gt 0) { Write-Output "      extra tracked .md: $(@($mdExtra) -join ', ')" }
   if (@($mdGone).Count -gt 0) { Write-Output "      tracked doc missing: $(@($mdGone) -join ', ')" }
@@ -4939,7 +4943,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'version: CHANGELOG latest entry == desktop.ps1 header' ($vChg -eq $vMain)
   } else {
     ST-Skip 'version: all three version-carrying public docs exist (README + zh README + CHANGELOG)' $skipNoRepo
-    ST-Skip 'version: the tracked .md set is the three carriers + the two skill docs (no other doc joins silently)' $skipNoRepo
+    ST-Skip 'version: the tracked .md set is exactly the pinned carriers, skill docs and engineering-shell docs (no other doc joins silently)' $skipNoRepo
     ST-Skip 'version: README.md H1 == desktop.ps1 header' $skipNoRepo
     ST-Skip 'version: README.zh-CN.md H1 == desktop.ps1 header' $skipNoRepo
     ST-Skip 'version: CHANGELOG latest entry == desktop.ps1 header' $skipNoRepo
@@ -11100,7 +11104,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.5.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.5.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

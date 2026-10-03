@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.5.1 — 2026-10-03
+
+Project page and engineering shell: documentation and repo scaffolding only —
+**zero changes to any command's behaviour**.
+
+- **README overhaul (both editions, same structure).** A badge row (license, platform,
+  shell, single-file, and the CI status of the offline self-test), the one-line
+  positioning directly under the H1, a table of contents, a scannable highlights grid
+  distilled from "Why this design" (the full paragraphs stay, nothing removed), a
+  Mermaid flow diagram of one call (locate → guard chain → act → assert/receipt), and a
+  differences table against cloud-VLM agents, AI-IDE built-in desktop automation and
+  terminal coding agents — phrased as differences with their costs, no unfalsifiable
+  claims, and no assertions about other products' non-public internals.
+- **Engineering shell.** `CONTRIBUTING.md` (selftest before every PR, the outbound
+  gate, version-bit rules, the tracked-inventory rule, the two-edition README rule),
+  `SECURITY.md` (what the tool can do, the audit log and its default redaction, how to
+  report), and two issue templates plus a pull-request template that require the
+  selftest line and the gate result up front. A CI workflow running the **offline**
+  selftest on `windows-latest` (never `selftest --live`, which needs a real desktop and
+  creates `DTX-*` fixture windows) is prepared but not landed in this release — pushing
+  workflow files requires repository credentials with the `workflow` scope, which the
+  current credentials lack; the selftest badge is therefore the static form, and no CI
+  is claimed.
+- **Tracked inventory 11 → 16.** The five new files above; the inventory line and the
+  repository layout in both README editions updated in the same commit, as pinned by
+  the self-test. The self-test's pinned tracked-`.md` set grew by the same five
+  markdown files.
+- Version bit 2.5.0 → 2.5.1 across the five carriers (header comment, usage banner,
+  both README H1s, this changelog's top entry); historical version numbers unchanged.
+
 ## v2.5.0 — 2026-10-02
 
 Skill packaging: the repository now ships a **loadable agent-skill wrapper** under

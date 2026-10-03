@@ -1,10 +1,45 @@
-# Agent Computer Use (Open Source Edition) v2.5.0
+# Agent Computer Use (Open Source Edition) v2.5.1
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
+[![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
+[![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=offline%20gate&color=success)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
-`desktop.ps1` gives an agent the four primitives of "computer use": **see** (screenshots of screen/window/region, plus OCR), **point** (move/click/scroll/drag at real pixel coordinates), **type** (keyboard, clipboard, and direct UIA value-setting), and **read the UI tree** (UI Automation, plus a Chrome DevTools route). No daemon, no installer, no third-party dependencies — every command is one short-lived `powershell -File` invocation, so the whole tool is trivially auditable and hard to get into a stuck state.
+`desktop.ps1` gives an agent the four primitives of "computer use": **see** (screenshots of screen/window/region, plus OCR), **point** (move/click/scroll/drag at real pixel coordinates), **type** (keyboard, clipboard, and direct UIA value-setting), and **read the UI tree** (UI Automation, plus a Chrome DevTools route). No daemon, no installer, no third-party dependencies — every command is one short-lived `powershell -File` invocation, so the whole tool is trivially auditable and hard to get into a stuck state. The badges above are documentation images, not packages: there is nothing to install beyond the one file.
 
 > 🇨🇳 中文版文档见 [README.zh-CN.md](README.zh-CN.md)
+
+## Contents
+
+- [Highlights](#highlights)
+- [Why this design](#why-this-design)
+- [How a call flows](#how-a-call-flows)
+- [How it compares](#how-it-compares)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Window selector `<sel>`](#window-selector-sel)
+- [Commands](#commands)
+- [Taking a coordinate off the screen — the order, not a menu](#taking-a-coordinate-off-the-screen--the-order-not-a-menu)
+- [Known limitations (learned the hard way)](#known-limitations-learned-the-hard-way)
+- [Screenshot coordinate system (read once, saves misclicks)](#screenshot-coordinate-system-read-once-saves-misclicks)
+- [Testing](#testing)
+- [Repository layout](#repository-layout)
+- [License](#license)
+
+## Highlights
+
+|  | in one line | where to read on |
+|---|---|---|
+| **Four primitives** | `see` (screenshots + OCR), `point` (move/click/scroll/drag at real pixels), `type` (keyboard, clipboard, UIA write), `read` (UIA tree, Chrome route) | [Quick start](#quick-start), [Commands](#commands) |
+| **Guarded by default** | keystrokes go out only after the target verifiably owns the foreground — and the foreground is re-checked after sending | [Why this design](#why-this-design) |
+| **Never silently** | every number names the measurement it came from (`source=uia|ocr`, `occluded=N%`, `hit-window:`, named receipts); zero is never evidence of absence | [Why this design](#why-this-design) |
+| **Auditable** | one append-only log line per executed action; typed payloads redacted by default; `replay` refuses redacted steps | [Why this design](#why-this-design) |
+| **Self-testing** | an offline regression gate (source lints, unit checks of every pure helper, doc-vs-dispatcher contracts) runs in seconds and touches no desktop | [Testing](#testing) |
+| **DPI-safe** | Per-Monitor V2 awareness before any coordinate is read; mixed-DPI multi-monitor stays pixel-exact | [Why this design](#why-this-design) |
+| **Stateless single file** | no daemon, no installer, no third-party runtime dependency — one pure-ASCII PowerShell file | [Why this design](#why-this-design) |
 
 ## Why this design
 
@@ -15,6 +50,44 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Self-testing.** `selftest` runs the offline gate (currently ~590 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
 - **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
+
+## How a call flows
+
+Every command walks the same short pipeline; nothing carries over between calls:
+
+```mermaid
+flowchart LR
+  A["caller"] --> B["stateless process - one fresh PowerShell per command"]
+  B --> C["locate - UIA first, OCR fallback - reports which road answered"]
+  C --> D["guard chain - foreground / content / landing point / occlusion"]
+  D --> E["act - absolute physical screen pixels"]
+  E --> F["assert + receipt - echo the measurement, exit-code verdict"]
+  F -. "verdict" .-> A
+```
+
+A refused action is a verdict too: a guard that fails prints why it failed and exits
+non-zero **before** touching anything. A refusal is never silent, and a screenshot that
+would be read while occluded says so on every line it prints.
+
+## How it compares
+
+Differences, not rankings — every scheme below buys something and pays something. Where
+another product's internals are not public, no claim is made about them.
+
+| dimension | this tool | cloud-VLM "computer use" agents | AI-IDE built-in desktop automation (the Work-mode kind) | terminal coding agents (e.g. Codex CLI) |
+|---|---|---|---|---|
+| localization | local UIA first, OCR fallback; the command prints which road answered and what both measured | a hosted vision model reads screenshots — no local UIA/OCR locator, by the class's own definition | internals not public — not asserted here | terminal-first: the shell and the repo are the interface, not screen pixels |
+| deciding / running locally | yes — one local process, no network use | no — the deciding model is hosted, so screen content leaves the machine | the automation runs on your machine; whether the deciding call leaves it is not public — not asserted | the CLI runs locally; code-model inference is a hosted API call |
+| auditable | one pure-ASCII source file, plus an append-only action log with redacted payloads | closed model, closed harness | closed-source feature | open-source CLI — but the hosted model itself is not inspectable |
+| offline-verifiable | yes — the offline self-test re-checks the documented contract in seconds, no desktop needed | no — behaviour depends on a hosted model's output | no public equivalent | the harness is testable; model output is not deterministic |
+| blocks wrong-window mistakes | hard foreground guard before + after sending, content guards, occlusion refusals | product-specific; the class has no foreground concept | not public | command-approval and sandbox gates, not window-level guards |
+
+**What this tool gives up** (the cost side of those differences): no VLM means no
+open-ended semantic understanding of arbitrary screens — it finds text it can OCR and
+controls that expose names, not "the thing that looks like a login box". Every call pays
+a fresh-process startup (~0.3–0.6 s). Windows only. And the guards sometimes refuse a
+*legitimate* action when the desktop is in an unexpected state — refusals are loud by
+design, but they are still refusals.
 
 ## Requirements
 
@@ -262,6 +335,9 @@ README.md              # this document
 README.zh-CN.md        # the Chinese edition (same command set, enforced by a gate rule)
 CHANGELOG.md           # release history
 LICENSE                # MIT
+CONTRIBUTING.md        # what to run before a PR (selftest, outbound gate, version bits)
+SECURITY.md            # what the tool can do, audit log + redaction, how to report
+.github/               # issue templates + pull-request template
 samples/selftest.txt   # CJK sample for verifying the paste path
 skill/                 # loadable agent skill: agent-computer-use/{SKILL.md, reference.md,
                        #   install.ps1, uninstall.ps1}
@@ -269,7 +345,7 @@ shots/                 # runtime dir (gitignored): default screenshots + actions
 .cowork-temp/          # runtime dir (gitignored): --live logs
 ```
 
-The tracked-file inventory of this repository is 11 files (`tracked=11`, asserted against `git ls-files`).
+The tracked-file inventory of this repository is 16 files (`tracked=16`, asserted against `git ls-files`).
 
 ## License
 
