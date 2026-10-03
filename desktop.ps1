@@ -11174,6 +11174,23 @@ $gaTimer.Start()
     ((@($codeLines | Where-Object { $_ -match '--actions-all' }).Count) -ge 2))
 
   ST-Check 'contract: selftest PASS line count equals passed summary count' (@($script:StPassLines).Count -eq $script:StPass)
+  # ---------- lint: the README badge states THIS run's check count (v2.5.2) ----------
+  # Deliberately the LAST check: $script:StPass now holds every check that ran before
+  # this one, so the badge must equal StPass + 1 (this check itself). Any check added
+  # anywhere in the body shifts the total and turns this red until the badge moves with
+  # it - that is the point. The badge is a COUNT, not a status (CHANGELOG v2.5.1
+  # addendum): a count that quietly stops matching reality is exactly the kind of drift
+  # this file's other lints exist to catch.
+  if ($isRepoRoot) {
+    $bEn = -1; $bZh = -1
+    foreach ($bl in @(Get-Content -LiteralPath $pEn -Encoding UTF8)) { if ("$bl" -match 'message=(\d+)%20checks') { $bEn = [int]$Matches[1]; break } }
+    foreach ($bl in @(Get-Content -LiteralPath $pZh -Encoding UTF8)) { if ("$bl" -match 'message=(\d+)%20checks') { $bZh = [int]$Matches[1]; break } }
+    ST-Check 'lint: both README badges state the same check count and it equals this run passed total (a count, not a status)' (
+      ($bEn -gt 0) -and ($bEn -eq $bZh) -and ($bEn -eq ($script:StPass + 1)))
+    Write-Output ("      badge: README=$bEn README.zh-CN=$bZh checks-before-this-one=$script:StPass")
+  } else {
+    ST-Skip 'lint: both README badges state the same check count and it equals this run passed total (a count, not a status)' $skipNoRepo
+  }
   Write-Output "----- selftest: $script:StPass passed, $script:StFail failed, $script:StSkip skipped -----"
   if ($script:StFail -gt 0) { throw "selftest: $($script:StFail) check(s) FAILED" }
 }
