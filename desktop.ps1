@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.5.3  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.5.4  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -4869,6 +4869,18 @@ function ST-Check([string]$name, [bool]$ok) {
 function ST-Skip([string]$name, [string]$reason) {
   $script:StSkip++
   Write-Output "SKIP  $name - $reason"
+}
+
+# v2.5.4: how many checks a selftest run DEFINES, given the tallies recorded before
+# the final badge check ran. The +1 is that final check itself. This is a function
+# rather than an inline sum so the machine-independence property can be asserted
+# directly (see the Get-BadgeCheckTotal unit checks): moving one check from skipped
+# to passed must never move the total. v2.5.3 compared the README badge against
+# $script:StPass alone, which made the badge number a probe of the machine's ambient
+# state - any check that legitimately ST-Skip-s on a clean clone silently lowered the
+# expectation and turned the gate red for everyone except this one box.
+function Get-BadgeCheckTotal([int]$Passed, [int]$Failed, [int]$Skipped) {
+  return $Passed + $Failed + $Skipped + 1
 }
 
 function Invoke-SelfTest([string[]]$Rest) {
@@ -11154,22 +11166,37 @@ $gaTimer.Start()
     ((@($codeLines | Where-Object { $_ -match '--actions-all' }).Count) -ge 2))
 
   ST-Check 'contract: selftest PASS line count equals passed summary count' (@($script:StPassLines).Count -eq $script:StPass)
-  # ---------- lint: the README badge states THIS run's check count (v2.5.2) ----------
-  # Deliberately the LAST check: $script:StPass now holds every check that ran before
-  # this one, so the badge must equal StPass + 1 (this check itself). Any check added
-  # anywhere in the body shifts the total and turns this red until the badge moves with
-  # it - that is the point. The badge is a COUNT, not a status (CHANGELOG v2.5.1
-  # addendum): a count that quietly stops matching reality is exactly the kind of drift
-  # this file's other lints exist to catch.
+  # ---------- lint: the README badge states THIS run's check COUNT (v2.5.2, recount v2.5.4) ----------
+  # Deliberately the LAST check: the tallies below hold every check that ran before
+  # this one, so the badge must equal Get-BadgeCheckTotal of them (the +1 is this
+  # check). Any check added anywhere in the body shifts the total and turns this red
+  # until the badge moves with it - that is the point. The badge is a COUNT, not a
+  # status (CHANGELOG v2.5.1 addendum): a count that quietly stops matching reality is
+  # exactly the kind of drift this file's other lints exist to catch.
+  # v2.5.4: the total counts SKIPPED checks too. v2.5.3 compared the badge against the
+  # passed tally alone, which made this check a probe of the machine's ambient state -
+  # one live check legitimately skips on a clean clone or after a reboot, and the
+  # expectation then sat one below the badge: red for everyone but this box.
+  $btA = Get-BadgeCheckTotal 10 2 3
+  ST-Check 'unit: badge check total counts a check exactly once whether it passed, failed or skipped' (
+    ($btA -eq 16) -and ((Get-BadgeCheckTotal 11 2 2) -eq $btA) -and ((Get-BadgeCheckTotal 12 2 1) -eq $btA))
+  # Self-scan evasion: the tokens below are assembled at runtime so that THIS guard's
+  # own source lines never contain the literal shapes it is scanning for elsewhere.
+  $bTok = '$' + 'bEn'; $pTok = 'St' + 'Pass'; $totTok = 'Get-BadgeCheckTotal $script:' + 'StPass'
+  $badgeOnPassedOnly = @($codeLines | Where-Object { $_.Contains($bTok) -and $_.Contains($pTok) })
+  $badgeUsesTotal = @($codeLines | Where-Object { $_.Contains($totTok) })
+  ST-Check 'lint: the badge comparison reads the three-tally total, never the passed tally alone' (
+    ($badgeOnPassedOnly.Count -eq 0) -and ($badgeUsesTotal.Count -eq 1))
   if ($isRepoRoot) {
     $bEn = -1; $bZh = -1
     foreach ($bl in @(Get-Content -LiteralPath $pEn -Encoding UTF8)) { if ("$bl" -match 'message=(\d+)%20checks') { $bEn = [int]$Matches[1]; break } }
     foreach ($bl in @(Get-Content -LiteralPath $pZh -Encoding UTF8)) { if ("$bl" -match 'message=(\d+)%20checks') { $bZh = [int]$Matches[1]; break } }
-    ST-Check 'lint: both README badges state the same check count and it equals this run passed total (a count, not a status)' (
-      ($bEn -gt 0) -and ($bEn -eq $bZh) -and ($bEn -eq ($script:StPass + 1)))
-    Write-Output ("      badge: README=$bEn README.zh-CN=$bZh checks-before-this-one=$script:StPass")
+    $stTotal = Get-BadgeCheckTotal $script:StPass $script:StFail $script:StSkip
+    ST-Check 'lint: both README badges state the same check count and it equals this run check total (a count, not a status)' (
+      ($bEn -gt 0) -and ($bEn -eq $bZh) -and ($bEn -eq $stTotal))
+    Write-Output ("      badge: README=$bEn README.zh-CN=$bZh check-total-this-run=$stTotal")
   } else {
-    ST-Skip 'lint: both README badges state the same check count and it equals this run passed total (a count, not a status)' $skipNoRepo
+    ST-Skip 'lint: both README badges state the same check count and it equals this run check total (a count, not a status)' $skipNoRepo
   }
   Write-Output "----- selftest: $script:StPass passed, $script:StFail failed, $script:StSkip skipped -----"
   if ($script:StFail -gt 0) { throw "selftest: $($script:StFail) check(s) FAILED" }
@@ -11177,7 +11204,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.5.3 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.5.4 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

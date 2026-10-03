@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.5.4 — 2026-10-03
+
+The selftest badge check was a machine probe. It compared the README badge against the
+**passed** tally only, so any check that legitimately skips on a different box lowered
+the expectation by one and turned the gate red: on a fresh clone (no `DTX_QUARANTINE`
+anywhere) and on the very machine that configured it, once a shell inherits it into its
+process environment. Measured before this release: `622 passed, 1 failed, 1 skipped`
+with the badge demanding `623` while stating `624`.
+
+- The badge now compares against the **count of checks this run defines** —
+  `passed + failed + skipped + 1`, the `+1` being the badge check itself — through a new
+  `Get-BadgeCheckTotal` helper. A check counts once no matter which way it went.
+- Two guards keep it that way: a unit check asserting the total is invariant when one
+  check moves from skipped to passed, and a lint that fails if the badge comparison ever
+  reads the passed tally alone again. The lint assembles its own search tokens at runtime
+  so its source lines cannot satisfy the pattern it forbids.
+- `626` is this release's check count; the badge check pins it, so adding or removing any
+  check turns the gate red until the badge moves with it.
+- Out of band (no file in this repo changes): the release gate's outbound-leak scan gained
+  two rule families — bare personal directory names, and paths assembled from character
+  codes — after both were shown to slip through undetected. Proven by injecting synthetic
+  samples into a throwaway clone and requiring each to turn the scan red, with benign
+  look-alikes required to stay clean.
+
 ## v2.5.3 — 2026-10-03
 
 Fix to the v2.5.2 value chain, measured on the machine that set the variable: a
