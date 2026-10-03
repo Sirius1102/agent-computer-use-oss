@@ -153,7 +153,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `a11y-probe <sel> [bigDepth]` | 只读：两个深度下的控件数 + 页面区可交互控件数 → `page-tree=exposed|collapsed`，即 `uia-*` 到底能不能驱动这个应用 |
 | `challenge-probe <sel>` | 只读：对验证码做 OCR，给出匹配 / 置信度 / 是否陈旧 + 人工接管信息块。**设计上不含求解器**（见限制 12） |
 | `status-summary [--json]` | 只读汇总一次工作区状态：HEAD、是否干净 / 领先、离线 selftest 三数、最新一次 live 日志及其红位数、残留的夹具窗口 |
-| `shots-cleanup [--keep n] [--go] [--quarantine <目录>]` | 给运行期截图目录封顶 —— **默认空跑**；`--go` 是把文件**移入**隔离目录并写清单，不是删除。`--go` 的目标，按序：`--quarantine <目录>`，其次进程环境里的 `DTX_QUARANTINE`，再次 User 作用域注册表里的 `DTX_QUARANTINE`，然后 Machine 作用域，都没有就拒绝执行（exit 2）并点名两条出路——不再内置任何机器专属路径 |
+| `shots-cleanup [--keep n] [--go] [--quarantine <目录>]` | 给运行期截图目录封顶 —— **默认空跑**；`--go` 是把文件**移入**隔离目录并写清单，不是删除。`--go` 的目标，按序：`--quarantine <目录>`，其次进程环境里的 `DTX_QUARANTINE`，再次 User 作用域注册表里的 `DTX_QUARANTINE`，然后 Machine 作用域，都没有就拒绝执行（exit 2）并点名两条出路——不再内置任何机器专属路径。**v2.6.0 起这个上限还会自己生效**：任何写出截图的命令跑完都收一次（默认留最近 100 张；`DTX_SHOT_KEEP=<n>` 改上限，`DTX_SHOT_AUTOTRIM=0` 关掉自动这一路）——走的是同一段"移动 + 写清单"代码，没超出就不出声，动了就回显移了几个，没配隔离区就跳过并说明原因，selftest 期间不跑 |
 | `help [<命令>|--<旗标>]` | 不带参数是本页；`help shot` 只看一条；`help --grid` 打印提到该旗标的所有行 |
 
 ### 断言（退出码检查点，绝不点击）
