@@ -22,8 +22,9 @@ So the signal is now two things instead of one:
 - **Always, in the header**: `readability=<n> lines per 100k px2 (area=<px2>, warn-below=<t>, band=<b>)`.
   A dump that is being read by something which counts lines should carry its own measurement.
 - **Only near zero**: the shouted `WARN:` now requires density < **0.1** lines per 100k px2 -
-  12 of the 489 captures (2.5%) - which is the zone where a result genuinely cannot support
-  "it is not there".
+  **11 of the 489 captures (2.25%)** instead of 91 (18.6%), re-measured by running the shipped
+  build over the same corpus (the projection from the earlier buckets said 12; the measurement
+  says 11, and the number printed here is the measured one).
 
 `find-text`, `assert-text`, the `expect` family and the challenge-probe none-path **keep the
 1.0/1.5 bands exactly as they were**. On those commands the read *is* the claim of absence, so
