@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.7.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.8.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -1180,6 +1180,41 @@ function Invoke-OcrFile([string]$Path, [double]$scale) {
   }
 }
 
+# v2.8.0: what "tiled" means for a STORED image. The live road tiles only to keep a
+# pass under the engine's dimension limit; a capture from any modern screen is far
+# under it, so that rule alone gives exactly one tile and reads the image the same
+# way the plain read does. Here the point of subdividing is the OPPOSITE: cut the
+# area handed to one OCR pass so the recognizer spends its detail budget on less
+# ground at once. Halving the longer side does that, and never lifts the limit -
+# Invoke-OcrBitmapTiled clamps this to the engine's own value.
+function Get-FileTileMaxDim([int]$w, [int]$h, [double]$scale) {
+  if ($scale -le 0) { $scale = 1.0 }
+  $longer = $w
+  if ($h -gt $longer) { $longer = $h }
+  if ($longer -lt 32) { $longer = 32 }
+  $d = [int][math]::Floor(($longer / 2.0) * $scale)
+  if ($d -lt 32) { $d = 32 }
+  return $d
+}
+
+# Tiled read of a saved capture. Coordinates come back in IMAGE px with the origin at
+# the image's own top-left - the same space Invoke-OcrFile reports, so a caller can
+# mix the two reads without a conversion. Never touches the screen.
+function Invoke-OcrFileTiled([string]$Path, [double]$scale, [int]$maxTiles) {
+  if ($scale -le 0) { $scale = 2.0 }
+  if (-not (Test-Path -LiteralPath $Path)) { throw "OCR file not found: $Path" }
+  $item = Get-Item -LiteralPath $Path
+  if ($item.PSIsContainer) { throw "OCR file is a folder, not an image: $Path" }
+  $bmp = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap($item.FullName)
+    $iw = [int]$bmp.Width; $ih = [int]$bmp.Height
+    if ($iw -le 0 -or $ih -le 0) { throw "OCR file decoded to ${iw}x${ih}, nothing to read: $Path" }
+    $t = Invoke-OcrBitmapTiled $bmp $iw $ih $scale $maxTiles 0 0 (Get-FileTileMaxDim $iw $ih $scale)
+    return @{ Lines = @($t.Lines); W = $iw; H = $ih; Scale = $scale; Tiles = $t.Tiles; Ms = $t.Ms; Duplicates = $t.Duplicates; Notes = @($t.Notes) }
+  } finally { if ($null -ne $bmp) { $bmp.Dispose() } }
+}
+
 # Pure tiling planner (v1.5.0 WP-1): splits a source region into overlapping
 # tiles such that EVERY tile scaled up by $scale stays within the OCR engine's
 # dimension limit. Row-major from (0,0) so --index n is reproducible; the last
@@ -1288,10 +1323,17 @@ function Get-OcrMaxDimension {
 # recorded and treated as empty (DWM edge of a transient window) instead of
 # killing the whole pass. Returns hashtable @{ Lines; Tiles; Ms; Duplicates;
 # Notes } with Notes listing failed tiles verbatim for the caller's echo.
-function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]$srcH, [double]$scale, [int]$maxTiles, [int]$originX, [int]$originY) {
+function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]$srcH, [double]$scale, [int]$maxTiles, [int]$originX, [int]$originY, [long]$maxDimOverride = 0) {
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $maxDim = 0
   try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
+  # v2.8.0: the planner only subdivides to stay under the ENGINE's dimension limit, which on
+  # this machine is 10000 - far above any capture a screen produces, so tiling a screenshot
+  # would always be one tile and "tiled" would mean nothing. An override lets a caller ask
+  # for subdivision as a READING strategy (smaller area per pass = more detail per pixel of
+  # the recognizer's budget), which is the only thing that recovered the dropouts found in
+  # the 489-capture survey. It may only ever SHRINK the limit: the engine limit still binds.
+  if ($maxDimOverride -gt 0 -and ($maxDim -le 0 -or $maxDimOverride -lt $maxDim)) { $maxDim = $maxDimOverride }
   $plan = Get-OcrTilePlan $srcW $srcH $scale $maxDim 64 $maxTiles
   if ($plan.Error) {
     return @{ Lines = (New-Object System.Collections.ArrayList); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = 0; Notes = @($plan.Error) }
@@ -2896,9 +2938,20 @@ function Test-SparseReadability([int]$w, [int]$h, [int]$lineCount, [double]$minD
 # One producer for the sparse-read hint. Self-reports the policy band and threshold in force (the
 # v1.5.7 self-reported-value rule) and names the escape hatch, so a reader can act
 # instead of guessing what "too few lines" meant.
-function Build-SparseReadWarn([int]$w, [int]$h, [int]$lineCount, [double]$minDensity) {
+#
+# $subject is not cosmetic. Every other part of a file-mode read insists the numbers are IMAGE px
+# (img-rect=, "NOT a screen rect", the --json refusal), so a hint that calls the same thing a
+# "region" and blames "a large window" contradicts its own output - and the cause list is genuinely
+# different: a stored capture with few lines may simply be a picture, which no window can be.
+function Build-SparseReadWarn([int]$w, [int]$h, [int]$lineCount, [double]$minDensity, [string]$subject = 'region') {
   $policy = Get-SparseReadPolicy ([long]$w * [long]$h) $minDensity
-  return ('WARN: region is ' + $w + 'x' + $h + ' but only ' + $lineCount + ' line(s) read -- a large window this unreadable usually means an in-window modal/scrim, a loading veil, or a very low-contrast theme. Do NOT treat "not found" as "absent". (sparse-policy=' + $policy.Band + '; active-threshold=' + $policy.Threshold + ' lines per 100k px2; min-line-density=' + $minDensity + '; pass --min-line-density 0 to silence)')
+  $cause = 'a large window this unreadable usually means an in-window modal/scrim, a loading veil, or a very low-contrast theme'
+  $shape = 'region'
+  if ($subject -eq 'image') {
+    $shape = 'image'
+    $cause = 'a stored capture this unreadable usually means a low-contrast theme, an image that is mostly graphics, or an area the recognizer dropped (re-read it with --scale tiled, which subdivides the image)'
+  }
+  return ('WARN: ' + $shape + ' is ' + $w + 'x' + $h + ' but only ' + $lineCount + ' line(s) read -- ' + $cause + '. Do NOT treat "not found" as "absent". (sparse-policy=' + $policy.Band + '; active-threshold=' + $policy.Threshold + ' lines per 100k px2; min-line-density=' + $minDensity + '; pass --min-line-density 0 to silence)')
 }
 
 # --verify for type/type-in: OCR the target window after sending and require
@@ -5546,6 +5599,85 @@ function Invoke-SelfTest([string[]]$Rest) {
       $usageTxt = ((@(Get-UsageLines)) -join ' ') -replace '\s+', ' '
       ST-Check 'lint: the file-mode help names the img-rect label and says the coords are not a screen rect' (
         ($usageTxt.Contains('img-rect=')) -and ($usageTxt.Contains('NOT a screen rect')) -and ($usageTxt.Contains('--file <png>')))
+      ST-Check 'lint: the file-mode help documents the subdivided re-read and says what triggers it' (
+        ($usageTxt.Contains('--scale tiled')) -and ($usageTxt.Contains('auto-retry')) -and
+        ($usageTxt.Contains('300k px2')) -and ($usageTxt.Contains('--no-tile')) -and
+        ($usageTxt.Contains('never "region"')))
+
+      # ---- v2.8.0 end to end. These drive the command line, not the functions, because
+      # the defect fixed this round was precisely "a flag that is accepted and does
+      # nothing": a function-level check would have stayed green through it.
+      $stRun = {
+        param([string]$Path, [string]$Extra, [string]$OutName)
+        $o = Join-Path $ocDir $OutName
+        $a = '-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" read-text --file "' + $Path + '" ' + $Extra
+        $pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $a -RedirectStandardOutput $o -RedirectStandardError "$o.err" -Wait -PassThru -NoNewWindow
+        $txt = ''
+        if (Test-Path -LiteralPath $o) { $txt += (Get-Content -Raw -LiteralPath $o) }
+        if (Test-Path -LiteralPath "$o.err") { $txt += (Get-Content -Raw -LiteralPath "$o.err") }
+        return @{ Exit = $pr.ExitCode; Txt = $txt }
+      }
+      # (1) --scale tiled must subdivide. The 1200x90 menu-bar render is far below the
+      # engine's 10000px limit, so the only thing that can produce tiles >= 2 here is the
+      # v2.8.0 override - which is what this asserts.
+      $tT = & $stRun $ocPng '--scale tiled' 'tiled.txt'
+      $tTiles = 0
+      if ($tT.Txt -match 'tiled:\s+(\d+) tile') { $tTiles = [int]$Matches[1] }
+      $tOut = New-Object System.Collections.ArrayList
+      # 16px of slack, on purpose: the Windows engine jitters line bboxes (observed up to
+      # ~90px on tiles sitting exactly at its dimension limit), and a strictly-in-bounds
+      # assertion here would turn that engine artifact into a red gate. What must hold is
+      # that no rect is off by a LOT - that is what a mapping bug looks like.
+      foreach ($cl in ($tT.Txt -split "`r?`n")) {
+        if ($cl -match '^L\d\d img-rect=\((-?\d+),(-?\d+),(\d+)x(\d+)\)') {
+          $lx = [int]$Matches[1]; $ly = [int]$Matches[2]; $lw = [int]$Matches[3]; $lh = [int]$Matches[4]
+          if ($lx -lt -16 -or $ly -lt -16 -or ($lx + $lw) -gt ($ocW + 16) -or ($ly + $lh) -gt ($ocH + 16)) { [void]$tOut.Add($cl) }
+        }
+      }
+      ST-Check 'e2e: --scale tiled in file mode subdivides the image and keeps every img-rect inside it' (
+        ($tT.Exit -eq 0) -and ($tTiles -ge 2) -and (@($tOut).Count -eq 0) -and ($tT.Txt -match 'source=file scale=2'))
+      Write-Output ("      file tiling: tiles=$tTiles out-of-bounds=$(@($tOut).Count)")
+      # (2) an empty large capture must be re-read subdivided AND say so, including when
+      # the retry also finds nothing - the point is that "picture" and "dropped region"
+      # stop being the same output.
+      $gyPng = Join-Path $ocDir 'gray.png'
+      $gb = New-Object System.Drawing.Bitmap(800, 500)
+      $gg = [System.Drawing.Graphics]::FromImage($gb)
+      $gg.Clear([System.Drawing.Color]::FromArgb(128, 128, 128))
+      $gg.Dispose()
+      $gb.Save($gyPng, [System.Drawing.Imaging.ImageFormat]::Png); $gb.Dispose()
+      $tR = & $stRun $gyPng '' 'retry.txt'
+      $tN = & $stRun $gyPng '--no-tile' 'notile.txt'
+      ST-Check 'e2e: a large capture that reads 0 lines gets a subdivided retry and the header reports it' (
+        ($tR.Exit -eq 0) -and ($tR.Txt -match 'auto-retry: whole-image read found 0 line') -and
+        ($tR.Txt -match 'the subdivided read found 0'))
+      ST-Check 'e2e: --no-tile suppresses the subdivided retry (the opt-out has to be real, not decorative)' (
+        ($tN.Exit -eq 0) -and (-not ($tN.Txt -match 'auto-retry:')))
+      # The retry's OWN failure must be as visible as its success. 800x500 needs 6 tiles; with
+      # --max-tiles 2 the planner refuses before any OCR runs, and if that refusal were only
+      # carried on the adopted branch the caller would read "found 0" and conclude the image is
+      # blank when in fact nothing was ever looked at.
+      $tM = & $stRun $gyPng '--max-tiles 2' 'maxtiles.txt'
+      ST-Check 'e2e: a retry the tile budget refuses to run reports the refusal, not a bare 0' (
+        ($tM.Exit -eq 0) -and ($tM.Txt -match 'auto-retry:') -and ($tM.Txt -match 'tiled retry needs 6 tiles') -and
+        ($tM.Txt -match '--max-tiles 2'))
+      # (3) the file-mode sparse WARN must speak file-mode. This is the RENDERED line, not
+      # the builder's return value - the wording bug shipped because nothing looked at the
+      # line a human actually reads.
+      $spPng = Join-Path $ocDir 'sparse.png'
+      $sb = New-Object System.Drawing.Bitmap(800, 500)
+      $sg = [System.Drawing.Graphics]::FromImage($sb)
+      $sg.Clear([System.Drawing.Color]::White)
+      $sfont = New-Object System.Drawing.Font('Segoe UI', 26, [System.Drawing.FontStyle]::Regular)
+      $sg.DrawString('DTX sparse capture row one', $sfont, [System.Drawing.Brushes]::Black, [single]20, [single]30)
+      $sg.DrawString('DTX sparse capture row two', $sfont, [System.Drawing.Brushes]::Black, [single]20, [single]90)
+      $sg.Dispose(); $sfont.Dispose()
+      $sb.Save($spPng, [System.Drawing.Imaging.ImageFormat]::Png); $sb.Dispose()
+      $tS = & $stRun $spPng '' 'sparse.txt'
+      ST-Check 'e2e: the file-mode sparse WARN on a real read says "image is", never "region is"' (
+        ($tS.Exit -eq 0) -and ($tS.Txt -match 'WARN: image is 800x500') -and (-not ($tS.Txt -match 'WARN: region')) -and
+        ($tS.Txt -match '--scale tiled') -and (@($tS.Txt -split "`r?`n" | Where-Object { $_ -match '^L\d\d img-rect=' }).Count -ge 1))
+      Write-Output ("      file sparse warn: exit=$($tS.Exit) lines=" + (@($tS.Txt -split "`r?`n" | Where-Object { $_ -match '^L\d\d img-rect=' }).Count))
     } finally {
       Remove-Item -LiteralPath $ocDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -7295,6 +7427,35 @@ function Invoke-SelfTest([string[]]$Rest) {
     $srw.Contains('Do NOT treat "not found" as "absent"') -and
     $srw.Contains('sparse-policy=large-area') -and $srw.Contains('active-threshold=1.5') -and
     $srw.Contains('min-line-density=1.5') -and $srw.Contains('--min-line-density 0 to silence'))
+  # v2.8.0: the SAME producer must speak two dialects, because a file-mode read is not a
+  # window. Both directions are asserted: a one-sided check ("says image") would also pass
+  # if the word region simply vanished from the sentence.
+  $srwImg = Build-SparseReadWarn 2482 1514 2 1.5 'image'
+  ST-Check 'unit: the sparse WARN calls a stored capture an image and offers the subdivided re-read' (
+    $srwImg.Contains('WARN: image is 2482x1514 but only 2 line(s) read') -and
+    (-not $srwImg.Contains('region')) -and
+    (-not $srwImg.Contains('window')) -and
+    $srwImg.Contains('mostly graphics') -and
+    $srwImg.Contains('--scale tiled') -and
+    $srwImg.Contains('Do NOT treat "not found" as "absent"') -and
+    $srwImg.Contains('sparse-policy=large-area'))
+  ST-Check 'unit: the default subject still speaks screen mode (region + window wording intact)' (
+    $srw.Contains('WARN: region is 2482x1514') -and (-not $srw.Contains('WARN: image is')))
+
+  # v2.8.0: the engine's own dimension limit (10000 measured on this box) sits far above any
+  # screenshot, so the live road's "tile only when too big" rule yields ONE tile for a stored
+  # image and the flag would be decorative. The override has to actually subdivide - and it
+  # must never be able to RAISE the limit, or a tile would exceed what the engine accepts.
+  $gtmSmall = Get-OcrTilePlan 920 520 2.0 10000 64 16
+  $gtmCut = Get-OcrTilePlan 920 520 2.0 (Get-FileTileMaxDim 920 520 2.0) 64 16
+  ST-Check 'unit: file tiling halves the long side so one capture becomes several reads (real limit gives 1)' (
+    ($gtmSmall.Count -eq 1) -and ($gtmCut.Count -ge 2) -and (-not $gtmSmall.Error) -and (-not $gtmCut.Error))
+  $gtmWide = Get-FileTileMaxDim 400 3000 2.0
+  $gtmWidePlan = Get-OcrTilePlan 400 3000 2.0 $gtmWide 64 64
+  $gtmOver = @($gtmWidePlan.Tiles | Where-Object { ($_.W * 2) -gt 10000 -or ($_.H * 2) -gt 10000 })
+  ST-Check 'unit: file tiling cuts the LONGER side and never asks for a tile above the engine limit' (
+    ($gtmWide -eq 3000) -and ((Get-FileTileMaxDim 0 0 0) -ge 32) -and
+    (-not $gtmWidePlan.Error) -and (@($gtmWidePlan.Tiles).Count -ge 2) -and (@($gtmOver).Count -eq 0))
 
   # Synthetic-bitmap two-state pair (the task order's acceptance). Memory-only canvases:
   # no window is created and no screen is captured, so the pair runs in the OFFLINE gate.
@@ -7331,14 +7492,17 @@ function Invoke-SelfTest([string[]]$Rest) {
   # documented (Split-Target + both read commands). v1.10.0 adds the 4th consumer: the
   # challenge-probe none-path note (the task order names it as P-4's existing behaviour
   # carried over), so the pinned count moves 4 -> 5.
+  # v2.8.0 moves 5 -> 6: the file-mode auto-retry consults THIS predicate rather than
+  # inventing a second area floor, so the 6th line is a new consumer of the rule, not a
+  # recount of an old one. Expected value up, strictness unchanged.
   $srSites = @()
   for ($sri = 0; $sri -lt $codeLines.Count; $sri++) {
     if ($sri -ge $j5ProdStart -and $sri -lt $j5ProdEnd) { continue }
     if ($codeLines[$sri] -match '^\s*#') { continue }
     if ($codeLines[$sri].Contains('Test-SparseReadability')) { $srSites += ($sri + 1) }
   }
-  ST-Check 'lint: the sparse predicate is wired on all negative paths (exactly 5 sites: 1 def + read-text + find-text + expect + challenge-probe)' (@($srSites).Count -eq 5)
-  if (@($srSites).Count -ne 5) { Write-Output "      sparse predicate sites: $(@($srSites) -join ', ')" }
+  ST-Check 'lint: the sparse predicate is wired on all negative paths (exactly 6 sites: 1 def + read-text + read-text auto-retry + find-text + expect + challenge-probe)' (@($srSites).Count -eq 6)
+  if (@($srSites).Count -ne 6) { Write-Output "      sparse predicate sites: $(@($srSites) -join ', ')" }
   $srBuildSites = @()
   for ($sri = 0; $sri -lt $codeLines.Count; $sri++) {
     if ($sri -ge $j5ProdStart -and $sri -lt $j5ProdEnd) { continue }
@@ -11536,7 +11700,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.7.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.8.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11658,7 +11822,17 @@ desktop.ps1 v2.7.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     mode: the read-text envelope is a pinned key set
                                     with no field to say which coordinate space it is
                                     in, and an ambiguous one is worse than a refusal.
-                                    --scale 2 upscales the image before reading.
+                                    --scale 2 upscales the image before reading;
+                                    --scale tiled cuts it in half along the long side
+                                    and reads the pieces (v2.8.0).
+                                    v2.8.0 auto-retry: when a capture big enough to be
+                                    suspicious (>= 300k px2) reads 0 lines, the same
+                                    image is re-read subdivided and the header says
+                                    what came back - including "0 line(s)", because a
+                                    silent extra pass cannot tell a picture apart from
+                                    a dropped region. --no-tile or --min-line-density 0
+                                    turn the retry off. In file mode the sparse WARN
+                                    says "image is WxH", never "region".
     hash <sel|x y w h>              MD5 of the region PNG (assert-hash input)
     ime                             foreground thread HKL / IME active
     ime-state                       CONVERSION mode (alphanumeric vs native) -
@@ -13387,15 +13561,45 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $tiledInfo = ''
       $fileResult = $null
       if ($filePath) {
-        # v2.7.0: OCR a SAVED capture. No screen is involved, so region resolution, the
-        # occlusion gate and the tiled fallback are all skipped - and --json is REFUSED,
+        # v2.7.0: OCR a SAVED capture. No screen is involved, so region resolution and the
+        # occlusion gate are skipped, and --json is REFUSED,
         # because the read-text envelope keys are a pinned contract with no field that
         # could say "these are image pixels, not screen pixels". Reusing the envelope
         # silently would let a machine consumer click where a glyph merely sits.
         if ($script:Json) { throw 'read-text --file: --json is not accepted in file mode - the pinned read-text envelope (schemaVersion+occluded+coveredBy+lines) has no provenance field, so image px would be indistinguishable from screen px. Drop --json: text mode labels every rect img-rect= and states the origin.' }
         $fScale = 1.0
         if ($scaleMode -eq '2' -or $scaleMode -eq 'tiled') { $fScale = 2.0 }
-        $fileResult = Invoke-OcrFile $filePath $fScale
+        $fileRetry = ''
+        if ($scaleMode -eq 'tiled') {
+          # v2.8.0: this used to fall through to a plain 2x read, i.e. the flag was accepted
+          # and did nothing beyond what --scale 2 already does. A flag that changes no
+          # behaviour is worse than no flag: it tells the caller the escape hatch was used.
+          $fileResult = Invoke-OcrFileTiled $filePath $fScale $maxTiles
+        } else {
+          $fileResult = Invoke-OcrFile $filePath $fScale
+          # A large capture that yields NOTHING is the one result a caller cannot act on, and
+          # the 489-capture survey showed it happens for the wrong reason: a 920x520 shot read
+          # 0 lines whole but gave text as soon as only its LEFT HALF was handed over, and a
+          # 1040x220 shot needed the 2x upscale. Both shapes are geometric, so the fix is to
+          # subdivide, not to change language packs. The retry is announced even when it finds
+          # nothing - a silent extra pass would leave "this image is a picture" and "the
+          # recognizer lost it" indistinguishable, which is the whole error being fixed.
+          # Opt-outs are the two flags that already mean "no extra pass": --no-tile, and
+          # --min-line-density 0 (which turns the predicate that gates this off too).
+          if (@($fileResult.Lines).Count -eq 0 -and -not $noTile -and
+              (Test-SparseReadability ([int]$fileResult.W) ([int]$fileResult.H) 0 $minLineDensity)) {
+            $rt = Invoke-OcrFileTiled $filePath 2.0 $maxTiles
+            $foundBack = @($rt.Lines).Count
+            $fileRetry = "auto-retry: whole-image read found 0 line(s), the subdivided read found $foundBack ($($rt.Tiles) tile(s), $([math]::Round($rt.Ms / 1000.0, 1)) s)"
+            # When the retry IS adopted its Notes print with the result; when it is not
+            # (nothing came back) they would vanish - and the one Note that matters most is
+            # the planner refusing to run because the image needs more tiles than --max-tiles
+            # allows. Losing that turns "we tried and the plan was impossible" into "we tried
+            # and found nothing", which is the exact ambiguity this retry exists to remove.
+            if (@($rt.Notes).Count -gt 0) { $fileRetry += ' ' + (@($rt.Notes) -join ' ') }
+            if ($foundBack -gt 0) { $fileResult = $rt }
+          }
+        }
         $lines = @($fileResult.Lines)
       } else {
         if ($Rest.Count -lt 1) { throw 'usage: read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle] [--scale auto|1|2|tiled] [--max-tiles n] [--no-tile] [--min-line-density n]' }
@@ -13429,8 +13633,10 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       # The density hint needs a box: screen px in region mode, IMAGE px in file mode.
       $boxW = $region.W; $boxH = $region.H
       if ($fileResult) { $boxW = $fileResult.W; $boxH = $fileResult.H }
+      $sparseSubject = 'region'
+      if ($fileResult) { $sparseSubject = 'image' }
       if (-not $script:Json -and (Test-SparseReadability $boxW $boxH $total $minLineDensity)) {
-        $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity
+        $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity $sparseSubject
       }
       if ($script:Json) {
         # CONTRACT keys: schemaVersion + occluded + coveredBy + lines. Same rule as
@@ -13451,7 +13657,11 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
           # set cannot be resolved" (they were unified in PS 7). This tool is 5.1-only, and
           # GetFileName is also wildcard-safe where -Path would not be.
           $fn = [System.IO.Path]::GetFileName($filePath)
-          "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" }) - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
+          $fTileSeg = ''
+          if ($fileResult.Tiles) { $fTileSeg = ", tiled: $($fileResult.Tiles) tile(s), $([math]::Round($fileResult.Ms / 1000.0, 1)) s" }
+          $fNoteSeg = ''
+          if (@($fileResult.Notes).Count -gt 0) { $fNoteSeg = ' ' + (@($fileResult.Notes) -join ' ') }
+          "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" })$fTileSeg$(if ($fileRetry) { " [$fileRetry]" })$fNoteSeg - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
           foreach ($e in $shown) { "L{0:D2} img-rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         } else {
         "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"

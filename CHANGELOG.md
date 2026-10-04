@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.8.0 — 2026-10-04
+
+Two file-mode fixes, both found by actually running v2.7.0's `--file` road over a corpus of
+**489 real stored captures** rather than by reasoning about it. That survey is also the reason
+this release does *not* add an extra OCR language: measured on real traffic, whole-image
+dropouts were 2 of 489 (0.4%) and both were geometric (one recovered by reading only the left
+half, one by reading at 2x), while English text read correctly through the Chinese recognizer
+all along. A second engine would not have moved either number.
+
+- **`--scale tiled` now really subdivides a saved capture.** It used to be accepted and then
+  collapse into a plain 2x read, because the tile planner only splits in order to stay under
+  the engine's dimension limit - and that limit (10000 px measured here) sits far above any
+  screenshot, so the plan was always exactly one tile. File tiling now halves the **long side**
+  of the image to choose its subdivision. The override may only ever *lower* that limit, never
+  raise it, so a tile can never exceed what the recognizer accepts.
+- **An empty read of a large capture retries itself, and says so.** When an image big enough
+  that it probably has text in it (>= 300k px2, the same floor the sparse-read WARN uses - no
+  second threshold was invented) comes back with 0 lines, the same image is re-read subdivided
+  once, and the header reports the outcome either way:
+  `auto-retry: whole-image read found 0 line(s), the subdivided read found N (K tile(s), X s)`.
+  A silent extra pass would leave "this image is a photograph" and "the recognizer lost a
+  region" as the same two lines of output, which is precisely the confusion being fixed.
+  `--no-tile` opts out. What the retry *itself* could not do is also reported: if the image
+  needs more tiles than `--max-tiles` allows, the planner refuses before any recognition runs,
+  and that refusal now reaches the header too - otherwise "nothing was ever looked at" reads
+  exactly like "nothing is there".
+- **In file mode the sparse-read WARN says `image is WxH`, never `region`.** The rest of the
+  same output - the header, the `img-rect=` label, the `--json` refusal - insists these are
+  image pixels and not screen coordinates, so a warning that called the thing a region and
+  blamed "a large window" contradicted its own command. Screen mode is byte-for-byte unchanged.
+- Ten new checks (654 total, up from 644), all runnable offline: the subdivision planner
+  (it must turn one read into several, and must never ask for an oversized tile), the WARN
+  wording **in both directions** (an assertion that only looked for the word `image` would
+  also pass if `region` had simply vanished from the sentence), a help-page lint, and five
+  end-to-end tests that drive the real command line - `--scale tiled` producing >= 2 tiles with
+  every rect inside the image, the retry firing and self-reporting on a blank 800x500 capture,
+  `--no-tile` suppressing it, `--max-tiles 2` making the retry report its own refusal rather
+  than a bare `found 0`, and a rendered WARN line reading `image is 800x500`. One existing
+  count-pinned lint moved 5 -> 6 because the retry is a new consumer of the shared predicate:
+  the expected value rose, the strictness did not.
+
 ## v2.7.0 — 2026-10-03
 
 `read-text --file <png>`: OCR a **saved capture** instead of a live screen region.

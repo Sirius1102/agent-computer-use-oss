@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v2.7.0
+# Agent Computer Use 开源版 v2.8.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=644%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=654%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -144,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `hash <sel|x y w h>` | 区域截图的 MD5 —— `assert-hash` 的输入 |
 | `find <文本...> [--target <sel>] [--region x,y,w,h] [--needle <文本>]` | **复合定位器**：先 UIA，同矩形再 OCR 兜底，并且报 `source=uia|ocr`；落空时说出两条路各自量到了什么 |
 | `find-text <sel|x y w h> <文本...> [--all] [--scale auto|1|2|tiled]` | OCR 区域，返回匹配行的屏幕矩形 + 可直接用的中心点 |
-| `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter 子串]` | OCR 区域，打印每行文本及其屏幕矩形；`--filter` 只留命中行。`--file` 改读**已存下的截图**——坐标以 `img-rect=` 返回（图像像素，**不是**屏幕矩形，因此不可点），且该模式拒绝 `--json`，因为信封里没有字段能说明坐标属于哪个空间 |
+| `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter 子串]` | OCR 区域，打印每行文本及其屏幕矩形；`--filter` 只留命中行。`--file` 改读**已存下的截图**——坐标以 `img-rect=` 返回（图像像素，**不是**屏幕矩形，因此不可点），且该模式拒绝 `--json`，因为信封里没有字段能说明坐标属于哪个空间。**v2.8.0**：`--scale tiled` 在文件模式里**真的会切块**（沿长边对半），此前它会退化成普通 2 倍放大——因为引擎自身的尺寸上限远高于任何截图，"只为不超限才分块"这条规则永远只切出 1 块；并且面积大得"该有字"却读出 0 行时，同一张图会自动细分重读一次，**捞没捞回来都写进表头**（`auto-retry: … 读到 N 行`）——"这张图本来就是照片"和"识别器丢了整块"不许打成同一种输出。`--no-tile` 关掉重试。文件模式的稀疏 WARN 现在写 `image is WxH`，不再写 `region` |
 | `ime` | 前台线程的键盘布局 / IME 状态（`ime=yes` 表示中文输入法激活中，`keys` 可能被候选窗吞掉；`type` 不经过 IME） |
 | `ime-state` | 转换模式（字母态 vs 中文态），经默认输入法窗口读取 |
 | `ime-en [hkl]` | 把前台线程的转换模式切到字母态并**读回**；回显会打出恢复原模式的确切命令 |
