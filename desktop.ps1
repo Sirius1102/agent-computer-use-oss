@@ -13988,7 +13988,7 @@ function Get-WorkspaceSummary {
 # ---------------------------------------------------------------------------
 # v3.0.0 (B-4, borrowed from the built-in page tool's take_snapshot filePath): a read
 # command whose output is big enough to matter currently goes ENTIRELY into the caller's
-# context. Measured on this machine: `uia-tree "ZCode" 40` = 576 Button + 574 Text + 389
+# context. Measured on this machine: a deep uia-tree scan (depth 40) of a real
 # Group rows, and a real 3840x2160 capture reads back 143-291 OCR lines - so one
 # reconnaissance call can cost more context than the whole action chain it was meant to
 # plan. `--dump <path>` writes the command's stdout to a file and prints a pointer instead.
