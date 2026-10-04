@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.8.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.9.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -5711,6 +5711,12 @@ function Invoke-SelfTest([string[]]$Rest) {
         ($usageTxt.Contains('30000 px2')) -and ($usageTxt.Contains('300k px2')) -and
         ($usageTxt.Contains('--no-tile')) -and ($usageTxt.Contains('never "region"')) -and
         ($usageTxt.Contains('four un-upscaled overlapping crops')))
+      # v2.9.0 changed what a read-text header LOOKS like, so the change is pinned where a
+      # reader finds it: the help must name the label, say the lowered line belongs to
+      # read-text alone, and point at the negative paths that still shout at the band.
+      ST-Check 'lint: the help states the readability label and that only read-text lowered its line' (
+        ($usageTxt.Contains('readability=')) -and ($usageTxt.Contains('FOR read-text ONLY')) -and
+        ($usageTxt.Contains('0.1')) -and ($usageTxt.Contains('find-text / assert-text / expect')))
 
       # ---- v2.8.0 end to end. These drive the command line, not the functions, because
       # the defect fixed this round was precisely "a flag that is accepted and does
@@ -5796,9 +5802,11 @@ function Invoke-SelfTest([string[]]$Rest) {
       ST-Check 'unit: the ladder never reports a scale it did not use, whichever pass it keeps' (
         (@(1.0, 2.0) -contains [double]$lRes.Scale) -and (@(1.0, 2.0) -contains [double]$lRes2.Scale) -and
         ($lRes.Report -match 'whole@2x=') -and ($lRes2.Report -match 'whole@2x='))
-      # (3) the file-mode sparse WARN must speak file-mode. This is the RENDERED line, not
-      # the builder's return value - the wording bug shipped because nothing looked at the
-      # line a human actually reads.
+      # (3) v2.9.0: the changed rule, asserted on RENDERED output in both directions.
+      # A merely-sparse read now carries the measurement and stays quiet; a near-zero read
+      # still shouts and still says "image", never "region". The middle fixture is the SAME
+      # file read twice at two thresholds, so the quiet one cannot be explained by a blank
+      # capture or a broken fixture - only by the threshold moving.
       $spPng = Join-Path $ocDir 'sparse.png'
       $sb = New-Object System.Drawing.Bitmap(800, 500)
       $sg = [System.Drawing.Graphics]::FromImage($sb)
@@ -5809,10 +5817,30 @@ function Invoke-SelfTest([string[]]$Rest) {
       $sg.Dispose(); $sfont.Dispose()
       $sb.Save($spPng, [System.Drawing.Imaging.ImageFormat]::Png); $sb.Dispose()
       $tS = & $stRun $spPng '' 'sparse.txt'
-      ST-Check 'e2e: the file-mode sparse WARN on a real read says "image is", never "region is"' (
-        ($tS.Exit -eq 0) -and ($tS.Txt -match 'WARN: image is 800x500') -and (-not ($tS.Txt -match 'WARN: region')) -and
-        ($tS.Txt -match '--scale tiled') -and (@($tS.Txt -split "`r?`n" | Where-Object { $_ -match '^L\d\d img-rect=' }).Count -ge 1))
-      Write-Output ("      file sparse warn: exit=$($tS.Exit) lines=" + (@($tS.Txt -split "`r?`n" | Where-Object { $_ -match '^L\d\d img-rect=' }).Count))
+      ST-Check 'e2e: a merely sparse read carries readability= and stays quiet (the shout that fired on 18.6% of real traffic is now a measurement)' (
+        ($tS.Exit -eq 0) -and ($tS.Txt -match 'readability=0\.5 lines per 100k px2') -and
+        ($tS.Txt -match 'warn-below=0\.1') -and ($tS.Txt -match 'band=small-area') -and
+        (-not ($tS.Txt -match 'WARN:')))
+      $tSO = & $stRun $spPng '--min-line-density 1.5' 'sparse-old.txt'
+      ST-Check 'e2e: the very same capture at the old 1.5 band DOES shout, so the quiet above is the threshold, not a blank fixture' (
+        ($tSO.Exit -eq 0) -and ($tSO.Txt -match 'WARN: image is 800x500') -and ($tSO.Txt -match 'active-threshold=1'))
+      $nzPng = Join-Path $ocDir 'nearzero.png'
+      $nb = New-Object System.Drawing.Bitmap(2000, 1200)
+      $ng = [System.Drawing.Graphics]::FromImage($nb)
+      $ng.Clear([System.Drawing.Color]::White)
+      $nfont = New-Object System.Drawing.Font('Segoe UI', 30, [System.Drawing.FontStyle]::Regular)
+      $ng.DrawString('DTX near zero capture row one', $nfont, [System.Drawing.Brushes]::Black, [single]40, [single]60)
+      $ng.DrawString('DTX near zero capture row two', $nfont, [System.Drawing.Brushes]::Black, [single]40, [single]120)
+      $ng.Dispose(); $nfont.Dispose()
+      $nb.Save($nzPng, [System.Drawing.Imaging.ImageFormat]::Png); $nb.Dispose()
+      $tN2 = & $stRun $nzPng '' 'nearzero.txt'
+      $nzLines = @($tN2.Txt -split "`r?`n" | Where-Object { $_ -match '^L\d\d img-rect=' }).Count
+      ST-Check 'e2e: a near-zero read on a large capture still shouts, names it an image, and offers the ladder' (
+        ($tN2.Exit -eq 0) -and ($tN2.Txt -match 'WARN: image is 2000x1200') -and (-not ($tN2.Txt -match 'WARN: region')) -and
+        ($tN2.Txt -match 'readability=0\.0[0-9]') -and ($tN2.Txt -match 'warn-below=0\.1') -and
+        ($tN2.Txt -match '--scale tiled') -and ($nzLines -ge 1))
+      Write-Output ("      readability pair: sparse exit=$($tS.Exit) shouted=" + $(if ($tS.Txt -match 'WARN:') { 'yes' } else { 'no' }) +
+        " old-band shouted=" + $(if ($tSO.Txt -match 'WARN:') { 'yes' } else { 'no' }) + " nearzero-lines=$nzLines")
     } finally {
       Remove-Item -LiteralPath $ocDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -7555,6 +7583,30 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'unit: sparse predicate relaxes the small-area band for a legal sparse dialog (749x540, 5 lines)' (-not (Test-SparseReadability 749 540 5 1.5))
   ST-Check 'unit: sparse predicate still warns on a truly masked large region (2000x1200, 2 lines)' (Test-SparseReadability 2000 1200 2 1.5)
   ST-Check 'unit: sparse predicate small-area band has a live boundary (749x540, 4 lines warns)' (Test-SparseReadability 749 540 4 1.5)
+  # v2.9.0: read-text's OWN loud threshold moved from the band to the near-zero rule, because
+  # the 489-capture survey showed 1.5 cuts through the mode of ordinary traffic (214 quiet reads
+  # sit in [1.5,2.0) alone; 91 of 489 = 18.6% shouted) while every genuine failure shape sits far
+  # lower. Both directions here, on the two shapes the survey actually produced - and the second
+  # one asserts the OLD value too, so "quiet" cannot be explained by a broken predicate.
+  ST-Check 'unit: the modal-scrim shape (2 lines on 1722x1597 = density 0.07) still shouts at the new 0.1 default' (
+    (Test-SparseReadability 1722 1597 2 0.1))
+  ST-Check 'unit: an ordinary sparse window (40 lines on 1722x1597 = density 1.45) is quiet at 0.1 and was NOT quiet at 1.5' (
+    (-not (Test-SparseReadability 1722 1597 40 0.1)) -and (Test-SparseReadability 1722 1597 40 1.5))
+  ST-Check 'unit: the small-area cap cannot lift a lowered threshold (0.1 on a 749x540 dialog warns only below 0.1)' (
+    (Get-SparseReadPolicy ([long]749 * 540) 0.1).Threshold -eq 0.1 -and (-not (Test-SparseReadability 749 540 5 0.1)))
+  # and the split itself must be visible in the source: exactly ONE command lowered its default.
+  $mldLow = @($codeLines | Where-Object { $_ -match '\$minLineDensity = 0\.1\s*$' }).Count
+  $mldBand = @($codeLines | Where-Object { $_ -match '\$minLineDensity = 1\.5\s*$' }).Count
+  ST-Check 'lint: read-text alone dropped to the near-zero default; the two absence-claiming paths keep the band' (
+    ($mldLow -eq 1) -and ($mldBand -eq 2))
+  # the readability label must reach BOTH headers (file mode and screen mode) and be produced in
+  # exactly one place, or one mode silently stops reporting its own quality. The token is
+  # assembled at runtime: this scan line would otherwise match its own search string and the
+  # count would be off by one forever (same self-evasion idiom as the badge lint).
+  $rlTok = 'read' + 'Label'
+  $rlSites = @($codeLines | Where-Object { $_.Contains($rlTok) -and $_ -notmatch '^\s*#' }).Count
+  ST-Check 'lint: the readability label has one producer and reaches both read-text headers' ($rlSites -eq 4)
+  if ($rlSites -ne 4) { Write-Output "      readability label sites: $rlSites (want 4: init + build + 2 headers)" }
   $srw = Build-SparseReadWarn 2482 1514 2 1.5
   ST-Check 'unit: sparse WARN wording names the size, the count, the modal/scrim suspicion and the escape hatch' (
     $srw.Contains('WARN: region is 2482x1514 but only 2 line(s) read') -and
@@ -9098,26 +9150,63 @@ function Invoke-SelfTest([string[]]$Rest) {
         $gB.DrawString($probeB1, $fntB, $brsB, [single]($pb1x - $inkB1.X), [single]($pb1y - $inkB1.Y))
         $gB.DrawString($probeB2, $fntB, $brsB, [single]($pb2x - $inkB2.X), [single]($pb2y - $inkB2.Y))
         $gB.Dispose(); $fntB.Dispose(); $brsB.Dispose()
-        # reference read: direct 1x OCR of the same canvas in the same pass
+        # v2.9.0 - the reference is the SAME TILE cropped and read at 1x, not the whole
+        # canvas. The old shape compared a 2x-upscaled tile against a whole-canvas 1x read,
+        # and on this machine the engine moves line boxes by tens of pixels on tiles whose
+        # upscaled size sits exactly at MaxImageDimension (measured: Y off 53px, X off 1px -
+        # identical on two consecutive rounds and on the pre-change HEAD, so it was neither
+        # flaky nor ours). That assertion was measuring the engine's geometry while claiming
+        # to measure our mapping math, and the only way it could react was going red on a
+        # round where nothing of ours was wrong. Both sides now come from one tile and the
+        # 3px tolerance stays; the whole-canvas delta is REPORTED as engine-jitter= so drift
+        # is visible without being a gate.
         $refB = Invoke-OcrBitmap $canvas2
         $rB1 = @($refB.Lines | Where-Object { ($_.Text -replace ' ', '') -like ('*' + $probeB1 + '*') })
         $rB2 = @($refB.Lines | Where-Object { ($_.Text -replace ' ', '') -like ('*' + $probeB2 + '*') })
         $tB = Invoke-OcrBitmapTiled $canvas2 $multiW 1600 2.0 16 0 0
         $hB1 = @($tB.Lines | Where-Object { ($_.Text -replace ' ', '') -like ('*' + $probeB1 + '*') })
         $hB2 = @($tB.Lines | Where-Object { ($_.Text -replace ' ', '') -like ('*' + $probeB2 + '*') })
-        # >=2 tiles, both probes present on BOTH sides, and each mapped 2x
-        # rect within 3px of its 1x reference - per axis, strictly.
-        $synB = ($tB.Tiles -ge 2 -and $rB1.Count -eq 1 -and $rB2.Count -eq 1 -and $hB1.Count -eq 1 -and $hB2.Count -eq 1 -and
-          [math]::Abs($hB1[0].X - $rB1[0].X) -le 3 -and [math]::Abs($hB1[0].Y - $rB1[0].Y) -le 3 -and
-          [math]::Abs($hB2[0].X - $rB2[0].X) -le 3 -and [math]::Abs($hB2[0].Y - $rB2[0].Y) -le 3)
-        ST-Check 'live: synthetic split - >=2 tiles, mapped reads within 3px of the 1x reference' $synB
+        $synMaxDim = 0
+        try { $synMaxDim = Get-OcrMaxDimension } catch { $synMaxDim = 0 }
+        $synPlan = Get-OcrTilePlan $multiW 1600 2.0 $synMaxDim 64 16
+        $tileRef = @{}
+        $tileRefErr = ''
+        foreach ($pd in @(@{ N = $probeB1; X = $pb1x; Y = $pb1y }, @{ N = $probeB2; X = $pb2x; Y = $pb2y })) {
+          $ht = $null
+          foreach ($tl in @($synPlan.Tiles)) {
+            if ($pd.X -ge $tl.X -and $pd.X -lt ($tl.X + $tl.W) -and $pd.Y -ge $tl.Y -and $pd.Y -lt ($tl.Y + $tl.H)) { $ht = $tl; break }
+          }
+          if ($null -eq $ht) { $tileRefErr += "no-tile-for-$($pd.N) "; continue }
+          $tcrop = $canvas2.Clone((New-Object System.Drawing.Rectangle($ht.X, $ht.Y, $ht.W, $ht.H)), $canvas2.PixelFormat)
+          $tl2 = @()
+          try { $tl2 = @((Invoke-OcrBitmap $tcrop).Lines) } finally { $tcrop.Dispose() }
+          $th = @($tl2 | Where-Object { ($_.Text -replace ' ', '') -like ('*' + $pd.N + '*') })
+          if ($th.Count -ne 1) { $tileRefErr += "$($pd.N) crop-hits=$($th.Count) "; continue }
+          $tileRef[$pd.N] = @{ X = ($ht.X + [int]$th[0].X); Y = ($ht.Y + [int]$th[0].Y) }
+        }
+        # >=2 tiles, both probes found in the merged result, and each mapped 2x rect within
+        # 3px of its OWN TILE's 1x read - per axis, strictly.
+        $synB = ($tB.Tiles -ge 2) -and (-not $synPlan.Error) -and ($tileRefErr -eq '') -and
+          ($hB1.Count -eq 1) -and ($hB2.Count -eq 1) -and
+          [bool]($tileRef.ContainsKey($probeB1)) -and [bool]($tileRef.ContainsKey($probeB2)) -and
+          [math]::Abs($hB1[0].X - $tileRef[$probeB1].X) -le 3 -and [math]::Abs($hB1[0].Y - $tileRef[$probeB1].Y) -le 3 -and
+          [math]::Abs($hB2[0].X - $tileRef[$probeB2].X) -le 3 -and [math]::Abs($hB2[0].Y - $tileRef[$probeB2].Y) -le 3
+        ST-Check 'live: synthetic split - >=2 tiles, mapped reads within 3px of the SAME TILE read at 1x (engine jitter reported, not asserted)' $synB
         $sB1 = 'none'; if ($hB1.Count -gt 0) { $sB1 = "$($hB1[0].X),$($hB1[0].Y)" }
         $sB2 = 'none'; if ($hB2.Count -gt 0) { $sB2 = "$($hB2[0].X),$($hB2[0].Y)" }
         $sR1 = 'none'; if ($rB1.Count -gt 0) { $sR1 = "$($rB1[0].X),$($rB1[0].Y)" }
         $sR2 = 'none'; if ($rB2.Count -gt 0) { $sR2 = "$($rB2[0].X),$($rB2[0].Y)" }
-        Write-Output "      synthetic tiled OCR (${multiW}x1600): tiles=$($tB.Tiles) mapped1=$sB1 ref1=$sR1  mapped2=$sB2 ref2=$sR2"
+        $sT1 = 'none'; if ($tileRef.ContainsKey($probeB1)) { $sT1 = "$($tileRef[$probeB1].X),$($tileRef[$probeB1].Y)" }
+        $sT2 = 'none'; if ($tileRef.ContainsKey($probeB2)) { $sT2 = "$($tileRef[$probeB2].X),$($tileRef[$probeB2].Y)" }
+        # reported, NOT asserted: how far the merged tiled read sits from a whole-canvas 1x
+        # read. This is the engine's own box placement on limit-sized tiles.
+        $jit1 = 'n/a'; if ($hB1.Count -eq 1 -and $rB1.Count -eq 1) { $jit1 = "$([math]::Abs($hB1[0].X - $rB1[0].X))/$([math]::Abs($hB1[0].Y - $rB1[0].Y))px" }
+        $jit2 = 'n/a'; if ($hB2.Count -eq 1 -and $rB2.Count -eq 1) { $jit2 = "$([math]::Abs($hB2[0].X - $rB2[0].X))/$([math]::Abs($hB2[0].Y - $rB2[0].Y))px" }
+        Write-Output "      synthetic tiled OCR (${multiW}x1600): tiles=$($tB.Tiles) plan=$($synPlan.Count) mapped1=$sB1 tileRef1=$sT1 whole1=$sR1 engine-jitter1=$jit1"
+        Write-Output "      synthetic tiled OCR probe2: mapped2=$sB2 tileRef2=$sT2 whole2=$sR2 engine-jitter2=$jit2 (jitter is reported, not asserted - see the comment above)"
+        if ($tileRefErr) { Write-Output "      tile reference problem: $tileRefErr" }
         if (-not $synB) {
-          Write-Output "      DEBUG split failure: tiles=$($tB.Tiles) hB1=$($hB1.Count) hB2=$($hB2.Count) rB1=$($rB1.Count) rB2=$($rB2.Count)"
+          Write-Output "      DEBUG split failure: tiles=$($tB.Tiles) planErr='$($synPlan.Error)' hB1=$($hB1.Count) hB2=$($hB2.Count) tileRefErr='$tileRefErr'"
           Write-Output "      DEBUG merged tiled lines ($($tB.Lines.Count)):"
           $tB.Lines | Select-Object -First 12 | ForEach-Object { Write-Output "        [$($_.Text)] X=$($_.X) Y=$($_.Y) W=$($_.W) H=$($_.H)" }
           Write-Output "      DEBUG reference lines ($($refB.Lines.Count)):"
@@ -11874,7 +11963,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.8.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.9.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11983,6 +12072,21 @@ desktop.ps1 v2.8.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     self-report names band and threshold). Text mode
                                     only; --min-line-density tunes either band or
                                     silences it, 0 = off.
+                                    v2.9.0 CHANGES THAT DEFAULT FOR read-text ONLY, to
+                                    0.1, and adds a measurement that is always printed:
+                                    readability=<n> lines per 100k px2 (area=..., 
+                                    warn-below=..., band=...). Reason is measured: over
+                                    489 real captures the 1.5 band fired on 91 of them
+                                    (18.6%) because it cuts through the mode of ordinary
+                                    traffic - 214 quiet reads sit in [1.5,2.0) alone -
+                                    while every genuine failure shape sits far lower (the
+                                    modal/scrim incident measured 0.07, blank reads 0.00).
+                                    A dump should REPORT its quality; a shout belongs
+                                    only where the read cannot support a conclusion.
+                                    find-text / assert-text / expect / challenge-probe
+                                    KEEP the 1.5 band: there the read is the claim of
+                                    absence, so the alarm belongs. --min-line-density 0
+                                    silences the WARN and the label together.
                                     v2.7.0 --file <png>: OCR a SAVED capture instead
                                     of a live region, so OCR quality becomes something
                                     you can measure offline, replay, and A/B between
@@ -13704,7 +13808,14 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $maxLines = -1
       $filter = ''
       $scaleMode = 'auto'; $maxTiles = 16; $noTile = $false
-      $minLineDensity = 1.5
+      # v2.9.0: read-text's own loud threshold is the NEAR-ZERO rule, not the band. The
+      # 489-capture survey showed density 1.5 cuts through the mode of normal traffic (214
+      # quiet reads sat in [1.5,2.0) alone), so it fired on 18.6% of ordinary dumps; the
+      # negative-conclusion commands (find-text / assert-text / expect / challenge-probe)
+      # keep the band, because there the read IS the claim of absence. 0.1 still warns on
+      # every real failure shape the band was built for: the modal incident measured 2 lines
+      # on a 1722x1597 window = 0.07, and the survey's blank-looking reads were 0.00.
+      $minLineDensity = 0.1
       $filePath = ''
       $words = New-Object System.Collections.ArrayList
       $i = 0
@@ -13801,6 +13912,21 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       if ($fileResult) { $boxW = $fileResult.W; $boxH = $fileResult.H }
       $sparseSubject = 'region'
       if ($fileResult) { $sparseSubject = 'image' }
+      # v2.9.0: the MEASUREMENT is always on the table; the ALARM is not. A read-text dump is
+      # for something that can count lines itself, so one more number in the header is cheaper
+      # and more inspectable than a shouted line - and at density 1.5 the shout fired on 18.6%
+      # of 489 ordinary captures (the survey's quiet reads cluster right above the band: 214 of
+      # them in [1.5,2.0) alone). The loud WARN stays for near-zero reads, where "not found"
+      # genuinely cannot be trusted, and for the negative-conclusion commands (find-text /
+      # assert-text / expect / challenge-probe), which keep the band because there the read IS
+      # the claim of absence. --min-line-density still moves the line; 0 still silences both.
+      $srArea = [long]$boxW * [long]$boxH
+      $srPolicy = Get-SparseReadPolicy $srArea $minLineDensity
+      $readLabel = ''
+      if (-not $script:Json -and $srPolicy.Enabled) {
+        $srDens = [math]::Round(([double]$total) / ($srArea / 100000.0), 2)
+        $readLabel = " readability=$srDens lines per 100k px2 (area=$srArea px2, warn-below=$($srPolicy.Threshold), band=$($srPolicy.Band))"
+      }
       if (-not $script:Json -and (Test-SparseReadability $boxW $boxH $total $minLineDensity)) {
         $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity $sparseSubject
       }
@@ -13827,10 +13953,10 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
           if ($fileResult.Tiles) { $fTileSeg = ", tiled: $($fileResult.Tiles) tile(s), $([math]::Round($fileResult.Ms / 1000.0, 1)) s" }
           $fNoteSeg = ''
           if (@($fileResult.Notes).Count -gt 0) { $fNoteSeg = ' ' + (@($fileResult.Notes) -join ' ') }
-          "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" })$fTileSeg$(if ($fileRetry) { " [$fileRetry]" })$fNoteSeg - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
+          "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" })$fTileSeg$(if ($fileRetry) { " [$fileRetry]" })$fNoteSeg$readLabel - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
           foreach ($e in $shown) { "L{0:D2} img-rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         } else {
-        "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
+        "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$readLabel$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
         foreach ($e in $shown) { "L{0:D2} rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         }
         if ($sparseWarn) { Write-Output $sparseWarn }

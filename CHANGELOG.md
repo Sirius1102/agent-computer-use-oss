@@ -2,6 +2,62 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.9.0 — 2026-10-04
+
+The sparse-read signal changed **tone**, not just threshold - and one live check stopped
+measuring the OCR engine.
+
+### The shout that fired on a fifth of real traffic
+
+`read-text` on a region of >= 300k px2 used to print a `WARN:` whenever its line density fell
+under the area band (1.0 small / 1.5 large). Over the 489 real captures surveyed for v2.8.1 that
+rule fired on **91 of them (18.6%)**, and the reason is not a mis-tuned number: the density
+distribution of ordinary traffic is not bimodal. 214 *quiet* reads sat in [1.5, 2.0) alone - the
+threshold was cutting through the mode. Lowering it does not help either (at 1.0 it still fires
+on 73). Meanwhile every genuine failure shape sits far lower: the modal/scrim incident that
+motivated the rule measured 0.07 lines per 100k px2, and blank captures measure 0.00.
+
+So the signal is now two things instead of one:
+
+- **Always, in the header**: `readability=<n> lines per 100k px2 (area=<px2>, warn-below=<t>, band=<b>)`.
+  A dump that is being read by something which counts lines should carry its own measurement.
+- **Only near zero**: the shouted `WARN:` now requires density < **0.1** lines per 100k px2 -
+  12 of the 489 captures (2.5%) - which is the zone where a result genuinely cannot support
+  "it is not there".
+
+`find-text`, `assert-text`, the `expect` family and the challenge-probe none-path **keep the
+1.0/1.5 bands exactly as they were**. On those commands the read *is* the claim of absence, so
+the alarm is part of the conclusion rather than noise. `--min-line-density` is still the same
+single knob - pass `1.5` to `read-text` and the old behaviour comes back verbatim - and `0`
+still silences the WARN, now along with the label.
+
+### One live check was measuring the engine, not our mapping
+
+`tiled reads within 3px of the 1x reference` compared a 2x-upscaled tile against a whole-canvas
+1x read. On this machine the engine moves line boxes by tens of pixels on tiles whose upscaled
+size sits exactly at `MaxImageDimension` - measured 53px on Y, 1px on X, and the *same numbers*
+came back on two consecutive rounds and on the pre-change HEAD, so it was neither flaky nor
+introduced by us. The assertion was therefore reacting to the engine's geometry while claiming
+to test our `origin + tile + coord/scale` arithmetic, and the only way it could respond was by
+going red on a round where nothing of ours was wrong.
+
+The reference is now **the same tile, cropped and read at 1x**, so both sides of the comparison
+come from one tile and the 3px tolerance is unchanged - strictness was not traded for silence.
+The whole-canvas delta is still computed and printed as `engine-jitter=<x>/<y>px`: visible,
+trendable, and no longer a gate.
+
+### Checks
+
+Nine added, one folded into them (669 total, up from 661). The important shape is the pair on
+**the same synthetic capture at two thresholds**: at the new 0.1 it carries
+`readability=0.5` and prints no WARN, at 1.5 it must shout - so "quiet" cannot be explained by a
+fixture that went blank, and a regression in either direction goes red. Plus: unit assertions on
+the modal-scrim shape (2 lines on 1722x1597) still shouting at 0.1, on the small-area cap not
+being able to lift a lowered threshold back up, a lint that exactly one command lowered its
+default (`= 0.1` once, `= 1.5` twice) and that the readability label is produced in one place and
+reaches both headers (file mode and screen mode), and an end-to-end test that a large near-zero
+read still shouts, calls itself an image and offers the ladder.
+
 ## v2.8.1 — 2026-10-04
 
 A fix for v2.8.0's auto-retry, which passed its own checks and did not do the thing it was

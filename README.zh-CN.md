@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v2.8.1
+# Agent Computer Use 开源版 v2.9.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=661%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=669%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -144,7 +144,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `hash <sel|x y w h>` | 区域截图的 MD5 —— `assert-hash` 的输入 |
 | `find <文本...> [--target <sel>] [--region x,y,w,h] [--needle <文本>]` | **复合定位器**：先 UIA，同矩形再 OCR 兜底，并且报 `source=uia|ocr`；落空时说出两条路各自量到了什么 |
 | `find-text <sel|x y w h> <文本...> [--all] [--scale auto|1|2|tiled]` | OCR 区域，返回匹配行的屏幕矩形 + 可直接用的中心点 |
-| `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter 子串]` | OCR 区域，打印每行文本及其屏幕矩形；`--filter` 只留命中行。`--file` 改读**已存下的截图**——坐标以 `img-rect=` 返回（图像像素，**不是**屏幕矩形，因此不可点），且该模式拒绝 `--json`，因为信封里没有字段能说明坐标属于哪个空间。**v2.8.0/2.8.1**：`--scale tiled` 在文件模式里**真的会切块**（沿长边对半），此前它会退化成普通 2 倍放大——因为引擎自身的尺寸上限远高于任何截图，"只为不超限才分块"这条规则永远只切出 1 块；并且读出 0 行、面积 ≥ 30000 px² 的任何图会走一趟**重试梯子**（v2.8.1：先整图 2 倍放大，再切成 4 块**不放大**的交叠子图），**表头把每一趟各自读到什么都写清楚**（`auto-retry (floor=30000 px2): whole-image@1x=0 line(s), whole@2x=1 line(s), kept=1`）——"这张图本来就是照片""识别器丢了整块""根本没看成"这三种情况不许打成同一行输出。`--no-tile` 关掉梯子；被 `--max-tiles` 挡掉的那一趟要写成 `skipped` 并附原因，绝不退化成干巴巴的 0。文件模式的稀疏 WARN 现在写 `image is WxH`，不再写 `region` |
+| `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter 子串]` | OCR 区域，打印每行文本及其屏幕矩形；`--filter` 只留命中行。`--file` 改读**已存下的截图**——坐标以 `img-rect=` 返回（图像像素，**不是**屏幕矩形，因此不可点），且该模式拒绝 `--json`，因为信封里没有字段能说明坐标属于哪个空间。**v2.8.0/2.8.1**：`--scale tiled` 在文件模式里**真的会切块**（沿长边对半），此前它会退化成普通 2 倍放大——因为引擎自身的尺寸上限远高于任何截图，"只为不超限才分块"这条规则永远只切出 1 块；并且读出 0 行、面积 ≥ 30000 px² 的任何图会走一趟**重试梯子**（v2.8.1：先整图 2 倍放大，再切成 4 块**不放大**的交叠子图），**表头把每一趟各自读到什么都写清楚**（`auto-retry (floor=30000 px2): whole-image@1x=0 line(s), whole@2x=1 line(s), kept=1`）——"这张图本来就是照片""识别器丢了整块""根本没看成"这三种情况不许打成同一行输出。`--no-tile` 关掉梯子；被 `--max-tiles` 挡掉的那一趟要写成 `skipped` 并附原因，绝不退化成干巴巴的 0。文件模式的稀疏 WARN 现在写 `image is WxH`，不再写 `region`。**v2.9.0** 改了稀疏信号的**语气**（两种模式都改）：面积过 30 万 px² 的 `read-text` 表头**永远自报** `readability=<n> lines per 100k px2 (area=… px2, warn-below=…, band=…)`——这是测量值；而**喊叫式的 `WARN:` 只留给每 10 万 px² 读不到 0.1 行的读数**，也就是"这个读数撑不起任何结论"的区间。理由是实测：489 张真实捕获里 1.5 那条线正切在普通流量的主峰上（91 张被喊 = 18.6%，安静侧单 [1.5,2.0) 就堆了 214 张），而真失败形状全在很低的位置（一次模态遮罩事故实测 0.07，空白读数 0.00）。`find-text` / `assert-text` / `expect` 族**保持 1.0/1.5 双档一字不改**——那里读数本身就是"没有"的断言，警告是结论的一部分。`--min-line-density` 仍是同一个旋钮（传 `1.5` 就恢复旧行为），`0` 一次关掉标签与警告 |
 | `ime` | 前台线程的键盘布局 / IME 状态（`ime=yes` 表示中文输入法激活中，`keys` 可能被候选窗吞掉；`type` 不经过 IME） |
 | `ime-state` | 转换模式（字母态 vs 中文态），经默认输入法窗口读取 |
 | `ime-en [hkl]` | 把前台线程的转换模式切到字母态并**读回**；回显会打出恢复原模式的确切命令 |
