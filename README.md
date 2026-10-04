@@ -1,10 +1,10 @@
-# Agent Computer Use (Open Source Edition) v2.8.0
+# Agent Computer Use (Open Source Edition) v2.8.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=654%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=661%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -152,7 +152,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `hash <sel|x y w h>` | MD5 of a region capture — the input for `assert-hash` |
 | `find <text...> [--target <sel>] [--region x,y,w,h] [--needle <text>]` | **composite locator**: UIA first, OCR over the same rect as fallback, and it reports `source=uia|ocr`; a miss names what both roads measured |
 | `find-text <sel|x y w h> <needle...> [--all] [--scale auto|1|2|tiled]` | OCR a region, return the screen rect(s) of matching lines + ready-to-use centres |
-| `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle]` | OCR a region, print lines with their screen rects; `--filter` keeps matching lines. `--file` reads a **saved capture** instead — coords come back as `img-rect=` (image px, **not** a screen rect, so they are not clickable) and `--json` is refused there because the envelope has no field to say which space it is in. **v2.8.0**: `--scale tiled` really subdivides a stored image (cut in half along its long side) — it used to collapse to a plain 2x read, because the engine's own dimension limit is far above any screenshot; and a capture large enough that 0 lines is suspicious is now re-read subdivided **once, with the outcome stated either way** (`auto-retry: ... found N`), because "that image is a photo" and "the recognizer lost a region" must not print the same thing. `--no-tile` opts out. In file mode the sparse-read WARN says `image is WxH`, never `region` |
+| `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle]` | OCR a region, print lines with their screen rects; `--filter` keeps matching lines. `--file` reads a **saved capture** instead — coords come back as `img-rect=` (image px, **not** a screen rect, so they are not clickable) and `--json` is refused there because the envelope has no field to say which space it is in. **v2.8.0/2.8.1**: `--scale tiled` really subdivides a stored image (cut in half along its long side) — it used to collapse to a plain 2x read, because the engine's own dimension limit is far above any screenshot. And a capture of >= 30000 px2 that reads 0 lines is re-read through a **ladder** — the whole image at 2x, then four un-upscaled overlapping crops — with **every pass named in the header along with what it got** (`auto-retry (floor=30000 px2): whole-image@1x=0 line(s), whole@2x=1 line(s), kept=1`), because "that image is a photograph", "the recognizer lost a region" and "nobody looked at it" must not print the same line. `--no-tile` opts out; a pass that `--max-tiles` refuses is reported as skipped, never as a bare zero. In file mode the sparse-read WARN says `image is WxH`, never `region` |
 | `ime` | the foreground thread's keyboard layout / IME state (`ime=yes` → `keys` may be eaten by a candidate window; `type` bypasses the IME) |
 | `ime-state` | conversion mode (alphanumeric vs native), read through the default IME window |
 | `ime-en [hkl]` | switch the foreground thread's conversion mode to alphanumeric and **read it back**; the echo prints the exact command that restores the old mode |

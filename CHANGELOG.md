@@ -2,6 +2,46 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.8.1 — 2026-10-04
+
+A fix for v2.8.0's auto-retry, which passed its own checks and did not do the thing it was
+added to do. Found by re-running it against the two real captures that motivated it.
+
+Two defects, both measured rather than reasoned about:
+
+- **It never fired on the case it existed for.** v2.8.0 gated the retry on the sparse-read
+  WARN's 300k px2 band, on the reasoning that a second threshold should not be invented. The
+  capture that needs the retry is 228,800 px2 - below that band - so it got no warning, no
+  retry, and printed exactly like a blank image. An empty read is suspicious at a much smaller
+  size than a merely sparse one, so emptiness now has its own floor
+  (`Get-EmptyReadAreaFloor`, 30000 px2, one producer, pinned by name and value).
+- **Its geometry was the wrong shape.** The v2.8.0 retry re-read the image as 2x-upscaled
+  tiles and recovered nothing from either real capture. Re-measuring showed what does work:
+  the 1040x220 shot yields a line from the **whole image upscaled**, and the 920x520 shot
+  yields one from an **un-upscaled quarter crop**. The retry is therefore a two-pass ladder -
+  `whole@2x`, then `quadrants@1x` (four overlapping crops, 64px folded into each inner edge) -
+  and the header names each pass with its own count:
+  `auto-retry (floor=30000 px2): whole-image@1x=0 line(s), whole@2x=0 line(s), quadrants@1x=1 line(s) (4 tiles), kept=1`.
+  A pass that `--max-tiles` refuses is reported as `quadrants@1x=skipped` plus the reason,
+  never as a bare zero.
+- Also caught while closing out: the quadrant pass returned no `Scale`, so a capture recovered
+  that way announced itself as `scale=0`. A self-report that is quietly wrong is worse than no
+  self-report, so the ladder's scale is now asserted at the function boundary.
+
+Seven new checks (661 total, up from 654), including the **positive control v2.8.0 lacked**: an
+empty 400x300 capture - deliberately below the old band - must come back with a ladder report.
+That one check would have failed the previous release. One count-pinned lint moves **down**
+6 -> 5 (the retry no longer consults the WARN predicate); that is a rule being split in two,
+not a negative path losing its hint, and the new single-producer lint on the empty-read floor
+covers the side that moved out.
+
+The lesson is recorded in `迭代日志` terms too, since it is a general one: **a green gate is not
+evidence that a feature works.** Every check in v2.8.0 pinned the mechanism (the pass ran, the
+line printed) and none pinned the outcome (text actually came back), so the release shipped a
+retry that could not retry. Recovery, degradation and fallback paths need a positive control
+that asserts the thing was actually recovered - and a delivery is not finished until it has
+been run once against real data, not only against fixtures built from the same assumption.
+
 ## v2.8.0 — 2026-10-04
 
 Two file-mode fixes, both found by actually running v2.7.0's `--file` road over a corpus of

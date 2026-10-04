@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 2.8.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 2.8.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -1213,6 +1213,113 @@ function Invoke-OcrFileTiled([string]$Path, [double]$scale, [int]$maxTiles) {
     $t = Invoke-OcrBitmapTiled $bmp $iw $ih $scale $maxTiles 0 0 (Get-FileTileMaxDim $iw $ih $scale)
     return @{ Lines = @($t.Lines); W = $iw; H = $ih; Scale = $scale; Tiles = $t.Tiles; Ms = $t.Ms; Duplicates = $t.Duplicates; Notes = @($t.Notes) }
   } finally { if ($null -ne $bmp) { $bmp.Dispose() } }
+}
+
+# v2.8.1: what an EMPTY read of a stored image is worth, and what to do about it.
+#
+# The 489-capture survey produced 21 reads of 0 lines, and two of them were real
+# dropouts. v2.8.0 retried those with the subdivided 2x read above and recovered
+# NEITHER - re-measured on the same two files today: a 920x520 shot still read 0
+# through the planner (its 2x-upscaled tiles are the wrong shape for it) but 1 line
+# from a plain un-upscaled crop of the top-left quarter, and a 1040x220 shot still
+# reads 0 subdivided but 1 line from the whole image simply upscaled. Two different
+# failures, two different cures, so the retry is a LADDER of those two passes and the
+# report names each pass with what it got.
+#
+# The trigger floor is deliberately NOT the sparse-WARN band. That band (300k px2) sits
+# ABOVE the 1040x220 capture (228,800 px2) the retry exists for, so reusing it - as
+# v2.8.0 did, to avoid a second threshold - meant the motivating case got neither a
+# warning nor a retry and looked identical to "this image is blank". An empty read is
+# suspicious at a much smaller size than a sparse one, so it gets its own, lower floor.
+function Get-EmptyReadAreaFloor { return 30000 }
+function Test-EmptyReadSuspect([int]$w, [int]$h) {
+  return (([long]$w * [long]$h) -ge (Get-EmptyReadAreaFloor))
+}
+
+# Pure: the four crop rectangles of a 2x2 read with OVERLAP px folded into each inner
+# edge. Rule is testable without an engine; union always covers the image and no rect
+# ever leaves it, which is what the unit checks below pin. Order is row-major so a
+# reported tile index stays reproducible.
+function Get-QuadrantRects([int]$w, [int]$h, [int]$overlap) {
+  if ($w -lt 2 -or $h -lt 2) { return @{ Rects = @(); Count = 0; Error = "degenerate image ${w}x${h}" } }
+  $hw = [int][math]::Ceiling($w / 2); $hh = [int][math]::Ceiling($h / 2)
+  $ov = $overlap
+  if ($ov -lt 0) { $ov = 0 }
+  $cap = [math]::Min($hw, $hh) - 1
+  if ($ov -gt $cap) { $ov = $cap }
+  $xs = @(0, [math]::Max(0, $hw - $ov))
+  $ys = @(0, [math]::Max(0, $hh - $ov))
+  $rects = New-Object System.Collections.ArrayList
+  foreach ($y in $ys) {
+    foreach ($x in $xs) {
+      $ex = $hw; if ($x -ne 0) { $ex = $w }
+      $ey = $hh; if ($y -ne 0) { $ey = $h }
+      [void]$rects.Add((New-Object System.Drawing.Rectangle($x, $y, ($ex - $x), ($ey - $y))))
+    }
+  }
+  return @{ Rects = @($rects); Count = @($rects).Count; Error = '' }
+}
+
+# Ladder pass 2: read the image in four un-upscaled overlapping crops and merge. This is
+# the pass that finds text a whole-image read drops, because the engine spends its
+# geometry on less ground at once WITHOUT being resampled first.
+function Invoke-OcrFileQuadrants([string]$Path, [int]$maxTiles) {
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $notes = New-Object System.Collections.ArrayList
+  $plan = Get-QuadrantRects 0 0 0
+  $bmp = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap((Get-Item -LiteralPath $Path).FullName)
+    $plan = Get-QuadrantRects ([int]$bmp.Width) ([int]$bmp.Height) 64
+  } catch {
+    if ($null -ne $bmp) { $bmp.Dispose() }
+    return @{ Lines = @(); Tiles = 0; Ms = 0; Scale = 1.0; Duplicates = 0; Notes = @('quadrants: image could not be opened') }
+  }
+  try {
+    if ($plan.Error) { return @{ Lines = @(); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Scale = 1.0; Duplicates = 0; Notes = @($plan.Error) } }
+    if ($plan.Count -gt $maxTiles) {
+      return @{ Lines = @(); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Scale = 1.0; Duplicates = 0;
+        Notes = @("quadrants needs $($plan.Count) tiles > --max-tiles $maxTiles; raise --max-tiles or pass --no-tile") }
+    }
+    $lists = New-Object System.Collections.ArrayList
+    $k = 0
+    foreach ($r in $plan.Rects) {
+      $k++
+      try {
+        $crop = $bmp.Clone($r, $bmp.PixelFormat)
+        try { [void]$lists.Add(@((Invoke-OcrBitmap $crop).Lines)) } finally { $crop.Dispose() }
+      } catch {
+        [void]$notes.Add("[quadrant $k failed: $($_.Exception.Message)]")
+        [void]$lists.Add(@())
+      }
+    }
+    $m = Merge-OcrTileLines $lists
+    return @{ Lines = @($m.Lines); Tiles = $plan.Count; Ms = $sw.Elapsed.TotalMilliseconds; Scale = 1.0; Duplicates = $m.Duplicates; Notes = @($notes) }
+  } finally { $bmp.Dispose() }
+}
+
+# The ladder itself. Returns @{ Lines; Report; Scale; Tiles; Ms } where Report names every
+# pass that ran and what it produced - including zeros, and including a pass that was
+# skipped because --max-tiles refused it. Callers print Report verbatim.
+function Invoke-OcrFileRetryLadder([string]$Path, [int]$maxTiles) {
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $p1 = Invoke-OcrFile $Path 2.0
+  $n1 = @($p1.Lines).Count
+  $report = "whole@2x=$n1 line(s)"
+  if ($n1 -gt 0) {
+    return @{ Lines = @($p1.Lines); Report = $report; Scale = 2.0; Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds }
+  }
+  $p2 = Invoke-OcrFileQuadrants $Path $maxTiles
+  $n2 = @($p2.Lines).Count
+  if ($n2 -ge 0 -and $p2.Tiles -gt 0) {
+    $report += ", quadrants@1x=$n2 line(s) ($($p2.Tiles) tiles)"
+  } else {
+    $report += ", quadrants@1x=skipped"
+  }
+  if (@($p2.Notes).Count -gt 0) { $report += ' ' + (@($p2.Notes) -join ' ') }
+  $best = $p2
+  if ($n2 -eq 0) { $best = $p1 }
+  return @{ Lines = @($best.Lines); Report = $report; Scale = [double]$best.Scale; Tiles = [int]$best.Tiles; Ms = $sw.Elapsed.TotalMilliseconds }
 }
 
 # Pure tiling planner (v1.5.0 WP-1): splits a source region into overlapping
@@ -5599,10 +5706,11 @@ function Invoke-SelfTest([string[]]$Rest) {
       $usageTxt = ((@(Get-UsageLines)) -join ' ') -replace '\s+', ' '
       ST-Check 'lint: the file-mode help names the img-rect label and says the coords are not a screen rect' (
         ($usageTxt.Contains('img-rect=')) -and ($usageTxt.Contains('NOT a screen rect')) -and ($usageTxt.Contains('--file <png>')))
-      ST-Check 'lint: the file-mode help documents the subdivided re-read and says what triggers it' (
+      ST-Check 'lint: the file-mode help documents the retry ladder, its own floor and its opt-out' (
         ($usageTxt.Contains('--scale tiled')) -and ($usageTxt.Contains('auto-retry')) -and
-        ($usageTxt.Contains('300k px2')) -and ($usageTxt.Contains('--no-tile')) -and
-        ($usageTxt.Contains('never "region"')))
+        ($usageTxt.Contains('30000 px2')) -and ($usageTxt.Contains('300k px2')) -and
+        ($usageTxt.Contains('--no-tile')) -and ($usageTxt.Contains('never "region"')) -and
+        ($usageTxt.Contains('four un-upscaled overlapping crops')))
 
       # ---- v2.8.0 end to end. These drive the command line, not the functions, because
       # the defect fixed this round was precisely "a flag that is accepted and does
@@ -5637,9 +5745,10 @@ function Invoke-SelfTest([string[]]$Rest) {
       ST-Check 'e2e: --scale tiled in file mode subdivides the image and keeps every img-rect inside it' (
         ($tT.Exit -eq 0) -and ($tTiles -ge 2) -and (@($tOut).Count -eq 0) -and ($tT.Txt -match 'source=file scale=2'))
       Write-Output ("      file tiling: tiles=$tTiles out-of-bounds=$(@($tOut).Count)")
-      # (2) an empty large capture must be re-read subdivided AND say so, including when
-      # the retry also finds nothing - the point is that "picture" and "dropped region"
-      # stop being the same output.
+      # (2) an empty read must go through the LADDER and every pass must report its own
+      # count - including zeros, and including a pass that never ran because --max-tiles
+      # refused it. The three cases that used to be indistinguishable ("this is a photo",
+      # "the recognizer lost a region", "nobody looked") have to print differently.
       $gyPng = Join-Path $ocDir 'gray.png'
       $gb = New-Object System.Drawing.Bitmap(800, 500)
       $gg = [System.Drawing.Graphics]::FromImage($gb)
@@ -5648,19 +5757,45 @@ function Invoke-SelfTest([string[]]$Rest) {
       $gb.Save($gyPng, [System.Drawing.Imaging.ImageFormat]::Png); $gb.Dispose()
       $tR = & $stRun $gyPng '' 'retry.txt'
       $tN = & $stRun $gyPng '--no-tile' 'notile.txt'
-      ST-Check 'e2e: a large capture that reads 0 lines gets a subdivided retry and the header reports it' (
-        ($tR.Exit -eq 0) -and ($tR.Txt -match 'auto-retry: whole-image read found 0 line') -and
-        ($tR.Txt -match 'the subdivided read found 0'))
-      ST-Check 'e2e: --no-tile suppresses the subdivided retry (the opt-out has to be real, not decorative)' (
-        ($tN.Exit -eq 0) -and (-not ($tN.Txt -match 'auto-retry:')))
-      # The retry's OWN failure must be as visible as its success. 800x500 needs 6 tiles; with
-      # --max-tiles 2 the planner refuses before any OCR runs, and if that refusal were only
-      # carried on the adopted branch the caller would read "found 0" and conclude the image is
-      # blank when in fact nothing was ever looked at.
+      ST-Check 'e2e: an empty capture is re-read through the ladder and each pass reports its own count' (
+        ($tR.Exit -eq 0) -and ($tR.Txt -match 'auto-retry') -and
+        ($tR.Txt -match 'whole-image@1x=0 line\(s\)') -and ($tR.Txt -match 'whole@2x=0 line\(s\)') -and
+        ($tR.Txt -match 'quadrants@1x=0 line\(s\) \(4 tiles\)') -and ($tR.Txt -match 'kept=0'))
+      ST-Check 'e2e: --no-tile suppresses the ladder (the opt-out has to be real, not decorative)' (
+        ($tN.Exit -eq 0) -and (-not ($tN.Txt -match 'auto-retry')))
       $tM = & $stRun $gyPng '--max-tiles 2' 'maxtiles.txt'
-      ST-Check 'e2e: a retry the tile budget refuses to run reports the refusal, not a bare 0' (
-        ($tM.Exit -eq 0) -and ($tM.Txt -match 'auto-retry:') -and ($tM.Txt -match 'tiled retry needs 6 tiles') -and
-        ($tM.Txt -match '--max-tiles 2'))
+      ST-Check 'e2e: a ladder pass the tile budget refuses is reported as skipped, not as a bare 0' (
+        ($tM.Exit -eq 0) -and ($tM.Txt -match 'auto-retry') -and ($tM.Txt -match 'quadrants@1x=skipped') -and
+        ($tM.Txt -match 'quadrants needs 4 tiles') -and ($tM.Txt -match '--max-tiles 2'))
+      # (2b) THE REGRESSION v2.8.0 SHIPPED WITH. Its ladder was gated on the sparse WARN's
+      # 300k px2 band, which sits ABOVE the real 228,800 px2 capture the retry exists for -
+      # so that capture got no warning, no retry, and printed exactly like a blank image.
+      # 400x300 = 120,000 px2 is below the old band and above the empty-read floor: it must
+      # now come back with a ladder report.
+      $smPng = Join-Path $ocDir 'gray-small.png'
+      $sbk = New-Object System.Drawing.Bitmap(400, 300)
+      $sgk = [System.Drawing.Graphics]::FromImage($sbk)
+      $sgk.Clear([System.Drawing.Color]::FromArgb(120, 120, 120))
+      $sgk.Dispose()
+      $sbk.Save($smPng, [System.Drawing.Imaging.ImageFormat]::Png); $sbk.Dispose()
+      $tS2 = & $stRun $smPng '' 'retrysmall.txt'
+      ST-Check 'e2e: an empty read below the WARN band still gets the ladder (v2.8.0 gated it out and shipped that way)' (
+        ($tS2.Exit -eq 0) -and ($tS2.Txt -match 'auto-retry') -and ($tS2.Txt -match 'quadrants@1x=') -and
+        ($tS2.Txt -match 'floor=30000'))
+      # The ladder PRINTS the scale it used, so that number is part of the contract, not an
+      # internal detail: the first build of the quadrant pass returned no Scale key at all,
+      # and a recovered capture announced itself as "scale=0" - a self-report that is
+      # silently wrong is worse than no self-report. Pinned at the function boundary because
+      # the CLI only shows the adopted branch, which the gray fixtures never reach.
+      $qRes = Invoke-OcrFileQuadrants $ocPng 16
+      $qOut = @($qRes.Lines | Where-Object { $_.X -lt 0 -or $_.Y -lt 0 -or ($_.X + $_.W) -gt $ocW -or ($_.Y + $_.H) -gt $ocH })
+      ST-Check 'unit: the quadrant pass states the scale it really read at and keeps every rect inside the image' (
+        ($qRes.Scale -eq 1.0) -and ($qRes.Tiles -eq 4) -and (@($qRes.Lines).Count -ge 1) -and (@($qOut).Count -eq 0))
+      $lRes = Invoke-OcrFileRetryLadder $gyPng 16
+      $lRes2 = Invoke-OcrFileRetryLadder $ocPng 16
+      ST-Check 'unit: the ladder never reports a scale it did not use, whichever pass it keeps' (
+        (@(1.0, 2.0) -contains [double]$lRes.Scale) -and (@(1.0, 2.0) -contains [double]$lRes2.Scale) -and
+        ($lRes.Report -match 'whole@2x=') -and ($lRes2.Report -match 'whole@2x='))
       # (3) the file-mode sparse WARN must speak file-mode. This is the RENDERED line, not
       # the builder's return value - the wording bug shipped because nothing looked at the
       # line a human actually reads.
@@ -7456,6 +7591,29 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'unit: file tiling cuts the LONGER side and never asks for a tile above the engine limit' (
     ($gtmWide -eq 3000) -and ((Get-FileTileMaxDim 0 0 0) -ge 32) -and
     (-not $gtmWidePlan.Error) -and (@($gtmWidePlan.Tiles).Count -ge 2) -and (@($gtmOver).Count -eq 0))
+  # v2.8.1: the empty-read floor is its own producer, and the boundary must be the one the
+  # measurement asked for. 1040x220 = 228,800 px2 is the REAL capture that v2.8.0's retry
+  # skipped because it borrowed the WARN band - it must be inside the new floor, and a chip
+  # small enough that "no text" is the honest answer must stay outside.
+  ST-Check 'unit: empty-read predicate fires on the 228,800 px2 capture the WARN band is above, and stays off a 100x100 chip' (
+    (Test-EmptyReadSuspect 1040 220) -and (Get-EmptyReadAreaFloor -eq 30000) -and
+    (-not (Test-EmptyReadSuspect 100 100)) -and (Test-EmptyReadSuspect 173 174))
+  $qrA = Get-QuadrantRects 920 520 64
+  $qrOdd = Get-QuadrantRects 1001 77 64
+  $qrBad = @()
+  foreach ($r in @($qrA.Rects + $qrOdd.Rects)) {
+    if ($r.X -lt 0 -or $r.Y -lt 0 -or $r.Width -lt 1 -or $r.Height -lt 1) { $qrBad += 'shape' }
+  }
+  ST-Check 'unit: quadrant crops cover the image, stay inside it, and overlap on the inner edges' (
+    ($qrA.Count -eq 4) -and (@($qrBad).Count -eq 0) -and
+    (@($qrA.Rects | Where-Object { ($_.X + $_.Width) -le 920 -and ($_.Y + $_.Height) -le 520 }).Count -eq 4) -and
+    ((@($qrA.Rects | Where-Object { $_.X -gt 0 })[0]).X -eq (460 - 64)) -and
+    ($qrOdd.Count -eq 4) -and ((@($qrOdd.Rects | Where-Object { $_.Y -eq 0 }).Count) -eq 2) -and
+    ((Get-QuadrantRects 0 0 0).Error -ne ''))
+  # the overlap must never be able to produce a zero-width crop on a narrow image
+  $qrThin = Get-QuadrantRects 300 20 64
+  ST-Check 'unit: a crop overlap larger than the image is clamped, not turned into a zero-width tile' (
+    ($qrThin.Count -eq 4) -and (@($qrThin.Rects | Where-Object { $_.Width -lt 1 -or $_.Height -lt 1 }).Count -eq 0))
 
   # Synthetic-bitmap two-state pair (the task order's acceptance). Memory-only canvases:
   # no window is created and no screen is captured, so the pair runs in the OFFLINE gate.
@@ -7492,17 +7650,33 @@ function Invoke-SelfTest([string[]]$Rest) {
   # documented (Split-Target + both read commands). v1.10.0 adds the 4th consumer: the
   # challenge-probe none-path note (the task order names it as P-4's existing behaviour
   # carried over), so the pinned count moves 4 -> 5.
-  # v2.8.0 moves 5 -> 6: the file-mode auto-retry consults THIS predicate rather than
-  # inventing a second area floor, so the 6th line is a new consumer of the rule, not a
-  # recount of an old one. Expected value up, strictness unchanged.
+  # v2.8.0 moved 5 -> 6: the file-mode auto-retry consulted THIS predicate rather than
+  # inventing a second area floor. v2.8.1 moves it back 6 -> 5, and the reason is a
+  # measurement, not a tidy-up: re-running the two real captures that motivated the retry
+  # showed that retry recovered NEITHER, and the 1040x220 one (228,800 px2) never even
+  # reached it, because the WARN band's 300k floor sits ABOVE that image. An EMPTY read is
+  # suspicious at a far smaller size than a SPARSE one, so emptiness now has its own
+  # producer (Get-EmptyReadAreaFloor, pinned by name and value in its own unit check).
+  # This lint going DOWN therefore means the two rules were SPLIT, not that a negative path
+  # lost its hint - the five sites below are the same five that carried it before v2.8.0.
   $srSites = @()
   for ($sri = 0; $sri -lt $codeLines.Count; $sri++) {
     if ($sri -ge $j5ProdStart -and $sri -lt $j5ProdEnd) { continue }
     if ($codeLines[$sri] -match '^\s*#') { continue }
     if ($codeLines[$sri].Contains('Test-SparseReadability')) { $srSites += ($sri + 1) }
   }
-  ST-Check 'lint: the sparse predicate is wired on all negative paths (exactly 6 sites: 1 def + read-text + read-text auto-retry + find-text + expect + challenge-probe)' (@($srSites).Count -eq 6)
-  if (@($srSites).Count -ne 6) { Write-Output "      sparse predicate sites: $(@($srSites) -join ', ')" }
+  ST-Check 'lint: the sparse predicate is wired on all negative paths (exactly 5 sites: 1 def + read-text + find-text + expect + challenge-probe)' (@($srSites).Count -eq 5)
+  if (@($srSites).Count -ne 5) { Write-Output "      sparse predicate sites: $(@($srSites) -join ', ')" }
+  # and the empty-read rule must have exactly one floor producer too, so a second literal
+  # cannot quietly appear somewhere else and disagree with the one the report prints.
+  $erSites = @()
+  for ($sri = 0; $sri -lt $codeLines.Count; $sri++) {
+    if ($sri -ge $j5ProdStart -and $sri -lt $j5ProdEnd) { continue }
+    if ($codeLines[$sri] -match '^\s*#') { continue }
+    if ($codeLines[$sri].Contains('Get-EmptyReadAreaFloor')) { $erSites += ($sri + 1) }
+  }
+  ST-Check 'lint: the empty-read floor has one producer and two named consumers (def + predicate + header)' (@($erSites).Count -eq 3)
+  if (@($erSites).Count -ne 3) { Write-Output "      empty-read floor sites: $(@($erSites) -join ', ')" }
   $srBuildSites = @()
   for ($sri = 0; $sri -lt $codeLines.Count; $sri++) {
     if ($sri -ge $j5ProdStart -and $sri -lt $j5ProdEnd) { continue }
@@ -11700,7 +11874,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v2.8.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v2.8.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11825,14 +11999,18 @@ desktop.ps1 v2.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     --scale 2 upscales the image before reading;
                                     --scale tiled cuts it in half along the long side
                                     and reads the pieces (v2.8.0).
-                                    v2.8.0 auto-retry: when a capture big enough to be
-                                    suspicious (>= 300k px2) reads 0 lines, the same
-                                    image is re-read subdivided and the header says
-                                    what came back - including "0 line(s)", because a
-                                    silent extra pass cannot tell a picture apart from
-                                    a dropped region. --no-tile or --min-line-density 0
-                                    turn the retry off. In file mode the sparse WARN
-                                    says "image is WxH", never "region".
+                                    v2.8.1 auto-retry: a capture of >= 30000 px2 that
+                                    reads 0 lines is re-read through a ladder - the whole
+                                    image at 2x, then four un-upscaled overlapping crops
+                                    - and the header names every pass with what it got,
+                                    including zeros and a pass skipped because
+                                    --max-tiles was too small. That report is the point:
+                                    "a photo", "the recognizer lost a region" and "we
+                                    never looked" must not print the same line. --no-tile
+                                    turns the ladder off. The 300k px2 band belongs to the
+                                    sparse WARN only - an empty read is suspicious far
+                                    below it. In file mode the sparse WARN says
+                                    "image is WxH", never "region".
     hash <sel|x y w h>              MD5 of the region PNG (assert-hash input)
     ime                             foreground thread HKL / IME active
     ime-state                       CONVERSION mode (alphanumeric vs native) -
@@ -13577,27 +13755,15 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
           $fileResult = Invoke-OcrFileTiled $filePath $fScale $maxTiles
         } else {
           $fileResult = Invoke-OcrFile $filePath $fScale
-          # A large capture that yields NOTHING is the one result a caller cannot act on, and
-          # the 489-capture survey showed it happens for the wrong reason: a 920x520 shot read
-          # 0 lines whole but gave text as soon as only its LEFT HALF was handed over, and a
-          # 1040x220 shot needed the 2x upscale. Both shapes are geometric, so the fix is to
-          # subdivide, not to change language packs. The retry is announced even when it finds
-          # nothing - a silent extra pass would leave "this image is a picture" and "the
-          # recognizer lost it" indistinguishable, which is the whole error being fixed.
-          # Opt-outs are the two flags that already mean "no extra pass": --no-tile, and
-          # --min-line-density 0 (which turns the predicate that gates this off too).
+          # v2.8.1: the ladder (whole image at 2x, then four un-upscaled overlapping crops),
+          # gated on its OWN floor - see Get-EmptyReadAreaFloor for why the sparse-WARN band
+          # was the wrong trigger. Opt-out is --no-tile, which means "no extra pass" here too.
           if (@($fileResult.Lines).Count -eq 0 -and -not $noTile -and
-              (Test-SparseReadability ([int]$fileResult.W) ([int]$fileResult.H) 0 $minLineDensity)) {
-            $rt = Invoke-OcrFileTiled $filePath 2.0 $maxTiles
+              (Test-EmptyReadSuspect ([int]$fileResult.W) ([int]$fileResult.H))) {
+            $rt = Invoke-OcrFileRetryLadder $filePath $maxTiles
             $foundBack = @($rt.Lines).Count
-            $fileRetry = "auto-retry: whole-image read found 0 line(s), the subdivided read found $foundBack ($($rt.Tiles) tile(s), $([math]::Round($rt.Ms / 1000.0, 1)) s)"
-            # When the retry IS adopted its Notes print with the result; when it is not
-            # (nothing came back) they would vanish - and the one Note that matters most is
-            # the planner refusing to run because the image needs more tiles than --max-tiles
-            # allows. Losing that turns "we tried and the plan was impossible" into "we tried
-            # and found nothing", which is the exact ambiguity this retry exists to remove.
-            if (@($rt.Notes).Count -gt 0) { $fileRetry += ' ' + (@($rt.Notes) -join ' ') }
-            if ($foundBack -gt 0) { $fileResult = $rt }
+            $fileRetry = "auto-retry (floor=$(Get-EmptyReadAreaFloor) px2): whole-image@1x=0 line(s), $($rt.Report), kept=$foundBack"
+            if ($foundBack -gt 0) { $fileResult = @{ Lines = @($rt.Lines); W = $fileResult.W; H = $fileResult.H; Scale = $rt.Scale; Tiles = $rt.Tiles; Ms = $rt.Ms; Notes = @() } }
           }
         }
         $lines = @($fileResult.Lines)
