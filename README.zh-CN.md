@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v2.9.0
+# Agent Computer Use 开源版 v3.0.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=669%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=722%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -105,7 +105,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 click 800 500
 # 发 Ctrl+S —— 但只有目标确实在前台时才发
 powershell -ExecutionPolicy Bypass -File desktop.ps1 keys --to notepad "^s"
 
-# 输入中文：写进 UTF-8 文件再粘贴（用后恢复剪贴板，并默认回读尾部）
+# 输入中文：直接 `type` 就行（v1.3.0 起走 SendInput Unicode 码元，绕过 IME）；长文或含引号/$ 的正文才写文件再 paste
 powershell -ExecutionPolicy Bypass -File desktop.ps1 paste --to notepad .\samples\selftest.txt
 
 # 往聊天类应用发文件：文件进剪贴板（FileDrop）+ Ctrl+V
@@ -199,6 +199,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `win-min <sel>` | 最小化 |
 | `win-restore <sel>` | 从最小化/最大化恢复 |
 | `win-close <sel>` | 温和的 `WM_CLOSE`（不是杀进程） |
+| `dialog-cancel <sel> [--allow-window] [--expect-handle <句柄>]` | 按对话框里的**取消**控件关它；树里没有取消形状控件才退化成 Escape。成败判据是**句柄真的消失**（最多等 1.5s），不是"点发出去了"。候选集封闭在 `cancel` 与其中文对应词两条，**永不**匹配 确定/OK/Yes/Retry/关闭；两个同名按钮也拒绝。不激活窗口 |
 | `menu-pick <sel> <文本...> [--index n] [--allow-window]` | 解析出**弹出菜单**那个窗口，OCR 它的行，点击包含目标文本的那行。不是菜单形状的窗口一律**拒绝**（判据不是 `WS_POPUP` 样式位，见限制 9） |
 | `open-and-pick <sel> <opener-x> <opener-y> <文本...> [--region x,y,w,h]` | 一个进程内：点击展开器、等一拍、给目标窗口拍照、点击第一行含目标文本的行——专为 `menu-pick` 有意拒绝的自绘下拉框准备 |
 
@@ -212,6 +213,9 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `keys [--to <sel>] <spec> [--force]` | 原生 SendKeys 语法：`^s`、`%{F4}`、`{ENTER}`（`keys` 仍然经过 IME） |
 | `paste [--to <sel>] <文件> [--expect <串>|--no-expect] [--force]` | UTF-8 文件 → 剪贴板 → Ctrl+V，事后恢复原剪贴板。**回读默认开启**：把正文尾部读回来核对；正文长到显示不出尾部（折叠成了附件条）时改凭一种**具名回执**接受，绝不静默 |
 | `--guard-text <needle>` / `--guard-region x,y,w,h=<needle>` | 文本类命令专用：目标可见才发送——由工具强制"只对这个会话说话"。守卫区域被遮挡时**在 OCR 之前**就失败，守卫不可能读到覆盖层的文字并当成语境 |
+| `--dump <路径>` | 把命令的 stdout 写进文件，只回一个指针（行数／字节／首 5 行／被隐藏的行数）。只开放给 7 条会撑爆调用方上下文的读命令：`find` `find-text` `read-text` `uia-find` `uia-path` `uia-tree` `wins`；其余命令**执行之前**就拒。**永不覆盖已有文件，永不创建目录**；stderr 不进文件 |
+| `--expect-any a,b` / `--expect-any-gone a,b` | 逗号分隔的多 needle：任一出现即过／**全部都不在**才算过。与 `--expect`/`--expect-gone` 同时给出时两条都要成立（AND）。空项丢弃，丢完为空直接拒 |
+| `--expect-handle <句柄>` | 除非这次解析到的窗口**就是**这个句柄（`wins`/`info` 的 `hwnd=` 列，0x 十六进制或十进制），否则拒绝。检查发生在激活**之前**，所以一次拒绝不会先动你的桌面；没有 `--to` 时钉的是当前前台窗 |
 
 ### 剪贴板
 

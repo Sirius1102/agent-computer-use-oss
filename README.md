@@ -1,10 +1,10 @@
-# Agent Computer Use (Open Source Edition) v2.9.0
+# Agent Computer Use (Open Source Edition) v3.0.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=669%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=722%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -113,7 +113,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 click 800 500
 # send Ctrl+S, but only if the target window really is in the foreground
 powershell -ExecutionPolicy Bypass -File desktop.ps1 keys --to notepad "^s"
 
-# type CJK text: write it to a UTF-8 file, paste it (clipboard restored, tail read back)
+# type CJK text directly: `type` sends Unicode code units, so the clipboard is a choice, not a workaround
 powershell -ExecutionPolicy Bypass -File desktop.ps1 paste --to notepad .\samples\selftest.txt
 
 # send a file to a chat app: file on the clipboard as a file drop, then Ctrl+V
@@ -207,6 +207,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `win-min <sel>` | minimize |
 | `win-restore <sel>` | restore from minimized/maximized |
 | `win-close <sel>` | graceful `WM_CLOSE` (not a kill) |
+| `dialog-cancel <sel> [--allow-window] [--expect-handle <hwnd>]` | press a dialog's CANCEL control (Escape only when its tree exposes no cancel-shaped button), and prove it by the handle being gone (up to 1.5s). The candidate set is closed at the word "cancel" and its Chinese equivalent, so it can never confirm anything - and "close" is deliberately NOT in it, because on several Win11 dialogs Close is the accepting action. Refuses non-dialog shapes, and refuses outright when two buttons match. Never activates the window |
 | `menu-pick <sel> <needle...> [--index n] [--allow-window]` | resolve a **popup menu** window, OCR its rows, click the matching one; refuses anything that is not a menu shape (the `WS_POPUP` style bit is *not* the test — see limitation 9) |
 | `open-and-pick <sel> <opener-x> <opener-y> <needle...> [--region x,y,w,h]` | one process: click the opener, wait a beat, shoot the target and click the first line containing the needle — for self-drawn dropdowns `menu-pick` refuses by design |
 
@@ -220,6 +221,9 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `keys [--to <sel>] <spec> [--force]` | raw SendKeys spec: `^s`, `%{F4}`, `{ENTER}` (SendKeys still honours the IME) |
 | `paste [--to <sel>] <file> [--expect <s>|--no-expect] [--force]` | UTF-8 file → clipboard → Ctrl+V, previous clipboard restored. Readback is **on by default**: the payload tail is OCR-read back, and a payload too long to show its tail (it folded into an attachment chip) is accepted on a named *receipt* instead — never silently |
 | `--guard-text <needle>` / `--guard-region x,y,w,h=<needle>` | with the text commands: send only if the needle is visible on the target — the tool enforces "only talk to this conversation". An occluded guard region fails *before* the OCR, so a guard can never read a coverer's text |
+| `--dump <path>` | write the command's stdout to a file and print a pointer instead (line count, bytes, first 5 lines, hidden-line count). Accepted only by the seven read commands that can outgrow the caller's context (`find` `find-text` `read-text` `uia-find` `uia-path` `uia-tree` `wins`); every other command is refused BEFORE it runs. Never overwrites an existing file and never creates a directory. stderr is not captured, so cost self-reports still reach the terminal |
+| `--expect-any a,b` / `--expect-any-gone a,b` | comma-separated needle LISTS on the expect-capable commands: "any of these appeared" / "all of these are gone". Given together with `--expect` / `--expect-gone` BOTH conditions must hold (AND). Empty items are dropped and a list that empties out is refused - an assertion that cannot fail is worse than none |
+| `--expect-handle <hwnd>` | refuse to act unless the window this call resolves to IS this handle (from the `hwnd=` column of `wins` / `info`). Checked BEFORE activation, so a refusal never leaves the desktop changed by the act of refusing; with no `--to` it pins the current foreground window |
 
 ### clipboard
 
