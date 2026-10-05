@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v3.0.1
+# Agent Computer Use 开源版 v3.1.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=772%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=803%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -222,7 +222,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | 命令 | 作用 |
 |---|---|
 | `copy-file <路径>` | 把本地文件以 FileDrop 放上剪贴板并自证；**刻意留在**剪贴板上 |
-| `paste-file [--to <sel>] <路径> [--guard-text <串>] [--force]` | copy-file + 前台守卫 + 内容守卫 + Ctrl+V + 恢复剪贴板；默认回读找的是**文件名** |
+| `paste-file [--to <sel>] <路径> [--guard-text <串>] [--force]` | copy-file + 前台守卫 + 内容守卫 + Ctrl+V + 恢复剪贴板；默认回读找的是**文件名**。v3.1.0 说明：`paste-file` 不走这条路——弱回执三腿只服务"长正文被折叠成附件 chip、框里永远读不到正文"的输入框；附件卡片渲染的就是文件名，语义与 v1.5.9 一字不动（这是机主批准过的差异，不是漏传参数，判据 `lint (P-06)` 钉住两处调用形状与这句话一致） |
 
 ### 遮挡自证开关（每条读像素的命令都有）
 

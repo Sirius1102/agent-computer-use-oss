@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 3.0.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 3.1.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -34,7 +34,7 @@ $ErrorActionPreference = 'Stop'
 # Placed after param() because PowerShell allows only comments before it (measured: an
 # assignment up there is a parse error for the whole file).
 # Sync list: this line and the iteration-log entry. It is NOT a version number.
-$script:DeclaredCheckTotal = 772
+$script:DeclaredCheckTotal = 803
 
 # Emit stdout as UTF-8 (no BOM) so CJK window titles survive being piped to
 # other processes when invoked via powershell -File. Wrapped in try/catch
@@ -289,8 +289,14 @@ function Move-ShotsToQuarantine($moveItems, [string]$quar, [string]$prefix, [str
     $target = Join-Path $dest $m.Name
     try {
       $sha = (Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash
+      # v3.1.0 (P-05): build the manifest line BEFORE the move. The content descriptor opens the
+      # ORIGINAL path to read a sidecar's first line; after Move-Item that path is empty and the
+      # read fails inside its own catch{}, so every .map.txt row has been printing
+      # "first line: " (nothing) since the mover existed. One producer, so this also fixes the
+      # automatic trim, not just shots-cleanup --go.
+      $mEntry = Get-QuarantineManifestEntry $m.FullName $target $sha $m
       Move-Item -LiteralPath $m.FullName -Destination $target -Force
-      [void]$logLines.Add((Get-QuarantineManifestEntry $m.FullName $target $sha $m))
+      [void]$logLines.Add($mEntry)
       $movedN++
     } catch {
       $failN++
@@ -2189,6 +2195,15 @@ function Format-ImeMode([int]$mode) {
   return "mode=0x$($mode.ToString('X')) ($($parts -join '|'))"
 }
 
+# v3.1.0 (P-05): the --json view of an IME reading, one producer. `open` used to be the literal
+# $true on every row - including mode=0, which this file's OWN text output describes as
+# "type English directly" - so a JSON consumer was told "an IME is open" for the one state where
+# nothing is open. Two fields in one message contradicting each other is exactly what the
+# overview's F-01 round named: assert the RELATION between them, not that each is non-empty.
+function Get-ImeStateView($procId, $title, [int]$mode) {
+  return [pscustomobject]@{ pid = $procId; title = $title; mode = $mode; open = ($mode -ne 0); text = (Format-ImeMode $mode) }
+}
+
 # Set conversion mode and poll-verify (some TSF IMEs ignore WM_IME_CONTROL -
 # the verification is what turns that into an honest ERROR instead of a lie).
 function Set-ImeModeVerified([IntPtr]$hwnd, [int]$mode) {
@@ -2395,7 +2410,15 @@ function Test-PostSendForeground($target, [bool]$force = $false) {
       if ($force) { return "NOTICE (bypassed by --force): $msg" }
       return $msg
     }
-  } catch { }
+  } catch {
+    # v3.1.0 (P-05 sub-item): the guard's OWN failure used to vanish into an empty catch, which
+    # made "the check did not run" and "the check passed" the same observable - the exact shape
+    # this repo keeps getting caught by. Fail-OPEN is still the right call (a broken sampler must
+    # not turn a successful send into exit 1), but it has to be LOUD: NOTICE* is printed and
+    # never exits 1 by the four consumers, so the send keeps its exit code and the caller sees
+    # that this leg did not answer. Compare Invoke-OcclusionGate, which has an explicit Err.
+    return "NOTICE: post-send foreground check unavailable: $($_.Exception.Message) - the send itself was NOT re-verified (exit code unchanged)"
+  }
   return ''
 }
 
@@ -2811,6 +2834,41 @@ function Resolve-OcclGridArg($v) {
   return $g
 }
 
+# v3.1.0 (P-06): menu-pick's own flag loop, extracted PURE so the trailing-flag hole can be
+# pinned offline. Second review batch, item 5 of the small-fix bundle: five flags consumed their
+# operand with a bare `$i++; $x = $mp[$i]`. When the flag was the LAST token, `$mp[$i]` indexed
+# past the end and bound to $null - so `--expect` silently became "no expectation at all" and
+# `--timeout` became 0, i.e. the assertion the caller asked for never ran while the command
+# reported green. The SAME loop already refused a missing operand for --needle ('menu-pick:
+# --needle needs a value'), which is what makes this a defect rather than a design choice.
+# Numbers now go through Read-FlagNumber like every other numeric flag in this file.
+function Resolve-MenuPickArgs([string[]]$mp) {
+  $r = @{ Expect = ''; ExpectGone = ''; ExpectRegion = ''; TimeoutSec = 6.0; IntervalMs = 300; Words = @() }
+  $i = 0
+  while ($i -lt @($mp).Count) {
+    $t = [string]$mp[$i]
+    if ($t -eq '--expect' -or $t -eq '--expect-gone' -or $t -eq '--expect-region' -or $t -eq '--timeout' -or $t -eq '--interval') {
+      $i++
+      if ($i -ge @($mp).Count) { throw "menu-pick: $t needs a value (it was the last token - the expectation would have been silently dropped)" }
+      $v = [string]$mp[$i]
+      if ($t -eq '--expect') { $r.Expect = $v }
+      elseif ($t -eq '--expect-gone') { $r.ExpectGone = $v }
+      elseif ($t -eq '--expect-region') { $r.ExpectRegion = $v }
+      elseif ($t -eq '--timeout') { $r.TimeoutSec = Read-FlagNumber '--timeout' $v $false '(seconds)' }
+      else { $r.IntervalMs = Read-FlagNumber '--interval' $v $true '(ms)' }
+    }
+    elseif ($t -eq '--needle') {
+      $i++
+      if ($i -ge @($mp).Count) { throw 'menu-pick: --needle needs a value' }
+      $r.Words += [string]$mp[$i]
+    }
+    elseif ($t -like '--*') { throw (Get-UnknownFlagMessage 'menu-pick' $t) }
+    else { $r.Words += $t }
+    $i++
+  }
+  return $r
+}
+
 # Content guard for --guard-text / --guard-region: AFTER the window guard
 # passed, OCR the target window (or a window-relative sub-region) and require
 # the needle to be present BEFORE anything is sent. This is what keeps
@@ -2873,25 +2931,52 @@ function Invoke-ContentGuard($target, [string]$guardText, [string]$guardRegion, 
 #        WHERE - a second read that re-resolves <sel>, re-samples occlusion and re-pays the
 #        OCR round trip (the repo's own pit 0b/16 say a second read is a different fact).
 #        The success branch now carries Matched/Rect/Centre/Hits/Scaled/TileCount/Reads.
-function Invoke-Expectation($baseRect, [string[]]$expect, [string[]]$expectGone, [string]$expectRegion, [double]$timeoutSec, [int]$intervalMs) {
+function Invoke-Expectation($baseRect, [string[]]$expect, [string[]]$expectGone, [string]$expectRegion, [double]$timeoutSec, [int]$intervalMs, $anchorHandle) {
   if ($intervalMs -lt 100) { $intervalMs = 100 }
   $expect = @($expect | Where-Object { "$_" -ne '' })
   $expectGone = @($expectGone | Where-Object { "$_" -ne '' })
   $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
-  if ($null -eq $baseRect) { $baseRect = @{ X = $vs.X; Y = $vs.Y; W = $vs.Width; H = $vs.Height } }
-  $rect = $baseRect
+  # v3.1.0 (P-03): the fallback used to be silent and the $where line called the result
+  # "whole anchored region" in BOTH cases - a caller that gave --to and lost the window
+  # (closed/hidden between send and wait) got the whole virtual screen under the same
+  # honest-sounding label as a caller that never gave a target at all. The lost-window
+  # case is refused by the callers now (Confirm-ExpectAnchor, same fail-closed shape as
+  # the content guard); what still reaches here with $null is ONLY the no-target case,
+  # and that one must say what it is actually waiting on.
   $where = 'whole anchored region'
+  if ($null -eq $baseRect) {
+    $baseRect = @{ X = $vs.X; Y = $vs.Y; W = $vs.Width; H = $vs.Height }
+    $where = 'anchor=no-target (whole virtual screen)'
+  }
+  $rect = $baseRect
   if ($expectRegion) {
     if ($expectRegion -notmatch '^(-?\d+),(-?\d+),(\d+),(\d+)$') { throw "--expect-region expects x,y,w,h got: $expectRegion" }
     $rect = @{ X = $baseRect.X + [int]$Matches[1]; Y = $baseRect.Y + [int]$Matches[2]; W = [int]$Matches[3]; H = [int]$Matches[4] }
-    $where = "region $($Matches[1]),$($Matches[2]),$($Matches[3])x$($Matches[4]) (anchor-relative)"
+    $where = if ($where -eq 'anchor=no-target (whole virtual screen)') { "anchor=no-target (whole virtual screen), region $($Matches[1]),$($Matches[2]),$($Matches[3])x$($Matches[4]) (anchor-relative)" } else { "region $($Matches[1]),$($Matches[2]),$($Matches[3])x$($Matches[4]) (anchor-relative)" }
   }
   if ($expect.Count -eq 0 -and $expectGone.Count -eq 0) { return @{ Ok = $true; Elapsed = 0.0; Where = $where; Polls = 0 } }
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $polls = 0
   $last = $null
+  $occErrSeen = ''
   while ($true) {
     $polls++
+    # v3.1.0 (P-04): the occlusion front gate over the verbatim expectation legs - the same
+    # 25-point sampler behind every occ: line and the v2.3.0 receipt gate, and the SAME knob
+    # (Get-PasteReceiptOcclusionMax). The poll reads the SCREEN rect; a covered target means
+    # the read is the coverer's, which is exactly the false-accept measured on the receipt
+    # chain (v2.3.0 red-1/red-2). A covered anchor refuses the wait AT ONCE - no "wait and
+    # see" - with exit 1 naming the pct and the coverer. Sampler failure (Err) is fail-OPEN
+    # and self-reported through OccErr (registered limitation, same as the receipt gate).
+    # No target handle (the P-03 anchor=no-target case) has no occlusion semantics: no gate.
+    if (($null -ne $anchorHandle) -and (-not $anchorHandle.Equals([IntPtr]::Zero))) {
+      $ovc = Get-OcclusionVerdict $rect.X $rect.Y $rect.W $rect.H $anchorHandle 5
+      if ($ovc.Err -ne '') { $occErrSeen = $ovc.Err }
+      elseif ([double]$ovc.Pct -gt [double](Get-PasteReceiptOcclusionMax)) {
+        $orep = Format-OcclusionCovering @($ovc.Covering) $ovc.Checked
+        throw ("expect refused: target occluded=" + [int][math]::Round($ovc.Pct) + "% coveredBy=" + $orep.Summary)
+      }
+    }
     # present = the needles that ARE on screen this poll; stillThere = the gone-list needles
     # that ARE. Both come from the SAME poll, so the verdict and its evidence cannot be two
     # different moments. AND semantics across the two lists: a caller that asks for "A
@@ -2914,7 +2999,7 @@ function Invoke-Expectation($baseRect, [string[]]$expect, [string[]]$expectGone,
       $hit = $null
       $matched = ''
       if (@($present).Count -gt 0) { $matched = [string]$present[0][0]; $hit = $present[0][1] }
-      $r = @{ Ok = $true; Elapsed = $sw.Elapsed.TotalSeconds; Where = $where; Timeout = $timeoutSec; Interval = $intervalMs; Polls = $polls; Matched = $matched; GoneList = (@($expectGone) -join '|') }
+      $r = @{ Ok = $true; Elapsed = $sw.Elapsed.TotalSeconds; Where = $where; Timeout = $timeoutSec; Interval = $intervalMs; Polls = $polls; Matched = $matched; GoneList = (@($expectGone) -join '|'); OccErr = $occErrSeen }
       if ($null -ne $hit) {
         $hh = @($hit.Hits)
         $h0 = $hh[0]
@@ -2933,7 +3018,7 @@ function Invoke-Expectation($baseRect, [string[]]$expect, [string[]]$expectGone,
     if ($sw.Elapsed.TotalSeconds -ge $timeoutSec) {
       $lines = @()
       if ($null -ne $last) { $lines = @($last.Lines) }
-      $r = @{ Ok = $false; Elapsed = $sw.Elapsed.TotalSeconds; Where = $where; Timeout = $timeoutSec; Interval = $intervalMs; Polls = $polls; LineCount = @($lines).Count; RectW = $rect.W; RectH = $rect.H }
+      $r = @{ Ok = $false; Elapsed = $sw.Elapsed.TotalSeconds; Where = $where; Timeout = $timeoutSec; Interval = $intervalMs; Polls = $polls; LineCount = @($lines).Count; RectW = $rect.W; RectH = $rect.H; OccErr = $occErrSeen }
       if ($expect.Count -gt 0) {
         # a not-found expectation keeps the pre-v3.0.0 wording for a single needle and names
         # the whole list when there are several; for a gone-list it says what is STILL there.
@@ -2978,6 +3063,7 @@ function Format-ExpectationProof($er) {
   if ($er.Via) { $bits += "via=$($er.Via)" }
   if ($er.FoldedHits) { $bits += (Get-FoldMarkerFromCounts ([int]$er.FoldedHits) ([int]$er.Hits)) }
   if ($er.Polls -gt 0) { $bits += "polls=$($er.Polls)" }
+  if ($er.OccErr) { $bits += "occ-sampler=$($er.OccErr)" }
   if (@($bits).Count -eq 0) { return '' }
   return ' ' + ($bits -join ' ')
 }
@@ -2998,6 +3084,17 @@ function Get-ExpectationVia($scaled, $tiled, $tiles) {
 # success; on failure THROW (not exit) so standalone callers get ERROR + exit 1
 # via the outer catch while script steps record a normal, non-gate FAIL - the
 # action itself already happened and the message must say so.
+# v3.1.0 (P-03): the fail-closed half of the anchor fix - one producer for the refusal
+# text. A caller that HAD a target but cannot get its rect anymore (window closed or
+# hidden between the send and the wait) must not silently slide onto the whole virtual
+# screen; that is the exact fail-closed shape the content guard already uses for the
+# same situation ('content guard: cannot determine target window rect').
+function Confirm-ExpectAnchor($target, $baseRect) {
+  if ($null -ne $target -and $null -eq $baseRect) {
+    throw 'expectation anchor: cannot determine the target window rect (window may be closed or hidden) - NOT waiting on the whole screen'
+  }
+}
+
 function Invoke-ActionExpectation($p, $target, [string]$verb) {
   $presentList = @(@($p.Expect) + @($p.ExpectAny)) | Where-Object { "$_" -ne '' } | Select-Object -Unique
   $goneList = @(@($p.ExpectGone) + @($p.ExpectAnyGone)) | Where-Object { "$_" -ne '' } | Select-Object -Unique
@@ -3005,7 +3102,10 @@ function Invoke-ActionExpectation($p, $target, [string]$verb) {
   $goneList = @($goneList)
   if ($presentList.Count -eq 0 -and $goneList.Count -eq 0) { return }
   $base = if ($target) { Get-TargetRect $target } else { $null }
-  $er = Invoke-Expectation $base $presentList $goneList $p.ExpectRegion $p.TimeoutSec $p.IntervalMs
+  Confirm-ExpectAnchor $target $base
+  $exHandle = [IntPtr]::Zero
+  if ($target) { $exHandle = $target.Handle }
+  $er = Invoke-Expectation $base $presentList $goneList $p.ExpectRegion $p.TimeoutSec $p.IntervalMs $exHandle
   if ($er.Ok) {
     # Via is only meaningful alongside a rect (both come from the same satisfied hit);
     # a gone-list success has nothing to point at, so it gets polls= and nothing else.
@@ -3194,7 +3294,10 @@ function Invoke-AutoPasteExpect($p, $target, [string]$needle, $receiptBase, [int
     return @{ Ran = $false; Ok = $true; NeedleChars = 0; Elapsed = 0.0; Timeout = 0.0; Interval = 0; Message = ''; Criterion = ''; Degraded = $false; Receipt = '' }
   }
   $base = if ($target) { Get-TargetRect $target } else { $null }
-  $er = Invoke-Expectation $base $needle '' '' ([double]$p.TimeoutSec) ([int]$p.IntervalMs)
+  Confirm-ExpectAnchor $target $base
+  $exHandle = [IntPtr]::Zero
+  if ($target) { $exHandle = $target.Handle }
+  $er = Invoke-Expectation $base $needle '' '' ([double]$p.TimeoutSec) ([int]$p.IntervalMs) $exHandle
   $tag = 'autoexpect=' + $needle.Length + 'chars'
   $rv = @{ Ok = $er.Ok; Degraded = $false; Criterion = 'verbatim-tail'; Detail = 'payload tail read back as text' }
   if ((-not $er.Ok) -and ($null -ne $receiptBase)) {
@@ -3687,7 +3790,16 @@ function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActiva
       throw ("handle pin: this call may only act on $($pinFg.Expected) but the FOREGROUND window is pid=$procId hwnd=$($pinFg.Actual) '$([DT]::Text($h))' ($(Format-HandlePinReason $pinFg)) - NOTHING was sent. Re-check with 'wins' / 'focus', then pass --to <sel> --expect-handle <hwnd>.")
     }
     $script:ActivationLine = 'activated=n/a (no --to)'
-    return [pscustomobject]@{ Pid = $procId; Handle = $h; Title = [DT]::Text($h); Activated = $false; ActivatedNote = 'n/a (no --to)' }
+    # v3.1.0 (P-02): the same pre-send popup baseline the --to path takes further down. Without
+    # it Test-PostSendForeground falls back to an EMPTY baseline, so a tool palette or floating
+    # panel that was ALREADY on top of the foreground window read as "appeared ON TOP after the
+    # guard passed" - a false WARN plus exit 1 on a send that worked, while the identical scene
+    # with --to stayed green. Two paths, one reality, two exit codes was the defect.
+    # The foreground window needs no activation here (it already is foreground), so taking the
+    # baseline at this point is the same measurement the --to path takes after activating.
+    $fgw = [pscustomobject]@{ Pid = $procId; Handle = $h; Title = [DT]::Text($h); Activated = $false; ActivatedNote = 'n/a (no --to)' }
+    $fgw | Add-Member -NotePropertyName PreSendAbove -NotePropertyValue @(Get-SamePidWindowsAbove $fgw) -Force
+    return $fgw
   }
   $w = Resolve-Window $sel
   if (-not $w) { throw "no window matching: $sel" }
@@ -5328,6 +5440,17 @@ function Format-FindMiss([string]$needle, [int]$uiaScanned, [string]$uiaNote, [i
 # contract change for find's consumers, which is what Find-JsonTopKeys + its lint below
 # exist to catch. The two published find-text / read-text envelopes stay untouched.
 function Get-FindJsonTopKeys { return @('schemaVersion', 'source', 'target', 'contentTrust', 'occluded', 'coveredBy', 'hits') }
+
+# v3.1.0: the published read-text / find-text --json key contract, in ONE place. v3.0.0 (B-6)
+# added `contentTrust` and bumped schemaVersion, and updated the OFFLINE copy of this list only -
+# the live end-to-end case kept its own stale literal, so two live checks were red from the day
+# they shipped and nobody noticed for two rounds because neither round ran --live. A contract
+# written twice drifts; a lint now forbids a second literal copy of either list.
+function Get-JsonContractKeySet([string]$which) {
+  if ($which -eq 'read') { return (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'lines') | Sort-Object) -join ',' }
+  if ($which -eq 'find') { return (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'hits') | Sort-Object) -join ',' }
+  throw "Get-JsonContractKeySet: unknown envelope '$which' (expected read or find)"
+}
 function New-FindJsonEnvelope([string]$source, [string]$target, $gate, $hits) {
   $occJ = $null
   $covJ = @()
@@ -5882,6 +6005,35 @@ function Invoke-SelfTest([string[]]$Rest) {
     ST-Skip 'lint: both READMEs state tracked=<N> and it equals git ls-files (no stale inventory)' $skipNoRepo
   }
 
+  # ---------- lint: the overview header's offline-check total IS the declaration in this file ----------
+  # F-01 (supervisor, 2026-10-05). The overview has carried "N checks" as prose since v3.0.0 and
+  # nothing compared it: it sat at 777 across two batches while the file declared 785, with the
+  # whole suite green the entire time. Same disease the tracked-file count had before it was
+  # pinned - a number a human maintains is a number that drifts. Built from code points so this
+  # file stays pure ASCII, and the MATCH IS COUNTED: a scan that found nothing fails, it may not
+  # pass by reading an empty set (pit: a zero-hit assertion needs a planted sample that hits 1).
+  $ocTotalSeen = -1
+  $ocOvName = "$([char]0x9879)$([char]0x76EE)$([char]0x603B)$([char]0x89C8).md"
+  $ocOvPath = Join-Path $PSScriptRoot $ocOvName
+  $ocPat = '^> .*' + [string]::Join('', @([char]0x79BB, [char]0x7EBF, [char]0x5224, [char]0x636E)) + ' \*\*([0-9]+) ' + [string]([char]0x6761)
+  $ocHave = Test-Path -LiteralPath $ocOvPath
+  if ($ocHave) {
+    foreach ($ocL in @(Get-Content -LiteralPath $ocOvPath -Encoding UTF8)) {
+      if ("$ocL" -match $ocPat) { $ocTotalSeen = [int]$Matches[1]; break }
+    }
+  }
+  # The overview is an INTERNAL document - the published tree does not carry it. A check that
+  # reads it must SKIP there (naming why), not sit structurally red: measured when the v3.1.0
+  # sync first ran the public tree, this case failed with doc=-1 because no such file exists.
+  # In a tree that DOES have the overview, "present but unmatched" still fails (doc=-1).
+  if ($ocHave) {
+    ST-Check 'lint (F-01): the overview header states the offline check total and it equals DeclaredCheckTotal (no human-maintained number survives)' (
+      ($ocTotalSeen -gt 0) -and ($ocTotalSeen -eq [int]$script:DeclaredCheckTotal))
+  } else {
+    ST-Skip 'lint (F-01): the overview header states the offline check total and it equals DeclaredCheckTotal (no human-maintained number survives)' 'no internal overview in this tree - the published tree does not carry it'
+  }
+  Write-Output ("      overview check total: doc=$ocTotalSeen declared=$($script:DeclaredCheckTotal)")
+
   # ---------- lint: forbidden @()/$() wrapper on comma-returning helpers ----------
   # One pass over the real source lines, blanking everything inside a here-string.
   # Needed twice: Usage() documents the literal shapes "@(Fn)" and "return ,$list",
@@ -6167,8 +6319,21 @@ function Invoke-SelfTest([string[]]$Rest) {
       if ($codeLines[$gj].Contains($gdTok)) { $guardArmed = $true }
     }
   }
-  ST-Check 'lint: the move-and-manifest loop exists exactly once, shared by the command and the trim' (
-    (@($codeLines | Where-Object { $_.Contains($mvTok) }).Count -eq 2) -and (@($codeLines | Where-Object { $_.Contains($miTok) }).Count -eq 1))
+  # The count is scoped to PRODUCTION, where production = everything OUTSIDE the Invoke-SelfTest
+  # body. The naive "lines before the selftest" is wrong in this file: Invoke-SelfTest is defined
+  # BEFORE the dispatcher, so the shots-cleanup case itself would have been excluded (measured:
+  # the count dropped to 1). The invariant is "one move-and-manifest loop, shared by the command
+  # and the automatic trim"; a selftest that CALLS the mover is expected and must not read as a
+  # second implementation. Teeth stay: a third PRODUCTION call site still makes this red, and the
+  # Move-Item site count staying at 1 is what actually forbids a re-implementation.
+  $stEndIdx = @($codeLines).Count
+  for ($si2 = $stDefIdx + 1; $si2 -lt @($codeLines).Count; $si2++) {
+    if ($codeLines[$si2] -match '^function ') { $stEndIdx = $si2; break }
+  }
+  $mvProd = @($codeLines)
+  if ($stDefIdx -ge 0) { $mvProd = @(@($codeLines[0..($stDefIdx - 1)]) + @($codeLines[$stEndIdx..(@($codeLines).Count - 1)])) }
+  ST-Check 'lint: the move-and-manifest loop exists exactly once, shared by the command and the trim (production-scoped: a selftest call is not a second implementation)' (
+    (@($mvProd | Where-Object { $_.Contains($mvTok) }).Count -eq 2) -and (@($mvProd | Where-Object { $_.Contains($miTok) }).Count -eq 1))
   # The trim must have EXACTLY ONE call site and it must be the dispatch tail - a hook on
   # Save-RectEx alone was the v2.6.0 first draft and a real `zoom` (which saves its own
   # bitmap) proved files could be written without ever reaching it.
@@ -6446,6 +6611,167 @@ function Invoke-SelfTest([string[]]$Rest) {
     $dTip.HasNew -eq $false -and @($dTip.New).Count -eq 0)
   $dPre = Compare-PopupDelta @($wA, $wB) @($wA, $wB)
   ST-Check 'unit: popup delta - a tool window that was already there is not a new event' ($dPre.HasNew -eq $false)
+  # ---------- v3.1.0 (P-02): the no---to send path must take the SAME popup baseline as --to ----------
+  # Second review batch, item 5. The contract comment above promises "a tool window or palette
+  # that was already floating there does not fire on every single send", but the baseline had
+  # exactly ONE producer - the --to path. Resolve-Target returned early for no --to without the
+  # property, Test-PostSendForeground fell back to an EMPTY baseline, and every pre-existing
+  # same-process window on top read as "appeared ON TOP after the guard passed": WARN + exit 1
+  # on a send that worked, while the identical scene with --to stayed green. One reality, two
+  # exit codes, and the message was factually false about when the window appeared.
+  $p02RealAbove = ${function:Get-SamePidWindowsAbove}
+  try {
+    $script:p02Calls = 0
+    ${function:Get-SamePidWindowsAbove} = { param($t) $script:p02Calls++; return @([pscustomobject]@{ Handle = [IntPtr]7; Class = 'p02-palette'; Title = 'p02' }) }
+    $p02Tgt = Resolve-Target ''
+    ST-Check 'unit (P-02): the no---to path carries the same PreSendAbove baseline as --to, so a palette that was already there cannot read as a new event' (
+      ($script:p02Calls -eq 1) -and ($null -ne $p02Tgt) -and (@($p02Tgt.PSObject.Properties['PreSendAbove']).Count -eq 1) -and (@($p02Tgt.PreSendAbove).Count -eq 1) -and (@($p02Tgt.PreSendAbove)[0].Class -eq 'p02-palette'))
+    Write-Output ("      P-02 baseline: producer-calls=$($script:p02Calls) items=" + @($p02Tgt.PreSendAbove).Count)
+  } finally {
+    ${function:Get-SamePidWindowsAbove} = $p02RealAbove
+  }
+  # v3.1.0 (P-05 sub-item): the guard's OWN failure used to be an empty catch - "did not run"
+  # and "passed" were the same observable. Fail-open stays the right call, silence does not:
+  # NOTICE* is the prefix the four send consumers print WITHOUT exiting 1.
+  $p05RealAbove = ${function:Get-SamePidWindowsAbove}
+  try {
+    ${function:Get-SamePidWindowsAbove} = { param($t) throw 'p05-sampler-broke' }
+    $p05Tgt = [pscustomobject]@{ Pid = 1; Handle = [IntPtr]0; Title = 'p05' }
+    $p05Msg = Test-PostSendForeground $p05Tgt $false
+    ST-Check 'unit (P-05): a broken post-send guard returns a NOTICE naming the failure and keeps the exit code, never the empty string' (
+      ("$p05Msg" -like 'NOTICE*') -and ("$p05Msg" -like '*p05-sampler-broke*') -and ("$p05Msg" -like '*was NOT re-verified*'))
+    Write-Output ('      P-05 self-report: [' + $p05Msg + ']')
+  } finally {
+    ${function:Get-SamePidWindowsAbove} = $p05RealAbove
+  }
+  # ---------- v3.1.0 (P-06): menu-pick's extracted parser, four directions ----------
+  $mp6Good = Resolve-MenuPickArgs @('Some Menu', 'File', '--expect', 'Done', '--timeout', '2.5')
+  ST-Check 'unit (P-06): Resolve-MenuPickArgs keeps the documented defaults and reads a trailing operand when one is there' (
+    (@($mp6Good.Words).Count -eq 2) -and ($mp6Good.Expect -eq 'Done') -and ([double]$mp6Good.TimeoutSec -eq 2.5) -and ($mp6Good.IntervalMs -eq 300))
+  $mp6Err = ''
+  try { $null = Resolve-MenuPickArgs @('Some Menu', 'File', '--expect') } catch { $mp6Err = "$($_.Exception.Message)" }
+  ST-Check 'unit (P-06): a flag that lost its operand is REFUSED by name instead of binding $null (the old shape dropped the expectation and reported green)' (
+    ($mp6Err -like '*--expect needs a value*') -and ($mp6Err -like '*silently dropped*'))
+  $mp6Err2 = ''
+  try { $null = Resolve-MenuPickArgs @('Some Menu', 'File', '--timeout', 'soon') } catch { $mp6Err2 = "$($_.Exception.Message)" }
+  ST-Check 'unit (P-06): menu-pick --timeout goes through Read-FlagNumber (a non-number names the flag, no raw cast error)' (
+    ($mp6Err2 -like '*--timeout*') -and ($mp6Err2 -like '*soon*'))
+  $mp6Err3 = ''
+  try { $null = Resolve-MenuPickArgs @('Some Menu', 'File', '--tolerence', '3') } catch { $mp6Err3 = "$($_.Exception.Message)" }
+  ST-Check 'unit (P-06): an unknown --xxx in menu-pick is refused through the shared message, not fed to the positional words' (
+    ($mp6Err3 -like '*--tolerence*') -and ($mp6Err3.Length -gt 0))
+  # ---------- v3.1.0 (P-06): the same hole elsewhere - a family lint over the dispatcher ----------
+  # Every hand-written `while ($i -lt $Rest.Count)` loop must refuse an unknown --xxx BEFORE the
+  # else that pushes it into the positional words. find-color / assert-color / wait-stable did not
+  # (measured: `--tolerence 30` was swallowed as a positional word and the command ran with the
+  # default tolerance, exit 0). The loop COUNT is asserted too: a scan that sees nothing must fail.
+  $hfLoops = 0; $hfBad = @()
+  for ($hfi = 0; $hfi -lt @($codeLines).Count; $hfi++) {
+    if ("$($codeLines[$hfi])" -match 'while \(\$i -lt \$Rest\.Count\) \{') {
+      $hfLoops++
+      # The window is the loop itself, not a fixed line count: find-text refuses unknown flags
+      # fourteen lines into its chain, so a 9-line lookahead reported an honest command as an
+      # offender (measured). The loop's closing brace sits at six spaces in this file's style.
+      $hfEnd = $hfi
+      for ($hfj = $hfi + 1; $hfj -lt @($codeLines).Count; $hfj++) {
+        if ("$($codeLines[$hfj])" -match '^\s{6}\}\s*$') { $hfEnd = $hfj; break }
+      }
+      $hfWin = (@($codeLines[$hfi..$hfEnd]) -join "`n")
+      if ($hfWin.Contains('[void]$words.Add($Rest[$i])') -and (-not $hfWin.Contains("-like '--*'"))) { $hfBad += ($hfi + 1) }
+    }
+  }
+  ST-Check 'lint (P-06): no hand-written dispatcher flag loop swallows an unknown --xxx (loops-seen floor makes an empty scan fail)' (
+    ($hfLoops -ge 3) -and (@($hfBad).Count -eq 0))
+  Write-Output ('      flag loops: seen=' + $hfLoops + ' offenders=[' + (@($hfBad) -join ' ') + ']')
+  # ---------- v3.1.0 (P-06): the chrome family's own promises ----------
+  $ccStart = -1; $ccEnd = -1
+  for ($ccI = 0; $ccI -lt @($codeLines).Count; $ccI++) {
+    if ($ccStart -lt 0 -and ("$($codeLines[$ccI])").StartsWith("    'chrome-click' {")) { $ccStart = $ccI; continue }
+    if ($ccStart -ge 0 -and ("$($codeLines[$ccI])").StartsWith('    }')) { $ccEnd = $ccI; break }
+  }
+  $ccBody = $(if ($ccStart -ge 0) { @($codeLines[$ccStart..$ccEnd]) -join "`n" } else { '' })
+  ST-Check 'lint (P-06): chrome-click carries the two things its comment now claims - a hit-window echo before the click and the audit line' (
+    ($ccBody.Contains('Invoke-HitWindowCheck $cx $cy')) -and ($ccBody.Contains('Log-Action')) -and (-not $ccBody.Contains('applies verbatim')))
+  $crStart = -1; $crEnd = -1
+  for ($crI = 0; $crI -lt @($codeLines).Count; $crI++) {
+    if ($crStart -lt 0 -and ("$($codeLines[$crI])").StartsWith("    'chrome-read' {")) { $crStart = $crI; continue }
+    if ($crStart -ge 0 -and ("$($codeLines[$crI])").StartsWith('    }')) { $crEnd = $crI; break }
+  }
+  $crBody = $(if ($crStart -ge 0) { @($codeLines[$crStart..$crEnd]) -join "`n" } else { '' })
+  ST-Check 'lint (P-06): chrome-read refuses a missing selector instead of reading whichever tab is first (its siblings refuse)' (
+    $crBody.Contains('usage: chrome-read <sel>'))
+  # ---------- v3.1.0 (P-05): the small-fix bundle, one check per claim ----------
+  $iv0 = Get-ImeStateView 1 'T' 0
+  $iv1 = Get-ImeStateView 1 'T' 1
+  ST-Check 'unit (P-05): ime-state --json derives open from the mode - mode=0 says alphanumeric AND open=false (the row may not contradict its own text)' (
+    ($iv0.open -eq $false) -and ($iv0.text -like '*alphanumeric*') -and ($iv1.open -eq $true) -and ($iv1.text -like '*native*'))
+  $cpDead = 0; $cpLive = 0
+  # the token is assembled at runtime: a scanner whose own source contains the literal it hunts
+  # counts itself (measured - the first draft reported dead-pixel-assigns=1 with the code clean).
+  $cpTok = '$cpPixel' + 'Hash'
+  foreach ($cpL in $codeLines) {
+    # comment lines are skipped: the fix left a prose note naming the dead variable.
+    $cpT = "$cpL"
+    if ($cpT.TrimStart().StartsWith('#')) { continue }
+    if ($cpT.Contains($cpTok)) { $cpDead++ }
+    if ($cpT.Contains('= Get-ChallengeIdentityHash ')) { $cpLive++ }
+  }
+  ST-Check 'lint (P-05): challenge-probe keeps no assigned-and-never-read pixel capture, and the identity hash it DOES use is still called twice (the scan cannot pass by being empty)' (
+    ($cpDead -eq 0) -and ($cpLive -ge 2))
+  Write-Output ('      challenge captures: dead-pixel-assigns=' + $cpDead + ' identity-sites=' + $cpLive)
+  $scBStart = -1; $scBEnd = -1
+  for ($scI = 0; $scI -lt @($codeLines).Count; $scI++) {
+    if ($scBStart -lt 0 -and ("$($codeLines[$scI])").StartsWith("    'shots-cleanup' {")) { $scBStart = $scI; continue }
+    if ($scBStart -ge 0 -and ("$($codeLines[$scI])").StartsWith('    }')) { $scBEnd = $scI; break }
+  }
+  $scBody = $(if ($scBStart -ge 0) { @($codeLines[$scBStart..$scBEnd]) -join "`n" } else { '' })
+  ST-Check 'lint (P-05): shots-cleanup --go names its partial failure with ERROR: before exit 1 (the contract is exit code AND stdout, not one half)' (
+    ($scBody.Contains('ERROR: shots-cleanup --go:')) -and ($scBody.Contains('if ($qRes.Failed -gt 0) {')))
+  $mfTmp = Join-Path $env:TEMP ('dtx-mf-' + [guid]::NewGuid().ToString('N'))
+  try {
+    $mfSrc = Join-Path $mfTmp 'shots'
+    $mfQ = Join-Path $mfTmp 'quar'
+    [void](New-Item -ItemType Directory -Force -Path $mfSrc)
+    [void](New-Item -ItemType Directory -Force -Path $mfQ)
+    [System.IO.File]::WriteAllText((Join-Path $mfSrc 'a.png'), 'x')
+    [System.IO.File]::WriteAllText((Join-Path $mfSrc 'a.png.map.txt'), "MFIRST-dtx-line`nsecond`n", (New-Object System.Text.UTF8Encoding($false)))
+    $mfRes = Move-ShotsToQuarantine @(Get-ChildItem -LiteralPath $mfSrc -File) $mfQ 't_' '## t'
+    $mfTxt = ''
+    if (Test-Path -LiteralPath $mfRes.Manifest) { $mfTxt = (@(Get-Content -LiteralPath $mfRes.Manifest -Encoding UTF8) -join "`n") }
+    ST-Check 'e2e (P-05): a quarantined .map.txt keeps its first line in the MANIFEST - the descriptor must read BEFORE the move (after it, the original path is gone)' (
+      ($mfRes.Moved -eq 2) -and ($mfRes.Failed -eq 0) -and ($mfTxt.Contains('map sidecar (first line: MFIRST-dtx-line)')))
+    if (-not $mfTxt.Contains('MFIRST-dtx-line')) { Write-Output ('      manifest row: ' + (($mfTxt -split "`n" | Where-Object { $_ -like '*map sidecar*' }) -join ' | ')) }
+  } finally {
+    if (Test-Path -LiteralPath $mfTmp) { [void](Remove-Item -LiteralPath $mfTmp -Recurse -Force) }
+  }
+  # production-scoped on purpose: the two literals below are also written into this check's own
+  # source, so an unscoped scan counts the scanner (same self-reference the pixel-hash token had
+  # to be assembled at runtime to dodge).
+  $aeFive = 0; $aeThree = 0
+  foreach ($aeL in $mvProd) {
+    $aeT = "$aeL"
+    if ($aeT.Contains('Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $text) $rcpBase')) { $aeFive++ }
+    if ($aeT.Contains('Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)')) { $aeThree++ }
+  }
+  $aeDoc = ''
+  $aeDocsSeen = 0
+  # The documented asymmetry can live in either language edition: the published tree keeps
+  # README.md in English plus a separate README.zh-CN.md, so the documentation half checks the
+  # UNION of whichever READMEs exist. Measured: looking at README.md alone made this case
+  # structurally red in the public tree at the v3.1.0 sync.
+  foreach ($aeRd in @('README.md', 'README.zh-CN.md')) {
+    $aeRdPath = Join-Path $PSScriptRoot $aeRd
+    if (Test-Path -LiteralPath $aeRdPath) { $aeDocsSeen++; $aeDoc += "`n" + (@(Get-Content -LiteralPath $aeRdPath -Encoding UTF8) -join "`n") }
+  }
+  # The README phrase is built from code points: this file must stay pure ASCII past its BOM
+  # (a lint enforces exactly that, and it bit the first draft of this check).
+  $aeNeedle = 'paste-file` ' + [string]::Join('', @([char]0x4E0D, [char]0x8D70, [char]0x8FD9, [char]0x6761, [char]0x8DEF))
+  if ($aeDocsSeen -gt 0) {
+    ST-Check 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length, paste-file passes neither) and the README still says so - a silent convergence would be a behaviour change' (
+      ($aeFive -eq 1) -and ($aeThree -eq 1) -and ($aeDoc.Contains($aeNeedle)))
+  } else {
+    ST-Skip 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length, paste-file passes neither) and the README still says so - a silent convergence would be a behaviour change' 'no README found in this tree - nothing to cross-check the code shape against'
+  }
   ST-Check 'unit: popup delta - empty baseline with a new opaque window triggers' (
     (Compare-PopupDelta @() @($wB)).HasNew -eq $true)
   ST-Check 'unit: popup delta - transparent-only after-set never triggers from an empty baseline' (
@@ -6481,8 +6807,22 @@ function Invoke-SelfTest([string[]]$Rest) {
   # breaking change: bump schemaVersion AND the two README lines in the same commit"), and it
   # is why the comparison is an EXACT set: had the check been "contains the keys I care
   # about", the new key would have shipped without a single check noticing.
-  $cWantFind = (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'hits') | Sort-Object) -join ','
-  $cWantRead = (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'lines') | Sort-Object) -join ','
+  $cWantFind = Get-JsonContractKeySet 'find'
+  $cWantRead = Get-JsonContractKeySet 'read'
+  # The contract must have ONE home. Tokens are assembled at runtime because this scanner's own
+  # source contains the very literals it hunts (measured twice this round already).
+  $jkTok = "'schemaVersion', 'contentTrust', 'oc" + "cluded', 'coveredBy'"
+  $jkCall = 'Get-JsonContract' + "KeySet '"
+  $jkProducer = 0; $jkReaders = 0; $jkLits = 0
+  foreach ($jkL in $codeLines) {
+    $jkT = "$jkL"
+    if ($jkT.StartsWith('function Get-JsonContractKeySet')) { $jkProducer++ }
+    if ($jkT.Contains($jkCall)) { $jkReaders++ }
+    if ($jkT.Contains($jkTok)) { $jkLits++ }
+  }
+  ST-Check 'lint: the published --json key contract has exactly one home (one producer, five readers, no stray literal copy - a second copy is how v3.0.0 drifted and two live checks sat red unseen for two rounds)' (
+    ($jkProducer -eq 1) -and ($jkReaders -eq 5) -and ($jkLits -eq 2))
+  Write-Output ('      json-contract homes: producer=' + $jkProducer + ' readers=' + $jkReaders + ' literals=' + $jkLits)
   $cGotFind = (@($cFind.PSObject.Properties.Name | Sort-Object) -join ',')
   $cGotRead = (@($cRead.PSObject.Properties.Name | Sort-Object) -join ',')
   ST-Check 'contract: find-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+hits (add or drop one = breaking)' (
@@ -6699,6 +7039,20 @@ function Invoke-SelfTest([string[]]$Rest) {
       if ($stripAt -lt 0 -and $codeLines[$k] -match 'Strip-OwnFlags') { $stripAt = $k }
       if ($splitAt -lt 0 -and $codeLines[$k] -match 'Split-Target') { $splitAt = $k }
       $d1Block += $codeLines[$k]
+    }
+    # v3.1.0 (P-06): a handler may delegate its own argument parse to a pure Resolve-*Args
+    # function - menu-pick did exactly that so a trailing-flag hole could be tested offline.
+    # FOLLOW the delegation instead of exempting it: the branch has to exist in the called
+    # parser, and only functions named Resolve-*Args that the case body actually calls are
+    # folded in, so no command can claim routing a flag it parses nowhere.
+    foreach ($dm in @([regex]::Matches($d1Block, '(Resolve-[A-Za-z0-9]+Args)'))) {
+      $d1Fn = $dm.Groups[1].Value
+      $d1Fs = -1; $d1Fe = -1
+      for ($dq = 0; $dq -lt $d1Src.Count; $dq++) {
+        if ($d1Fs -lt 0) { if ($d1Src[$dq].StartsWith('function ' + $d1Fn)) { $d1Fs = $dq }; continue }
+        if ($d1Src[$dq] -eq '}') { $d1Fe = $dq; break }
+      }
+      if ($d1Fs -ge 0 -and $d1Fe -gt ($d1Fs + 1)) { $d1Block += ("`n" + (@($d1Src[($d1Fs + 1)..($d1Fe - 1)]) -join "`n")) }
     }
     # v1.5.7 (J-06): the ordering rule only makes sense for a command that CALLS
     # Split-Target. menu-pick / type-in / unmap parse their own arguments and never reach it,
@@ -8164,7 +8518,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   # real OCR round trip or on the desktop.
   $b3Orig = ${function:Invoke-Expectation}
   try {
-    ${function:Invoke-Expectation} = { param($base, $pres, $gones, $region, $to, $iv)
+    ${function:Invoke-Expectation} = { param($base, $pres, $gones, $region, $to, $iv, $ah)
       $script:B3Seen = @{ Present = @($pres); Gone = @($gones) }
       return @{ Ok = $true; Elapsed = 0.4; Timeout = $to; Interval = $iv; Polls = 1; Matched = 'A'; Rect = '(1,2,3x4)'; Centre = '2,3'; Hits = 1 }
     }
@@ -8443,7 +8797,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   $aeReceiptReal = ${function:Get-PasteReceipt}
   $pAe = @{ Expect = ''; ExpectGone = ''; ExpectRegion = ''; NoExpect = $false; TimeoutSec = 6; IntervalMs = 300 }
   try {
-    ${function:Invoke-Expectation} = { param($baseRect, $ex, $exGone, $exRegion, $to, $iv)
+    ${function:Invoke-Expectation} = { param($baseRect, $ex, $exGone, $exRegion, $to, $iv, $ah)
       [void]$aeMockSeen.Add(@{ Needle = $ex; PassedTo = $to; Iv = $iv })
       if ($script:aeMockOk) { return @{ Ok = $true; Elapsed = 0.4; Where = 'mock region'; Timeout = 6; Interval = 300 } }
       return @{ Ok = $false; Elapsed = 6.0; Where = 'mock region'; Timeout = 6; Interval = 300 }
@@ -9402,7 +9756,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   # the envelope comment demands. The inequality half is the part that still guards find.
   $f12OcrEnvKeys = (@((New-OcrJsonEnvelope 'hits' $null @()).PSObject.Properties.Name) | Sort-Object) -join ','
   ST-Check 'contract: adding find did not touch the published find-text/read-text key sets (the OCR envelope is still a different shape from find, whatever B-6 added to both)' (
-    ($f12OcrEnvKeys -ceq ((@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'hits') | Sort-Object) -join ',')) -and ($f12OcrEnvKeys -ne $f12Want))
+    ($f12OcrEnvKeys -ceq (Get-JsonContractKeySet 'find')) -and ($f12OcrEnvKeys -ne $f12Want))
   # one producer per decision, and the road is never re-derived by hand in the handler
   $f12Decide = 0; $f12DegradedEcho = 0; $f12SourceEcho = 0
   for ($f12i = 0; $f12i -lt $codeLines.Count; $f12i++) {
@@ -11627,8 +11981,8 @@ $lbl.ForeColor = [System.Drawing.Color]::Black
           # binds LEFT to right, so the -ceq would evaluate first and -join would hand
           # ST-Check a STRING where it declares [bool] - that is exactly what made this
           # case die on its first run (ParameterBindingArgumentTransformation on 'ok').
-          $jWantRead = (@('schemaVersion', 'occluded', 'coveredBy', 'lines') | Sort-Object) -join ','
-          $jWantFind = (@('schemaVersion', 'occluded', 'coveredBy', 'hits') | Sort-Object) -join ','
+          $jWantRead = Get-JsonContractKeySet 'read'
+          $jWantFind = Get-JsonContractKeySet 'find'
           $jArgsRead = @('read-text', [string]$jRect.X, [string]$jRect.Y, [string]$jRect.W, [string]$jRect.H, '--json')
           # v3.0.1 (audit #20): the sibling cases below (assert-*, imgclick) already go
           # through cmd /c and even name this trap in a comment - these two were left on a
@@ -13003,10 +13357,16 @@ $gaTimer.Start()
       $gateCode = $LASTEXITCODE
       $gnH1 = [int](Resolve-Window 'DTX-GateNoFold').H
       ST-Check 'live: paste into a COVERED target that receives nothing is refused by the occlusion gate with the measured pct and the coverer named (the real-machine red-1/red-2 shape: the desktop could not rise above its coverers either)' (
-        ($gateCode -eq 1) -and ($gateOut -match 'receipt-tried=occluded-refused') -and ($gateOut -match 'occluded-refused=\d+(\.\d+)?%') -and
+        # v3.1.0 (P-04) wording branch, strength unchanged: the verbatim expectation leg now has
+        # its own occlusion gate, so a covered paste can be refused BEFORE the weak receipt chain
+        # runs - the refusal then reads 'expect refused: target occluded=N% coveredBy=...' instead
+        # of 'receipt-tried=occluded-refused (...)'. Both are accepted; every substantive assertion
+        # (exit 1, a percentage named, the coverer named, no 'accepted on receipt', no growth) is
+        # still required. Measured live at 21:20: only the wording moved, exit code stayed 1.
+        ($gateCode -eq 1) -and ($gateOut -match 'receipt-tried=occluded-refused|expect refused: target occluded') -and ($gateOut -match 'occluded-refused=\d+(\.\d+)?%|occluded=\d+%') -and
         ($gateOut -match 'DTX-GateAnim') -and ($gateOut -notmatch 'accepted on receipt=') -and (($gnH1 - $gnH0) -lt 8))
       Write-Output ("      paste occlusion gate live: exit$gateCode h$gnH0->$gnH1 occlusion-gate=" + (Get-PasteReceiptOcclusionMax))
-      $gateLine = (($gateOut.Trim() -split "`r?`n" | Where-Object { $_ -match 'readback=|occluded-refused|none-of-three|accepted on receipt' }) -join ' ;; ')
+      $gateLine = (($gateOut.Trim() -split "`r?`n" | Where-Object { $_ -match 'readback=|occluded-refused|none-of-three|accepted on receipt|expect refused' }) -join ' ;; ')
       Write-Output ('      verdict[gate]: ' + $(if ($gateLine) { $gateLine } else { 'no-readback-line' }))
     } catch {
       ST-Check 'live: paste occlusion gate fixture block setup+run' $false
@@ -13240,6 +13600,313 @@ $gaTimer.Start()
   ST-Check 'lint: every production BoundingRectangle reader asks the emptiness question first (a new site that forgets is this family, again)' (
     @($reUnguarded).Count -eq 0)
   if (@($reUnguarded).Count -gt 0) { Write-Output "      unguarded BoundingRectangle read at line(s): $(@($reUnguarded) -join ', ')" }
+
+  # ---------- F-00-A: a guard promise made in a comment or in the help text must find its ----------
+  # promised wiring inside the very dispatcher case body that makes the promise.
+  # P-01 lived under 770 green checks because "Guards like click." in drag's comment (and the
+  # same promise in the help page) was prose: click resolves + content-guards + runs the
+  # landing check, drag only did the first two. This lint reads the promise out of the
+  # comment/help line, locates the promising command's own case body, and counts the promised
+  # guard helper's calls there; count 0 is red and names the promise line, the helper and the
+  # count. Scan region: every line outside the selftest body (the j5 bounds above) - comment
+  # lines anywhere, plus every line of the Get-UsageText help text (a promise in prose is
+  # still a promise). Promise forms (case-insensitive), and the wiring each one promises:
+  #   "guards and hit-window like <cmd>"  -> Invoke-ContentGuard + Invoke-HitWindowCheck
+  #   "guards + landing check like <cmd>" -> Invoke-ContentGuard + Invoke-HitWindowCheck
+  #   "guards like <cmd>"                 -> every guard helper the promised case's own body has
+  #   "same default-on readback as <cmd>" -> Invoke-AutoPasteExpect
+  $gaHelpers = @('Resolve-Target', 'Invoke-ContentGuard', 'Invoke-HitWindowCheck', 'Invoke-AutoPasteExpect')
+  # The help page lives inside the usage here-string, and $codeLines deliberately blanks
+  # here-string content - so promise matching inside the help region reads the RAW source
+  # lines ($gaRaw, same length, same indexes). Comment promises elsewhere keep reading
+  # $codeLines: a '#' line that is really here-string data must not count as a comment.
+  $gaRaw = @($src -split "`r?`n")
+  $gaDispStart = -1; $gaDispEnd = $codeLines.Count; $gaHelpStart = -1; $gaHelpEnd = -1
+  for ($gai = 0; $gai -lt $codeLines.Count; $gai++) {
+    if ($codeLines[$gai] -match ('^function Invoke-' + 'DesktopCommand')) { $gaDispStart = $gai }
+    elseif (($gaDispStart -ge 0) -and ($codeLines[$gai] -match '^function ')) { $gaDispEnd = $gai; break }
+  }
+  for ($gai = 0; $gai -lt $codeLines.Count; $gai++) {
+    if ($codeLines[$gai] -match ('^function Get-' + 'UsageText')) { $gaHelpStart = $gai }
+    elseif (($gaHelpStart -ge 0) -and ($codeLines[$gai] -match '^function ')) { $gaHelpEnd = $gai; break }
+  }
+  $gaCases = @()
+  $gaCurName = ''; $gaCurStart = -1
+  for ($gai = $gaDispStart; $gai -lt $gaDispEnd; $gai++) {
+    if ($codeLines[$gai] -match "^    '([A-Za-z0-9-]+)' \{") {
+      if ($gaCurStart -ge 0) { $gaCases += ,@($gaCurName, $gaCurStart, $gai) }
+      $gaCurName = $Matches[1]; $gaCurStart = $gai
+    }
+  }
+  if ($gaCurStart -ge 0) { $gaCases += ,@($gaCurName, $gaCurStart, $gaDispEnd) }
+  $gaCaseIdx = {
+    param($nm)
+    for ($gk = 0; $gk -lt @($gaCases).Count; $gk++) { if ($gaCases[$gk][0] -eq $nm) { return $gk } }
+    return -1
+  }
+  $gaCountIn = {
+    param($ci, $helper)
+    $n = 0
+    for ($gj = $gaCases[$ci][1]; $gj -lt $gaCases[$ci][2]; $gj++) {
+      if ($codeLines[$gj] -match '^\s*#') { continue }
+      if ($codeLines[$gj].Contains($helper)) { $n++ }
+    }
+    return $n
+  }
+  $gaBodyHelpers = {
+    param($ci)
+    $got = @()
+    foreach ($gh in $gaHelpers) { if ((& $gaCountIn $ci $gh) -gt 0) { $got += $gh } }
+    return $got
+  }
+  $gaRe = '(?i)(guards and hit-window like|guards \+ landing check like|same default-on readback as|guards like) ([a-z][a-z0-9-]*)'
+  $gaPromises = @()
+  for ($gai = 0; $gai -lt $codeLines.Count; $gai++) {
+    if (($gai -ge $j5ProdStart) -and ($gai -lt $j5ProdEnd)) { continue }
+    $gaLine = $codeLines[$gai]
+    $gaIsComment = ($gaLine -match '^\s*#')
+    $gaInHelp = (($gaHelpStart -ge 0) -and ($gai -ge $gaHelpStart) -and ($gai -lt $gaHelpEnd))
+    if (-not $gaIsComment -and -not $gaInHelp) { continue }
+    $gaProbe = if ($gaInHelp) { $gaRaw[$gai] } else { $gaLine }
+    if (-not ($gaProbe -match $gaRe)) { continue }
+    $gaKind = $Matches[1].ToLowerInvariant(); $gaPromised = $Matches[2].ToLowerInvariant()
+    $gaHost = -1
+    if ($gaInHelp) {
+      for ($gj = $gai; $gj -ge $gaHelpStart; $gj--) {
+        if ($gaRaw[$gj] -match '^    ([a-z][a-z0-9-]*)(\s|$)') { $gaHost = & $gaCaseIdx $Matches[1]; break }
+      }
+    } else {
+      for ($gk = 0; $gk -lt @($gaCases).Count; $gk++) {
+        if (($gai -gt $gaCases[$gk][1]) -and ($gai -lt $gaCases[$gk][2])) { $gaHost = $gk; break }
+      }
+    }
+    $gaPromises += ,@(($gai + 1), $gaKind, $gaPromised, $gaHost)
+  }
+  $gaViolations = @(); $gaWired = 0
+  foreach ($gp in $gaPromises) {
+    $gaLineNo = $gp[0]; $gaKind = $gp[1]; $gaPromised = $gp[2]; $gaHost = $gp[3]
+    $gaPromCase = & $gaCaseIdx $gaPromised
+    $gaHostText = if ($gaHost -ge 0) { "case '" + $gaCases[$gaHost][0] + "'" } else { 'NO dispatcher case body' }
+    if ($gaPromCase -lt 0) {
+      $gaViolations += ("line " + $gaLineNo + " (" + $gaKind + " " + $gaPromised + ", made in " + $gaHostText + "): promised command '" + $gaPromised + "' has no dispatcher case to compare against")
+      continue
+    }
+    $gaWant = @()
+    if (($gaKind -like 'guards and hit-window*') -or ($gaKind -like 'guards + landing*')) {
+      $gaWant = @('Invoke-ContentGuard', 'Invoke-HitWindowCheck')
+    } elseif ($gaKind -eq 'same default-on readback as') {
+      $gaWant = @('Invoke-AutoPasteExpect')
+    } else {
+      $gaWant = @(& $gaBodyHelpers $gaPromCase)
+      if (@($gaWant).Count -eq 0) {
+        $gaViolations += ("line " + $gaLineNo + " (" + $gaKind + " " + $gaPromised + ", made in " + $gaHostText + "): promised command '" + $gaPromised + "' itself has no guard helper in its case body, so the promise compares against nothing")
+        continue
+      }
+    }
+    $gaMissing = @()
+    foreach ($gw in $gaWant) {
+      $n = 0
+      if ($gaHost -ge 0) { $n = & $gaCountIn $gaHost $gw }
+      if ($n -le 0) { $gaMissing += ($gw + ' x0') }
+    }
+    if (($gaHost -lt 0) -or (@($gaMissing).Count -gt 0)) {
+      $gaViolations += ("line " + $gaLineNo + " (" + $gaKind + " " + $gaPromised + ", made in " + $gaHostText + "): promised helper(s) missing from the case body: " + (@($gaMissing) -join ', '))
+    } else {
+      $gaWired++
+    }
+  }
+  ST-Check 'lint (F-00-A): every guard promise in a comment or help line finds its promised wiring inside the same dispatcher case body (violations name the promise line, the helper and the count)' (
+    (@($gaViolations).Count -eq 0) -and ($gaDispStart -ge 0) -and ($gaHelpStart -ge 0) -and (@($gaCases).Count -ge 40) -and (@($gaRaw).Count -eq $codeLines.Count))
+  if (@($gaViolations).Count -gt 0) { foreach ($gv in $gaViolations) { Write-Output ("      F-00-A: " + $gv) } }
+  ST-Check 'lint (F-00-A): the promise forms keep live samples in the file (a lint whose input silently empties out can never fail again)' (
+    @($gaPromises).Count -ge 4)
+  if (@($gaPromises).Count -gt 0) { Write-Output ("      F-00-A: promise sites=" + @($gaPromises).Count + " wired=" + $gaWired + " (dispatcher cases=" + @($gaCases).Count + ")") }
+  ST-Check 'lint (F-00-A): positive control non-zero - at least one promise site is wired and verified (an all-empty positive set means the lint never had teeth)' (
+    $gaWired -ge 1)
+
+  # ---------- v3.1.0 (P-01): drag's landing guard - both endpoints, judged before the press ----------
+  # drag was the only command whose comment promised the family guard wiring while its body
+  # ran none of the landing check (the F-00-A lint above is the promise-side tooth; this
+  # block pins the fix side). drag is the only two-point command, so the check must run
+  # TWICE - start then end - and both verdicts must exist BEFORE mouse-down: refusing after
+  # the press would drop the drag somewhere along a path nobody approved. The mouse layer is
+  # static ([DT]::) and cannot be mocked, so every offline path here aborts before
+  # SetCursorPos by construction: the reject paths throw inside the check itself, and the
+  # accept-side mock throws a sentinel at Get-ExpectChangeBaseline, the step that would
+  # otherwise lead into the press - which is also what keeps every MUTANT of this block safe
+  # to run on a real desktop.
+  $dgIdx = & $gaCaseIdx 'drag'
+  $dgBodyStart = $gaCases[$dgIdx][1]; $dgBodyEnd = $gaCases[$dgIdx][2]
+  $dgHits = @(); $dgLdown = -1
+  for ($dgi = $dgBodyStart; $dgi -lt $dgBodyEnd; $dgi++) {
+    if ($codeLines[$dgi] -match '^\s*#') { continue }
+    if (($codeLines[$dgi].Contains('MOUSE_LDOWN')) -and ($dgLdown -lt 0)) { $dgLdown = $dgi }
+    if ($codeLines[$dgi].Contains('Invoke-HitWindowCheck')) { $dgHits += $dgi }
+  }
+  ST-Check 'lint (P-01): drag passes BOTH endpoints through the landing check before the mouse-down line (exactly 2 calls, start coords then end coords; a drag variant that skips one is this family again)' (
+    ((@($dgHits).Count -eq 2) -and ($dgLdown -gt $dgHits[1]) -and
+    ($codeLines[$dgHits[0]].Contains('$x1 $y1')) -and ($codeLines[$dgHits[1]].Contains('$x2 $y2'))))
+  $dgHwcReal = ${function:Invoke-HitWindowCheck}
+  $dgRtReal = ${function:Resolve-Target}
+  $dgLaReal = ${function:Log-Action}
+  $dgEcbReal = ${function:Get-ExpectChangeBaseline}
+  $script:dgGuardCalls = New-Object System.Collections.ArrayList
+  $script:dgLogCalls = New-Object System.Collections.ArrayList
+  $dgFakeTarget = [pscustomobject]@{ Pid = 41999; Title = 'dg-fake-target'; Handle = [IntPtr]::Zero; Left = 0; Top = 0; W = 100; H = 100 }
+  try {
+    ${function:Resolve-Target} = { param($sel, $force, $always, $eh) return $dgFakeTarget }
+    ${function:Log-Action} = { param($la, $detail) [void]$script:dgLogCalls.Add("$detail") }
+    ${function:Get-ExpectChangeBaseline} = { param($pp, $tt) throw 'dg-sentinel: the accept path was reached without the landing checks (guards did not run first)' }
+    ${function:Invoke-HitWindowCheck} = { param($x, $y, $tgt, $enforce, $allow)
+      [void]$script:dgGuardCalls.Add(@($x, $y))
+      if ($x -ge 4000) { throw "landing guard: point ($x,$y) is OUTSIDE target window (unit mock) visible rect - action NOT sent." } }
+    $dgErrA = ''
+    try { Invoke-DesktopCommand 'drag' @('10', '10', '4000', '4000', '--to', 'dg-fake') | Out-Null }
+    catch { $dgErrA = "$($_.Exception.Message)" }
+    ST-Check 'unit (P-01): drag judges the start point, then the end point, and refuses on the END point before any audit line exists (a refused drag logs nothing - the same contract the one-point commands run)' (
+      (($dgErrA -like '*landing guard*') -and ($dgErrA -like '*action NOT sent*')) -and
+      ((@($script:dgGuardCalls).Count -eq 2)) -and
+      (($script:dgGuardCalls[0][0] -eq 10) -and ($script:dgGuardCalls[0][1] -eq 10)) -and
+      (($script:dgGuardCalls[1][0] -eq 4000) -and ($script:dgGuardCalls[1][1] -eq 4000)) -and
+      ((@($script:dgLogCalls).Count -eq 0)))
+    [void]$script:dgGuardCalls.Clear(); [void]$script:dgLogCalls.Clear()
+    ${function:Invoke-HitWindowCheck} = { param($x, $y, $tgt, $enforce, $allow)
+      [void]$script:dgGuardCalls.Add(@($x, $y))
+      if ($x -ge 4000) { throw "landing guard: point ($x,$y) is OUTSIDE target window (unit mock) visible rect - action NOT sent." } }
+    $dgErrB = ''
+    try { Invoke-DesktopCommand 'drag' @('5000', '5000', '60', '60', '--to', 'dg-fake') | Out-Null }
+    catch { $dgErrB = "$($_.Exception.Message)" }
+    ST-Check 'unit (P-01): drag refuses at the START point with the end point never judged and the audit log untouched (the refusal comes before the drag exists, not after it)' (
+      (($dgErrB -like '*landing guard*') -and ($dgErrB -like '*action NOT sent*')) -and
+      ((@($script:dgGuardCalls).Count -eq 1)) -and (($script:dgGuardCalls[0][0] -eq 5000)) -and
+      ((@($script:dgLogCalls).Count -eq 0)))
+    [void]$script:dgGuardCalls.Clear(); [void]$script:dgLogCalls.Clear()
+    ${function:Invoke-HitWindowCheck} = $dgHwcReal
+    $dgErrC = ''
+    $dgOut = New-Object System.Collections.ArrayList
+    try { Invoke-DesktopCommand 'drag' @('10', '10', '4000', '4000', '--to', 'dg-fake') | ForEach-Object { [void]$dgOut.Add("$_") } }
+    catch { $dgErrC = "$($_.Exception.Message)" }
+    $dgE2eOk = ((($dgErrC -like '*landing guard*') -and ($dgErrC -like '*action NOT sent*') -and ($dgErrC -like '*allow-outside*')) -and
+      ((@($script:dgLogCalls).Count -eq 0)) -and
+      ((@($dgOut | Where-Object { $_ -like 'hit-window:*' }).Count -ge 1)) -and
+      ((@($dgOut | Where-Object { $_ -like '*inside-target=no*' }).Count -ge 1)))
+    ST-Check 'e2e (P-01): drag 10 10 4000 4000 --to <target at 0,0 100x100> refuses through the REAL landing-check machinery with the production refusal text, one hit-window echo per point, no audit line, and the post-guard steps unreached' (
+      $dgE2eOk)
+    if (-not $dgE2eOk) { Write-Output ("      P-01 e2e: err=[" + $dgErrC + "] log-calls=" + @($script:dgLogCalls).Count + " echo-lines=" + @($dgOut).Count) }
+  } finally {
+    ${function:Invoke-HitWindowCheck} = $dgHwcReal
+    ${function:Resolve-Target} = $dgRtReal
+    ${function:Log-Action} = $dgLaReal
+    ${function:Get-ExpectChangeBaseline} = $dgEcbReal
+  }
+
+  # ---------- v3.1.0 (P-03): the expectation anchor is fail-closed for a lost target, and
+  # the no-target case self-reports what it is actually waiting on ----------
+  # Pre-fix, "gave --to but the window died before the wait" and "never gave a target"
+  # both fell into the same silent whole-virtual-screen fallback that called itself
+  # "whole anchored region" - an expectation answering from the whole screen is not an
+  # anchored expectation at all, and the content guard has thrown on the same situation
+  # all along. Now: lost target = refuse (Confirm-ExpectAnchor, one producer, callers
+  # Invoke-ActionExpectation and Invoke-AutoPasteExpect); no target = still allowed, but
+  # the verdict carries anchor=no-target (whole virtual screen) instead of the old
+  # honest-sounding label.
+  $exOcrReal = ${function:Find-OcrHitsScaled}
+  $script:ex4Sentinel = 0
+  try {
+    ${function:Find-OcrHitsScaled} = { param($x, $y, $w, $h, $needle, $scale, $maxTiles, $noTile)
+      $script:ex4Sentinel++
+      throw 'ex4-sentinel: the OCR loop was reached (the anchor refusal did not run first)' }
+    $ex4NoRectTarget = [pscustomobject]@{ Pid = 41998; Title = 'ex4-fake-gone'; Handle = [IntPtr]::Zero }
+    $ex4P = @{ Expect = @('NEEDLE'); ExpectAny = @(); ExpectGone = @(); ExpectAnyGone = @(); ExpectRegion = $null; TimeoutSec = 0.3; IntervalMs = 100; MinLineDensity = 1.5 }
+    $ex4Err = ''
+    try { Invoke-ActionExpectation $ex4P $ex4NoRectTarget 'clicked' | Out-Null }
+    catch { $ex4Err = "$($_.Exception.Message)" }
+    $ex4AOk = ((($ex4Err -like '*expectation anchor*') -and ($ex4Err -like '*NOT waiting on the whole screen*')) -and ($script:ex4Sentinel -eq 0))
+    ST-Check 'unit (P-03): an expectation whose target existed but whose rect is gone refuses with the anchor refusal before a single OCR poll happens (the content guard has failed this way all along; the silent whole-screen fallback was the lie)' (
+      $ex4AOk)
+    if (-not $ex4AOk) { Write-Output ("      P-03 unitA: err=[" + $ex4Err + "] sentinel=" + $script:ex4Sentinel) }
+    ${function:Find-OcrHitsScaled} = { param($x, $y, $w, $h, $needle, $scale, $maxTiles, $noTile)
+      return @{ Hits = @([pscustomobject]@{ X = 1; Y = 1; W = 8; H = 8 }); Lines = @('ex4-line'); Scaled = $false; Tiled = $false; TileCount = 0 } }
+    $ex4B = Invoke-Expectation $null @('NEEDLE') @() $null 0.3 100
+    ST-Check 'unit (P-03): no target at all still waits on the whole virtual screen, but the verdict now SAYS so - Where is exactly anchor=no-target (whole virtual screen), not the old whole-anchored-region label' (
+      (($ex4B.Ok) -and ($ex4B.Where -ceq 'anchor=no-target (whole virtual screen)')))
+    $ex4C = Invoke-Expectation $null @('NEEDLE') @() '5,5,50,50' 0.3 100
+    ST-Check 'unit (P-03): no-target with --expect-region keeps the virtual-screen anchor NAMED in the verdict (anchor=no-target (whole virtual screen), region ... (anchor-relative))' (
+      (($ex4C.Ok) -and ($ex4C.Where -like 'anchor=no-target (whole virtual screen), region 5,5,50x50 (anchor-relative)')))
+    $ex4D = Invoke-Expectation @{ X = 0; Y = 0; W = 100; H = 100 } @() @() $null 0.3 100
+    ST-Check 'unit (P-03): a real target rect keeps the historical wording - whole anchored region means the TARGET rect there, and that case did not drift' (
+      (($ex4D.Ok) -and ($ex4D.Where -ceq 'whole anchored region')))
+  } finally {
+    ${function:Find-OcrHitsScaled} = $exOcrReal
+  }
+
+  # ---------- v3.1.0 (P-04): the verbatim expectation legs get the occlusion front gate ----------
+  # v2.3.0 measured the false-accept on the receipt chain (a covered target's screen rect
+  # reads the COVERER, so lines-changed "moved" on someone else's video). The verbatim
+  # expect legs read the same kind of screen rect on every poll and had no gate at all.
+  # The gate is same-source same-knob (Get-OcclusionVerdict + Get-PasteReceiptOcclusionMax,
+  # shipped at 0): a covered anchor refuses the wait at once with exit 1; sampler failure
+  # is fail-OPEN and self-reported through OccErr (registered limitation); no target
+  # handle (the P-03 anchor=no-target case) has no occlusion semantics, so no gate there.
+  $ex5OccReal = ${function:Get-OcclusionVerdict}
+  $ex5FocReal = ${function:Format-OcclusionCovering}
+  $ex5KnobReal = ${function:Get-PasteReceiptOcclusionMax}
+  $ex5OcrReal = ${function:Find-OcrHitsScaled}
+  $script:ex5OccCalls = 0
+  $script:ex5OcrCalls = 0
+  try {
+    ${function:Format-OcclusionCovering} = { param($items, $checked) return @{ Items = @($items); Lines = @(); Summary = "pid=999 'ex5-coverer' (" + @($items).Count + " of " + $checked + " sample points)"; Top = $null } }
+    ${function:Find-OcrHitsScaled} = { param($x, $y, $w, $h, $needle, $scale, $maxTiles, $noTile)
+      $script:ex5OcrCalls++
+      return @{ Hits = @([pscustomobject]@{ X = 1; Y = 1; W = 8; H = 8 }); Lines = @('ex5-line'); Scaled = $false; Tiled = $false; TileCount = 0 } }
+    ${function:Get-OcclusionVerdict} = { param($x, $y, $w, $h, $handle, $grid) $script:ex5OccCalls++; return @{ Checked = 25; Mismatch = 0; Pct = 0.0; Covering = @(); Skipped = 0; Err = ''; Ms = 1.0 } }
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $ex5Clean = Invoke-Expectation @{ X = 0; Y = 0; W = 100; H = 100 } @('NEEDLE') @() $null 0.3 100 ([IntPtr]1)
+    ST-Check 'unit (P-04): a clean anchor (occluded=0) passes the verbatim wait and the gate really sampled the anchor rect (the sampler runs before the first OCR poll)' (
+      (($ex5Clean.Ok) -and ($script:ex5OccCalls -ge 1) -and ($script:ex5OcrCalls -ge 1) -and (-not $ex5Clean.OccErr)))
+    ${function:Get-OcclusionVerdict} = { param($x, $y, $w, $h, $handle, $grid) $script:ex5OccCalls++; return @{ Checked = 25; Mismatch = 25; Pct = 100.0; Covering = @([pscustomobject]@{ Pid = 999; Samples = 25 }); Skipped = 0; Err = ''; Ms = 1.0 } }
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $ex5Err = ''
+    try { Invoke-Expectation @{ X = 0; Y = 0; W = 100; H = 100 } @('NEEDLE') @() $null 0.3 100 ([IntPtr]1) | Out-Null }
+    catch { $ex5Err = "$($_.Exception.Message)" }
+    $ex5Leg2Ok = ((($ex5Err -like '*expect refused*') -and ($ex5Err -like '*occluded=100%*') -and ($ex5Err -like '*coveredBy=pid=999*')) -and ($script:ex5OcrCalls -eq 0))
+    ST-Check 'unit (P-04): a covered anchor refuses the wait AT ONCE with expect refused: target occluded=N% coveredBy=... - and the refusal lands BEFORE the first OCR read of that poll (no wait-and-see; the coverer never gets to answer the needle)' (
+      $ex5Leg2Ok)
+    if (-not $ex5Leg2Ok) { Write-Output ("      P-04 leg2: err=[" + $ex5Err + "] occ-calls=" + $script:ex5OccCalls + " ocr-calls=" + $script:ex5OcrCalls) }
+    ${function:Get-OcclusionVerdict} = { param($x, $y, $w, $h, $handle, $grid) $script:ex5OccCalls++; return @{ Checked = 0; Mismatch = 0; Pct = 0.0; Covering = @(); Skipped = 25; Err = 'ex5-sample-failed'; Ms = 1.0 } }
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $ex5Open = Invoke-Expectation @{ X = 0; Y = 0; W = 100; H = 100 } @('NEEDLE') @() $null 0.3 100 ([IntPtr]1)
+    ST-Check 'unit (P-04): a failed occlusion sampler does NOT refuse (Err is not a rejection reason, same as the receipt gate) and the wait self-reports it through OccErr' (
+      (($ex5Open.Ok) -and ($ex5Open.OccErr -ceq 'ex5-sample-failed') -and ($script:ex5OcrCalls -ge 1)))
+    # leg 3 leaves a FAILED sampler mock on the wire (Err non-empty), and the gate fail-opens on
+    # Err BEFORE comparing anything - so flipping the knob there is structurally invisible. Measured:
+    # replacing the production knob with a literal 0 left this leg green. Put a real 100%-covered
+    # verdict back, then move ONLY the knob and demand two outcomes from the same input.
+    ${function:Get-OcclusionVerdict} = { param($x, $y, $w, $h, $handle, $grid) $script:ex5OccCalls++; return @{ Checked = 25; Mismatch = 25; Pct = 100.0; Covering = @([pscustomobject]@{ Pid = 999; Samples = 25 }); Skipped = 0; Err = ''; Ms = 1.0 } }
+    ${function:Get-PasteReceiptOcclusionMax} = { return 100 }
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $ex5Knob = $null
+    $ex5KnobOpenErr = ''
+    try { $ex5Knob = Invoke-Expectation @{ X = 0; Y = 0; W = 100; H = 100 } @('NEEDLE') @() $null 0.3 100 ([IntPtr]1) }
+    catch { $ex5KnobOpenErr = "$($_.Exception.Message)" }
+    $ex5KnobPassed = (($null -ne $ex5Knob) -and $ex5Knob.Ok)
+    # the OCR counter has to be read from the PASSING half - the refusing half throws before the
+    # first read by design, so asserting it after the second call would pin nothing (measured).
+    $ex5KnobOcrCalls = $script:ex5OcrCalls
+    ${function:Get-PasteReceiptOcclusionMax} = $ex5KnobReal
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $ex5KnobErr = ''
+    try { Invoke-Expectation @{ X = 0; Y = 0; W = 100; H = 100 } @('NEEDLE') @() $null 0.3 100 ([IntPtr]1) | Out-Null }
+    catch { $ex5KnobErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (P-04): the gate compares against Get-PasteReceiptOcclusionMax - the SAME 100%-covered anchor passes at knob=100 and refuses at the production knob (a hardcoded zero cannot pass this)' (
+      ($ex5KnobPassed) -and ($ex5KnobOcrCalls -ge 1) -and ($ex5KnobErr -like '*expect refused*'))
+    if (-not (($ex5KnobPassed) -and ($ex5KnobOcrCalls -ge 1) -and ($ex5KnobErr -like '*expect refused*'))) { Write-Output ("      P-04 leg4: knob100-pass=" + $ex5KnobPassed + " knob100-err=[" + $ex5KnobOpenErr + "] knob100-ocr=" + $ex5KnobOcrCalls + " prod-refused=[" + $ex5KnobErr + "] occ-calls=" + $script:ex5OccCalls) }
+  } finally {
+    ${function:Get-OcclusionVerdict} = $ex5OccReal
+    ${function:Format-OcclusionCovering} = $ex5FocReal
+    ${function:Get-PasteReceiptOcclusionMax} = $ex5KnobReal
+    ${function:Find-OcrHitsScaled} = $ex5OcrReal
+  }
 
   # ---------- v3.0.1 (audit #4): the CDP viewport fallback had one axis ----------
   # The JS route computed Y from screenY and then, when no window could be resolved, put
@@ -13624,7 +14291,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v3.0.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v3.1.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -15176,7 +15843,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $mode = Get-ImeMode $f.Hwnd
       if ($mode -lt 0) { throw "no default IME window for pid=$($f.Pid) title='$($f.Title)'" }
       if ($script:Json) {
-        [pscustomobject]@{ pid = $f.Pid; title = $f.Title; mode = $mode; open = $true; text = (Format-ImeMode $mode) } | ConvertTo-Json -Compress
+        Get-ImeStateView $f.Pid $f.Title $mode | ConvertTo-Json -Compress
       } else {
         "foreground pid=$($f.Pid) title='$($f.Title)'  $(Format-ImeMode $mode)  (0 = type English directly; native = IME composes)"
       }
@@ -15244,7 +15911,11 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $cpCw = [int]($cpCr.Right - $cpCr.Left); $cpCh = [int]($cpCr.Bottom - $cpCr.Top)
       $cpLines = Invoke-OcrRegion $cpCx $cpCy $cpCw $cpCh
       $cpVerdict = Test-ChallengeLines $cpLines
-      $cpPixelHash = Get-RegionHash $cpCx $cpCy $cpCw $cpCh
+      # v3.1.0 (P-05): two full client-area captures (CopyFromScreen + PNG encode + MD5) used to
+      # run here and be discarded - staleness is decided by the IDENTITY hash below (the challenge
+      # text), never by pixels. Nothing ever read them (measured: two assignments, zero uses), so
+      # every challenge-probe call paid for two screenshots to throw the bytes away. A lint now
+      # refuses the shape "assigned and never read" for this name again.
       $cpHash = Get-ChallengeIdentityHash $cpVerdict
       $cpLog = @(Get-Content $ActionLog -Encoding UTF8 -ErrorAction SilentlyContinue)
       $cpState = Test-ChallengeLogLines $cpLog $cw.Pid
@@ -15288,7 +15959,6 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       Start-Sleep -Milliseconds 800
       $cpLines2 = Invoke-OcrRegion $cpCx $cpCy $cpCw $cpCh
       $cpVerdict2 = Test-ChallengeLines $cpLines2
-      $cpPixelHash2 = Get-RegionHash $cpCx $cpCy $cpCw $cpCh
       $cpHash2 = Get-ChallengeIdentityHash $cpVerdict2
       if (-not $cpVerdict2.Challenge) {
         Log-Action @("pid=$($cw.Pid)") "attempt-cleared post-hash=$cpHash2"
@@ -15845,6 +16515,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       while ($i -lt $Rest.Count) {
         if ($Rest[$i] -eq '--tolerance') { $i++; $tol = Read-FlagNumber '--tolerance' $Rest[$i] $true '(0..255 per channel)' }
         elseif ($Rest[$i] -eq '--all') { $all = $true }
+        elseif ($Rest[$i] -like '--*') { throw (Get-UnknownFlagMessage 'find-color' "$($Rest[$i])") }
         else { [void]$words.Add($Rest[$i]) }
         $i++
       }
@@ -15904,6 +16575,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       while ($i -lt $Rest.Count) {
         if ($Rest[$i] -eq '--interval') { $i++; $interval = Read-FlagNumber '--interval' $Rest[$i] $true '(milliseconds)' }
         elseif ($Rest[$i] -eq '--changed') { $changed = $true }
+        elseif ($Rest[$i] -like '--*') { throw (Get-UnknownFlagMessage 'wait-stable' "$($Rest[$i])") }
         else { [void]$words.Add($Rest[$i]) }
         $i++
       }
@@ -16028,7 +16700,9 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $words = New-Object System.Collections.ArrayList
       $i = 0
       while ($i -lt $Rest.Count) {
-        if ($Rest[$i] -eq '--tolerance') { $i++; $tol = Read-FlagNumber '--tolerance' $Rest[$i] $true '(0..255 per channel)' } else { [void]$words.Add($Rest[$i]) }
+        if ($Rest[$i] -eq '--tolerance') { $i++; $tol = Read-FlagNumber '--tolerance' $Rest[$i] $true '(0..255 per channel)' }
+        elseif ($Rest[$i] -like '--*') { throw (Get-UnknownFlagMessage 'assert-color' "$($Rest[$i])") }
+        else { [void]$words.Add($Rest[$i]) }
         $i++
       }
       $Rest = @($words)
@@ -16280,6 +16954,12 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       # sliders and scrollbars that wheel events cannot move. Guards like click.
       # v1.5.5 (D-1): --steps/--hold stripped before Split-Target (see hover above);
       # both were unreachable dead code before this commit.
+      # v3.1.0 (P-01): drag is the only two-point command in the family, so BOTH
+      # endpoints pass the landing check BEFORE the button goes down - each point
+      # prints its own hit-window line, and with --to a point outside the target's
+      # visible rect is refused while nothing is held (a refusal after mouse-down
+      # would leave the drag stuck mid-path on whatever the cursor crossed);
+      # --allow-outside releases the check and says so, as on the one-point commands.
       $own = Strip-OwnFlags $Rest 'drag'
       $steps = [int]$own.Values['--steps']
       $hold = [int]$own.Values['--hold']
@@ -16291,6 +16971,9 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
       $x1 = [int]$p.Words[0]; $y1 = [int]$p.Words[1]; $x2 = [int]$p.Words[2]; $y2 = [int]$p.Words[3]
+      # Both verdicts exist BEFORE the press - the order here is load-bearing.
+      Invoke-HitWindowCheck $x1 $y1 $tgt ($p.Sel -ne '') $p.AllowOutside
+      Invoke-HitWindowCheck $x2 $y2 $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$x1,$y1 -> $x2,$y2"
       [void][DT]::SetCursorPos($x1, $y1)
@@ -16559,26 +17242,16 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $idx = [int]$own.Values['--index']
       $hadIndex = [bool]$own.Present['--index']
       $allowWindow = [bool]$own.Values['--allow-window']
-      $expect = ''; $expectGone = ''; $expectRegion = ''; $timeoutSec = 6.0; $intervalMs = 300
-      $words = New-Object System.Collections.ArrayList
-      $i = 0
-      $mp = @($own.Rest)
-      while ($i -lt $mp.Count) {
-        if ($mp[$i] -eq '--expect') { $i++; $expect = $mp[$i] }
-        elseif ($mp[$i] -eq '--expect-gone') { $i++; $expectGone = $mp[$i] }
-        elseif ($mp[$i] -eq '--expect-region') { $i++; $expectRegion = $mp[$i] }
-        elseif ($mp[$i] -eq '--timeout') { $i++; $timeoutSec = [double]$mp[$i] }
-        elseif ($mp[$i] -eq '--interval') { $i++; $intervalMs = [int]$mp[$i] }
-        elseif ($mp[$i] -eq '--needle') {
-          $i++
-          if ($i -ge $mp.Count) { throw 'menu-pick: --needle needs a value' }
-          [void]$words.Add($mp[$i])
-        }
-        elseif ("$($mp[$i])" -like '--*') { throw (Get-UnknownFlagMessage 'menu-pick' "$($mp[$i])") }
-        else { [void]$words.Add($mp[$i]) }
-        $i++
-      }
-      $Rest = @($words)
+      # v3.1.0 (P-06): the parse moved into the pure Resolve-MenuPickArgs so the trailing-flag
+      # hole (a flag as the LAST token bound its operand to $null -> the expectation silently
+      # never ran, and --timeout became 0) is pinned by offline unit checks.
+      $mpRes = Resolve-MenuPickArgs @($own.Rest)
+      $expect = $mpRes.Expect
+      $expectGone = $mpRes.ExpectGone
+      $expectRegion = $mpRes.ExpectRegion
+      $timeoutSec = $mpRes.TimeoutSec
+      $intervalMs = $mpRes.IntervalMs
+      $Rest = @($mpRes.Words)
       if ($Rest.Count -lt 2) { throw 'usage: menu-pick <sel> <needle...> [--index n] [--allow-window]' }
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }
@@ -16840,7 +17513,12 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
     'chrome-read' {
       # chrome-read <sel> - visible text of the matching tab's page (body.innerText),
       # through one Runtime.evaluate round trip. Read-only.
+      # v3.1.0 (P-06): the selector is REQUIRED. Get-CdpPageId falls back to the FIRST page
+      # when it gets an empty selector, so `chrome-read` with a missing argument used to read
+      # whichever tab happened to be first and exit 0 - while chrome-find and chrome-click both
+      # refuse. Same family, one command silently answering for a page nobody named.
       $base = Get-CdpLoopbackBase "127.0.0.1:$script:CdpPort"
+      if ($Rest.Count -lt 1) { throw 'usage: chrome-read <sel>  (the selector names the tab - there is no default tab)' }
       $p = Get-CdpPageId $base $Rest[0]
       $r = Invoke-CdpEval $base $p.Page.id 'document.body.innerText'
       if (-not $r.Ok) { throw "chrome-read: $($r.Error)" }
@@ -16892,9 +17570,12 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
 
     'chrome-click' {
       # chrome-click <sel> <text> [-dry] - chrome-find then click its centre with the
-      # regular injected click (so hit-window/audit/guard machinery applies verbatim).
-      # DOM-level synthetic clicks are NOT used: they bypass the guards this tool exists
-      # to enforce. -dry stops after printing the mapping.
+      # regular injected click. v3.1.0 (P-06) corrected the promise: this command's selector
+      # names a CDP PAGE, not a window, so there is no target rect to enforce a landing
+      # guard against - what applies is the AUDIT line and the hit-window ECHO (which window is
+      # actually under the mapped point), never landing enforcement. DOM-level synthetic clicks
+      # are NOT used: they bypass the guards this tool exists to enforce. -dry stops after
+      # printing the mapping.
       $base = Get-CdpLoopbackBase "127.0.0.1:$script:CdpPort"
       if ($Rest.Count -lt 2) { throw 'usage: chrome-click <sel> <text...> [-dry]' }
       $dry = $false
@@ -16907,6 +17588,12 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
       if ("$line" -notmatch 'centre=\((-?\d+),(-?\d+)\)') { throw 'chrome-click: could not parse centre from chrome-find output' }
       $cx = [int]$Matches[1]; $cy = [int]$Matches[2]
       if ($dry) { "chrome-click: [dry run] would click $cx,$cy (from chrome-find mapping)"; return }
+      # v3.1.0 (P-06): the CDP->screen mapping is the part most likely to be wrong (scale,
+      # scroll, a second monitor), so name the window actually under the point BEFORE the
+      # click lands. Echo-only (no target rect exists for a page selector), same shape as
+      # `move` uses. A mapping that lands on the wrong window is now visible in the same line
+      # the operator already reads, instead of only in hindsight.
+      Invoke-HitWindowCheck $cx $cy $null $false $false
       Log-Action @($Rest) "cdp pick at=$cx,$cy"
       Move-Click $cx $cy 'left'
       "chrome-click: clicked $cx,$cy (from chrome-find mapping)"
@@ -17557,7 +18244,14 @@ return { found: true, count: matches.length, rect: { left: r.left, top: r.top, w
       foreach ($ft in @($qRes.Failures)) { "$ft" }
       Log-Action @("shots-cleanup", "--keep", "$keepN", '--go') "moved=$($qRes.Moved) failed=$($qRes.Failed) dest=$($qRes.Dest)"
       "shots-cleanup: moved $($qRes.Moved) file(s) to $($qRes.Dest) (manifest: $($qRes.Manifest)), $($qRes.Failed) failed - nothing was deleted"
-      if ($qRes.Failed -gt 0) { exit 1 }
+      if ($qRes.Failed -gt 0) {
+        # v3.1.0 (P-05): the entry contract is "exit 1 AND stdout carries ERROR: ..." - the
+        # summary line above is prose, so a caller that only greps for ERROR: read a partially
+        # failed run as clean. The exit-2 refusal path in this same command already names itself
+        # properly; only this path did not. Failures are still echoed one by one above.
+        Write-Output "ERROR: shots-cleanup --go: $($qRes.Failed) move(s) FAILED, $($qRes.Moved) moved - failure lines above, manifest: $($qRes.Manifest)"
+        exit 1
+      }
     }
 
     default { throw "unknown command: $Cmd (run 'desktop.ps1 help')" }
