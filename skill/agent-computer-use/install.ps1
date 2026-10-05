@@ -39,6 +39,14 @@ param(
   [switch]$SkipSelftest
 )
 
+# v3.0.1 (external audit item 23): the project's three hard guards, applied as far as this
+# script's job allows. Set-StrictMode catches the typo-a-variable class in a script that
+# moves files around - an unset variable here is a path that silently becomes empty.
+# $ErrorActionPreference deliberately stays 'Continue': this installer reports every problem
+# it collected and exits with a CODE (see the usage block), and a terminating first error
+# would leave a half-copied skill behind, which is the worse failure. The deviation is a
+# choice, not an oversight, and selftest pins both lines so neither can drift away.
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 

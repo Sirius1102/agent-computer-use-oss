@@ -21,6 +21,11 @@ param(
   [string]$TargetDir = ''
 )
 
+# v3.0.1 (external audit item 23): same pair of guards as install.ps1, same reasoning -
+# StrictMode for the unset-variable class (an empty path in a REMOVER is the worst possible
+# silent value), 'Continue' kept on purpose so one locked file does not abort the run after
+# the directory is already gone and the exit code stops meaning anything.
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 

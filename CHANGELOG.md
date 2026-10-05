@@ -2,6 +2,77 @@
 
 All notable changes to this project are documented in this file.
 
+## v3.0.1 - 2026-10-05
+
+Bug fixes only: no new commands, and no published contract changes (JSON
+`schemaVersion` stays at 2). Two external full reviews of v3.0.0 produced 24
+findings; each was re-verified at source before being fixed, and the review
+documents themselves turned out to contain counting and coverage errors that are
+recorded in `项目总览` / `迭代日志` in the private tree.
+
+- **The `Rect.Empty` family.** UIA answers "this element has no rectangle" with
+  `System.Windows.Rect.Empty`, whose members are **infinities, not zeros**
+  (`X=+Inf Y=+Inf Width=-Inf Height=-Inf`). Four consumers did arithmetic or
+  comparisons on it: the Chrome exit-menu lost its back-out (the menu stayed on
+  screen), `a11y-probe` counted rectangle-less elements as page content (which
+  can report `collapsed` as `exposed`), `uia-click` threw a type error after a
+  verified path, and `find`'s UIA road could emit a clickable-looking hit at
+  `(0,0,0x0)`. One predicate now guards every read, plus a whole-file lint: any
+  production function that reads `BoundingRectangle` without asking the emptiness
+  question first is red. `find` reports `rectless=N` and `a11y-probe` echoes
+  `rectless=`; `uia-click` refuses when there is nothing to click.
+- **`read-text --file` on wide images.** The retry ladder upscaled
+  unconditionally, and the engine **throws** on an oversized bitmap rather than
+  returning nothing - so a stored capture wider than half `MaxImageDimension`
+  ended the whole command (`ERROR`, exit 1) and the quadrant pass that exists for
+  wide images never ran. A rung that cannot fit is now skipped and says so:
+  `whole@2x=skipped (6000x200 doubled is 12000x400, over the engine limit 10000)`,
+  and the same image reads at exit 0.
+- **`uia-settext <sel> <nameSub> <file>` works again.** Two call sites passed no
+  arguments to the name matcher, which answered `false` for a null name - the
+  route had been dead since v2.0.0, leaving only the `@path` form. A new guard
+  arity scan reads each `Test-*` predicate's declared parameters from source and
+  checks every production call site against them (26 predicates, 54 call sites).
+- **`--expect-change` accepts negative coordinates**, matching
+  `--guard-region`/`--expect-region`; a second gate had been rejecting what the
+  first admitted, so an explicit rect on a left-hand monitor was impossible to
+  pass. Width and height still refuse to be negative.
+- **Numeric flags explain themselves.** `--max-tiles abc` used to answer with a
+  raw .NET binding error naming neither the flag nor the fix; it now says
+  `--max-tiles needs a whole number (tiles per tiled OCR pass), got: abc`, a
+  fractional value for an integer flag is refused instead of silently truncated,
+  and the decimal point is pinned to invariant culture.
+- **`status-summary` no longer dies without git**, and `clean` gained an honest
+  third state: `worktree: git=no clean=n/a`. "Unknown" is not "clean" and not
+  "dirty". The same treatment applies to the live BOM-history anchor, which now
+  SKIPs instead of reporting the git history as broken.
+- **CDP viewport fallback fixed on the right axis.** When the browser window
+  could not be measured, the JS route computed the X origin from
+  `window.screenY` (the metrics probe never collected `screenX`) while reporting
+  `Ok=true`. Both axes are now computed by one pure helper, the probe asks for
+  `screenX`, and a probe that returns neither refuses rather than guessing.
+- **Resource hygiene:** the OCR retry temp file is written inside the `try` (a
+  partial write used to leave `dtocr_*.png` behind), the WinRT stream and bitmap
+  are disposed, the tab-manifest writer is disposed in a `finally`, an
+  out-of-range handle pin is a refusal with a reason instead of an
+  `OverflowException`, and a raw exception can no longer bypass the CDP
+  `Ok`/`Error` contract.
+- **`Find-OcrHits` rejects an empty needle** at the function level:
+  `IndexOf("")` is 0, so a caller that forgets its own guard would previously get
+  "every line matched".
+- **Help page fixes** that a reader sees: `help hash` (and `wheel`,
+  `a11y-probe`) used to print two different entries; two descriptions were glued
+  to their labels with a wide space run; the occlusion paragraph printed its
+  lead-in twice; `wait-stable --changed` is now documented under `wait-stable`.
+- **Both skill loader scripts** (`skill/agent-computer-use/install.ps1`,
+  `uninstall.ps1`) now run under `Set-StrictMode -Version Latest`;
+  `$ErrorActionPreference = 'Continue'` stays, deliberately, and the reason is
+  recorded next to it and pinned by a check.
+- Offline checks: **722 -> 772**, declared per tree and reconciled by the run
+  itself. Several of the new checks were found toothless by mutation testing
+  before they shipped, and the mutation rig now distinguishes "did not go red"
+  from "the suite never finished".
+
 ## v3.0.0 - 2026-10-04
 
 **BREAKING:** every `--json` envelope gained a pinned `contentTrust` key and
