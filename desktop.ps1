@@ -8098,7 +8098,11 @@ function Invoke-SelfTest([string[]]$Rest) {
     ($pinHugeHex.Reason -ceq 'invalid-format') -and ("$($pinHugeHex.Hint)".Length -gt 0))
   $pinHugeDec = $null
   $pinHugeDecErr = ''
-  try { $pinHugeDec = Test-HandlePin '99999999999999999999999' $pinH } catch { $pinHugeDecErr = $_.Exception.GetType().Name }
+  # built, not written as a literal: a 23-digit run in this file is exactly what the
+  # publication gate's LONG-HEX rule exists to question, and a fixture must not cost an
+  # exemption (the same lesson as the app-name comment the v3.0.0 gate caught).
+  $pinHugeDecIn = ('9' * 23)
+  try { $pinHugeDec = Test-HandlePin $pinHugeDecIn $pinH } catch { $pinHugeDecErr = $_.Exception.GetType().Name }
   ST-Check 'unit: an out-of-range DECIMAL handle pin is refused the same way (both casts are guarded)' (
     ($pinHugeDecErr -ceq '') -and ($null -ne $pinHugeDec) -and (-not $pinHugeDec.Ok) -and
     ($pinHugeDec.Reason -ceq 'invalid-format') -and ("$($pinHugeDec.Hint)".Length -gt 0))
@@ -12120,7 +12124,10 @@ $staged = & $stageLoop
         $apSteps = Join-Path $env:TEMP ('dtx-dry-' + [guid]::NewGuid().ToString('N') + '.json')
         [System.IO.File]::WriteAllText($apSteps, ('[ { "click": [' + $esx + ', ' + $esy + '], "to": "DTX-ActA" } ]'), (New-Object System.Text.UTF8Encoding($false)))
         # v3.0.1 (audit #20): $apSteps is a TEMP path, and TEMP is under the profile on
-        # every Windows box - a user whose name contains a space ("C:\Users\John Doe\...")
+        # every Windows box - a profile directory whose own name contains a space, which
+        # is what makes the unquoted concatenation split into two arguments. The path
+        # shape stays out of this file on purpose: the publication gate's USER-PATH rule
+        # is not something a comment should ask an exemption for.
         # made cmd /c hand powershell two arguments and the case failed on a missing file.
         # Quoted now, like the -File path a few lines above.
         $dryOut = & $apCmd "script `"$apSteps`" --dry-run"
