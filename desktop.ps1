@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 4.0.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 4.1.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -39,7 +39,7 @@ Set-StrictMode -Version Latest
 # Placed after param() because PowerShell allows only comments before it (measured: an
 # assignment up there is a parse error for the whole file).
 # Sync list: this line and the iteration-log entry. It is NOT a version number.
-$script:DeclaredCheckTotal = 815
+$script:DeclaredCheckTotal = 816
 
 # Emit stdout as UTF-8 (no BOM) so CJK window titles survive being piped to
 # other processes when invoked via powershell -File. Wrapped in try/catch
@@ -2095,6 +2095,19 @@ function Test-ChallengeLogLines($lines, [int]$pidToFind) {
     }
   }
   return @{ LastHash = $last; FuseHash = $fuse }
+}
+
+# Pure: what the reader is ALLOWED to claim about this pid's fuse, given how the log read went.
+# The three answers are different facts and must not collapse into one another: `absent` = the
+# log has never been written, so "first challenge for this pid" is a true statement; `unreadable`
+# = the file is there but THIS call could not read it, which says nothing at all about whether a
+# fuse is armed. Before this, the read carried -ErrorAction SilentlyContinue, so an unreadable
+# log arrived downstream as an empty array, was reported as `stale=first-seen`, and cleared the
+# armed fuse - a retry that risk-control was supposed to be protected from (v4.0.1 audit, finding 2).
+function Resolve-ChallengeLogState([bool]$logExists, [bool]$readOk) {
+  if (-not $logExists) { return 'absent' }
+  if (-not $readOk) { return 'unreadable' }
+  return 'ok'
 }
 
 # Pure: the human-handoff echo. All four contract fields (type= / rect= / handle: /
@@ -7399,7 +7412,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   $sfTiRange = ''
   try { [void](Strip-OwnFlags @('100', '200', '--tab', '99', 'x') 'type-in') } catch { $sfTiRange = $_.Exception.Message }
   ST-Check 'unit: type-in --tab range comes from the table (0..20)' ($sfTiRange.Contains("'--tab' must be 0..20, got: 99"))
-  ST-Check 'unit: every command in the shared map declares a subset of the shared set' (
+  ST-Check 'unit: every command in the shared map declares a subset of the shared set (and the map is non-empty: >= 4 keys, so an empty table cannot satisfy it by comparing nothing)' (
     $(
       $bad = @()
       # X-02: this used to wrap the map in @() and then index the WRAPPER by a command NAME.
@@ -7411,7 +7424,12 @@ function Invoke-SelfTest([string[]]$Rest) {
       foreach ($k in @(Get-HashKeys $csMap)) {
         foreach ($f in (Get-OptValue $csMap $k)) { if (-not (@(Get-SharedFlagSet) -contains $f)) { $bad += "$k=$f" } }
       }
-      @($bad).Count -eq 0
+      # v4.0.1 (audit observation 6): the green condition is "nothing bad found", which an empty
+      # table satisfies for free - the exact shape that made this check vacuous before X-02
+      # batch 4 fixed the indexing. The floor is what makes "it compared something" part of the
+      # assertion. EXPECTATION ADDED, not relaxed: 4 is the measured key count, and a legitimate
+      # shrink below it has to be stated here rather than silently passing.
+      (@($bad).Count -eq 0) -and (@(Get-HashKeys $csMap).Count -ge 4)
     ))
   # the flag-reachability lint must now cover the migrated commands, not just three
   ST-Check 'unit: the private-flag table covers 13 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; EXPECTATION RAISED 12->13, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
@@ -10516,6 +10534,16 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'unit: challenge log state - seen and fuse hashes extracted per pid, other pids and act lines ignored' (
     ($c40State.LastHash -eq '0000000000000000000000000000aaaa') -and ($c40State.FuseHash -eq '0000000000000000000000000000cccc') -and
     ($c40StateOther.LastHash -eq '0000000000000000000000000000bbbb') -and ($c40StateOther.FuseHash -eq ''))
+  # v4.0.1 (audit finding 2): the three read outcomes must not collapse into one another. `absent`
+  # is the only state allowed to become first-seen; `unreadable` has to stay a separate answer,
+  # which is what the last clause pins - if both branches ever return the same token, this goes
+  # red instead of quietly re-opening the fail-open fuse.
+  $c40LbAbsent = Resolve-ChallengeLogState $false $false
+  $c40LbUnread = Resolve-ChallengeLogState $true $false
+  $c40LbOk = Resolve-ChallengeLogState $true $true
+  ST-Check 'unit: challenge log read state - absent / unreadable / ok are three distinct answers and absent never equals unreadable' (
+    ($c40LbAbsent -ceq 'absent') -and ($c40LbUnread -ceq 'unreadable') -and ($c40LbOk -ceq 'ok') -and
+    ($c40LbAbsent -cne $c40LbUnread))
   $c40HandWin = [pscustomobject]@{ Title = 'DTX-ChalProbe'; Pid = 4242; Left = 150; Top = 700; W = 700; H = 420 }
   $c40Hand = Build-ChallengeHandoff $c40Slider $c40HandWin 'deadbeef' 'shots\challenge-x.png'
   $c40HandAll = "$($c40Hand -join [char]10)"
@@ -11562,8 +11590,13 @@ $form.Add_MouseClick({
         $chActCount = {
           param([int]$targetPid)
           # act-family lines naming this pid in actions.log - the independent
-          # "did anything get injected" witness (V-3)
-          $chLog = @(Get-Content $ActionLog -Encoding UTF8 -ErrorAction SilentlyContinue)
+          # "did anything get injected" witness (V-3). -1 when the log cannot be read: a failed
+          # read that returned 0 would agree with a previous 0 and the witness would pass while
+          # measuring nothing (same fail-open family as the challenge fuse, v4.0.1 finding 2).
+          $chLogErr = ''
+          $chLog = @()
+          try { $chLog = @(Get-Content -LiteralPath $ActionLog -Encoding UTF8 -ErrorAction Stop) } catch { $chLogErr = $_.Exception.Message }
+          if ($chLogErr) { return -1 }
           @($chLog | Where-Object { $_ -match '\| (click|type|keys|paste|drag|wheel|hover|relclick) \|' -and $_.Contains("pid=$targetPid ") }).Count
         }
         $chw1 = & $chSpawn 'fail'
@@ -11576,7 +11609,8 @@ $form.Add_MouseClick({
           ($chOut1 -match 'handle: \(') -and ($chOut1 -match '  shot: ') -and ($chOut1 -match 'challenge handoff: type=slider-captcha') -and
           ($chOut1 -match 'rect=\(') -and ($chOut1 -match 'attempt: not authorized')
         ST-Check 'live: V-1/V-4 the probe classifies the synthetic challenge and hands off with all four contract fields, and reports the attempt as unauthorized' ($chShape1)
-        ST-Check 'live: V-3 independent witness - the read-only probe injected nothing (act-line count for this pid unchanged)' (($chAct1 -eq $chAct0))
+        ST-Check 'live: V-3 independent witness - the read-only probe injected nothing (act-line count for this pid unchanged)' (
+          ($chAct0 -ge 0) -and ($chAct1 -ge 0) -and ($chAct1 -eq $chAct0))
         Write-Output "      challenge-probe: exit=$chCode1 shape=$chShape1 act-lines=$chAct0->$chAct1"
         Write-Output ("      first lines: " + (($chOut1.Trim() -split "`r?`n" | Where-Object { $_ -match 'challenge:|stale=|handoff|attempt:' } | Select-Object -First 4) -join ' | '))
         $chOut1b = & powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath challenge-probe 'DTX-ChalProbe' 2>&1 | Out-String
@@ -14437,10 +14471,17 @@ $gaTimer.Start()
   $wsSlice = Get-FunctionSlice 'Get-WorkspaceSummary' $codeLines
   $wsGitGate = $wsSlice.Text.IndexOf('if ($gitReady) {')
   $wsFirstGit = $wsSlice.Text.IndexOf('& git -C $repo log')
-  ST-Check 'lint: every git call in status-summary sits behind the availability test, and an unknown worktree prints n/a rather than false or empty' (
+  # v4.0.1 (audit finding 3): `clean` printing n/a is not enough - `ahead` had to be given the
+  # same third state, and a lint that only looks at clean would let someone coerce ahead back to
+  # [int]$null (which is 0, i.e. "in sync") without anything going red. The needle is assembled at
+  # runtime because a scan over the raw source would otherwise match this very checking line.
+  $aheadNaMark = '$null -eq $s.A' + 'head'
+  $aheadNaSites = @($codeLines | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains($aheadNaMark) }).Count
+  ST-Check 'lint: every git call in status-summary sits behind the availability test, and an unknown worktree prints n/a rather than false or empty (clean AND ahead, both render sites)' (
     $wsSlice.Found -and ($wsGitGate -ge 0) -and ($wsFirstGit -gt $wsGitGate) -and
     ($wsSlice.Text.Contains('Test-GitAvailable')) -and ((Get-FunctionSlice 'Test-GitAvailable' $codeLines).Found) -and
-    ($codeLines -contains '          clean = $(if ($null -eq $s.Clean) { $null } else { [bool]$s.Clean })'))
+    ($codeLines -contains '          clean = $(if ($null -eq $s.Clean) { $null } else { [bool]$s.Clean })') -and
+    ($aheadNaSites -eq 2))
   # These three shapes all live in the LIVE part of the suite, so the scan has to read the
   # RAW source (and must not exclude the selftest body, which is where the cases are).
   # Every marker is assembled by concatenation for that reason: on a raw-file scan, the
@@ -14595,7 +14636,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.0.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.1.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -15968,7 +16009,11 @@ function Get-WorkspaceSummary {
   $gitReady = Test-GitAvailable
   $head = 'git: no git binary in PATH (worktree state unknown)'
   $statusLines = @()
-  $ahead = 0
+  # v4.0.1 (audit finding 3): `ahead` had no third state. A repo with no upstream makes
+  # `rev-list --count '@{u}..HEAD'` fail, the regex below then never matches, and a 0 initialised
+  # here printed `ahead=0` - which is the same string a fully synced branch prints. `clean` two
+  # lines down already answers $null for exactly this reason; ahead now follows the same rule.
+  $ahead = $null
   if ($gitReady) {
     $head = (& git -C $repo log -1 --format='%h %s' 2>$null | Out-String).Trim()
     $statusLines = @(& git -C $repo status --porcelain 2>$null)
@@ -16107,7 +16152,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
           head = $s.Head
           git = [bool]$s.Git
           clean = $(if ($null -eq $s.Clean) { $null } else { [bool]$s.Clean })
-          ahead = [int]$s.Ahead
+          ahead = $(if ($null -eq $s.Ahead) { $null } else { [int]$s.Ahead })
           offline = [pscustomobject]@{ passed = [int]$s.Offline.Passed; failed = [int]$s.Offline.Failed; skipped = [int]$s.Offline.Skipped; exit = [int]$s.Offline.Exit }
           latestLive = [pscustomobject]@{ name = $s.LatestLive.Name; passed = [int]$s.LatestLive.Passed; failed = [int]$s.LatestLive.Failed; skipped = [int]$s.LatestLive.Skipped }
           dtxResidual = [int]$s.DtxResidual
@@ -16116,7 +16161,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         "HEAD: $($s.Head)"
         # a missing git is reported as n/a, never as an empty field and never as
         # clean=false - "unknown" and "dirty" are different answers (audit #20/#24 family)
-        "worktree: git=$(if ($s.Git) { 'yes' } else { 'no' }) clean=$(if ($null -eq $s.Clean) { 'n/a' } else { $s.Clean.ToString().ToLower() }) ahead=$($s.Ahead)"
+        "worktree: git=$(if ($s.Git) { 'yes' } else { 'no' }) clean=$(if ($null -eq $s.Clean) { 'n/a' } else { $s.Clean.ToString().ToLower() }) ahead=$(if ($null -eq $s.Ahead) { 'n/a' } else { $s.Ahead })"
         "offline-selftest: passed=$($s.Offline.Passed) failed=$($s.Offline.Failed) skipped=$($s.Offline.Skipped) exit=$($s.Offline.Exit)"
         "latest-live: $($s.LatestLive.Name) passed=$($s.LatestLive.Passed) failed=$($s.LatestLive.Failed) skipped=$($s.LatestLive.Skipped)"
         "DTX residual: $($s.DtxResidual)"
@@ -16343,7 +16388,17 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       # every challenge-probe call paid for two screenshots to throw the bytes away. A lint now
       # refuses the shape "assigned and never read" for this name again.
       $cpHash = Get-ChallengeIdentityHash $cpVerdict
-      $cpLog = @(Get-Content $ActionLog -Encoding UTF8 -ErrorAction SilentlyContinue)
+      # v4.0.1 (audit finding 2): the file's own existence is asked separately from whether this
+      # call could read it, because "never logged" and "could not read" are different answers and
+      # only the first one may be reported as first-seen.
+      $cpLogExists = [bool](Test-Path -LiteralPath $ActionLog)
+      $cpLogErr = ''
+      $cpLog = @()
+      if ($cpLogExists) {
+        try { $cpLog = @(Get-Content -LiteralPath $ActionLog -Encoding UTF8 -ErrorAction Stop) }
+        catch { $cpLogErr = $_.Exception.Message }
+      }
+      $cpLogState = Resolve-ChallengeLogState $cpLogExists ($cpLogErr -eq '')
       $cpState = Test-ChallengeLogLines $cpLog $cw.Pid
       $cpStale = Test-ChallengeStale $cpState.LastHash $cpHash
       Log-Action @("pid=$($cw.Pid)") "seen hash=$cpHash"
@@ -16357,7 +16412,9 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         exit 0
       }
       "challenge: type=$($cpVerdict.Type) confidence=$($cpVerdict.Confidence) matched=[$(@($cpVerdict.Matched) -join ', ')] lines=$(@($cpLines).Count) rect=($([int]$cw.Left),$([int]$cw.Top),$([int]$cw.W)x$([int]$cw.H))"
-      "stale=$($cpStale.Stale)$(if ($cpStale.Recommend) { " recommend=$($cpStale.Recommend)" })"
+      $cpStaleTxt = $cpStale.Stale
+      if ($cpLogState -ceq 'unreadable') { $cpStaleTxt = "unknown(log-unreadable: $cpLogErr)" }
+      "stale=$cpStaleTxt$(if ($cpStale.Recommend) { " recommend=$($cpStale.Recommend)" })"
       "action: DO NOT treat a needle miss on this window as 'the card is gone' - this window is covered by an in-window challenge modal; judge the underlying target only after the challenge is dismissed"
       $cpShot = Join-Path $OutDir ('challenge-' + (Get-Date -Format 'yyyyMMddTHHmmss') + '.png')
       Save-RectEx $cw.Left $cw.Top $cw.W $cw.H $cpShot 0 -1 @() | Write-Output
@@ -16366,6 +16423,16 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         "attempt: not authorized (pass --allow-attempt --attempt-click x,y to permit ONE caller-named click; retries escalate account risk-control). There is NO solver in this tool by design - the boundary is deliberate, see README known limitations"
         Log-Action @("pid=$($cw.Pid)") "challenge type=$($cpVerdict.Type) verdict=reported-no-attempt"
         exit 0
+      }
+      # An UNKNOWN fuse is treated as ARMED. This fuse exists only because a second attempt on the
+      # same challenge image escalates account risk-control, so "could not check" must not buy a
+      # retry. The refusal is logged best-effort, and when even that write fails the thrown
+      # message says so instead of implying an audit line that was never written.
+      if ($cpLogState -ceq 'unreadable') {
+        $cpFuseNote = ''
+        try { Log-Action @("pid=$($cw.Pid)") "fuse-unknown hash=$cpHash reason=log-unreadable" }
+        catch { $cpFuseNote = ' - and the audit line could not be written either: ' + $_.Exception.Message }
+        throw "challenge attempt refused: $ActionLog exists but could not be read ($cpLogErr), so the fuse state for pid=$($cw.Pid) is UNKNOWN and an unknown fuse is treated as armed (retries escalate account risk-control)$cpFuseNote. Free the log (another process is holding it) or have a human complete or dismiss the challenge"
       }
       if ($cpState.FuseHash -eq $cpHash) {
         Log-Action @("pid=$($cw.Pid)") "fuse-blocked hash=$cpHash"

@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v4.0.1
+# Agent Computer Use 开源版 v4.1.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=815%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=816%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -334,6 +334,8 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 selftest --live   # 追加�
 ```
 
 离线门禁是提交前的硬要求：它把版本号在 `desktop.ps1`、两份 README 和 `CHANGELOG.md` 之间钉成一致；把两份 README 里写明的在册文件数与 `git ls-files` 的真实结果钉成一致；把**中英两份 README 的命令集合必须相同**钉成一致（只改一种语言就过不了门）；并把"每个分派器命令都得有 help 条目"钉成一致。任何 `FAIL` 都会让退出码非 0。
+
+**自测夹具里的地址、端口与 token 全是合成值。** `Get-CdpUrlDomain` 内部的 URL 解析用例带的是一个回环地址加端口——那个端口**故意不等于** CDP 命令真实使用的调试端口——外加一个长得像凭据的 query 段 token。这个 token 存在的唯一目的，就是让用例能断言"解析器把 query 段剥掉了"：它必须出现在源码里，且必须**不**出现在解析结果里。这些字面没有一个是机主本机在跑的服务。它们被原样保留是有意的：这些串早已在公开历史里，换成一组没登记过的相似值，只会把"一处已说明成色的合成夹具"变成"一个没人解释过的新值"。
 
 ## 目录结构
 

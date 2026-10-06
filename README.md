@@ -1,10 +1,10 @@
-# Agent Computer Use (Open Source Edition) v4.0.1
+# Agent Computer Use (Open Source Edition) v4.1.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=815%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=816%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -341,6 +341,8 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 selftest --live    # adds r
 ```
 
 The offline gate is a hard requirement before committing: it pins the version string across `desktop.ps1`, both READMEs and `CHANGELOG.md`, pins that the tracked-file inventory written in both READMEs equals `git ls-files`, pins that both language READMEs document the *same* command set, and pins that every dispatcher command has a help entry. Exit code is non-zero on any `FAIL`.
+
+**The self-test fixtures use synthetic addresses, ports and tokens.** The URL-parsing cases inside `Get-CdpUrlDomain` carry a loopback URL on a port that is deliberately *not* the debug port the CDP commands really use, plus a credential-shaped query token. That token exists only so the case can assert the parser strips the query segment: it must appear in the source and must never appear in the parsed output. None of these literals points at a service running on the maintainer's machine, and they are kept verbatim on purpose - they are already in the public history, and swapping them for unregistered look-alikes would only turn "a documented synthetic fixture" into "an unexplained new value".
 
 ## Repository layout
 

@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.1.0 - 2026-10-06
+
+Three fixes from an external review round, all from one family: **a failed read was being
+consumed downstream as a benign value**.
+
+- **The challenge fuse no longer fails open.** Its only state store is `shots/actions.log` (this
+  tool is one process per call and keeps no resident state). The log used to be read with
+  `-ErrorAction SilentlyContinue`, so a log that exists but cannot be read arrived as an empty
+  array, printed `stale=first-seen`, and let `--allow-attempt` retry a challenge image whose fuse
+  was already armed - which is the one thing this fuse exists to prevent, because a second attempt
+  escalates account risk-control. Existence and read success are now asked separately through the
+  pure helper `Resolve-ChallengeLogState` (`absent` / `unreadable` / `ok`): only `absent` may read
+  as first-seen, and `unreadable` is refused as if the fuse were armed. The refusal is logged
+  best-effort, and when even that write fails the error text says so rather than implying an audit
+  line that was written.
+- **`status-summary` now says `n/a` when it does not know how far ahead it is.** A repository with
+  no upstream makes `git rev-list --count '@{u}..HEAD'` fail, and the initialised `0` printed the
+  same string as "in sync"; the `--json` form coerced `$null` back to `0` too. The same function
+  already answers `clean` with an honest `$null`, and `ahead` now follows the same rule (text
+  `n/a`, JSON `null`). A lint counts both render sites so neither half can be coerced back silently.
+- **A check that had been comparing nothing got a floor.** `every command in the shared map
+  declares a subset of the shared set` passes on an empty map, because its green condition is
+  "found nothing bad". It now also requires at least 4 keys, and the check's name says so.
+- One more of the same family, found while sweeping: the live suite's independent witness "the
+  read-only probe injected nothing" returned `0` when it could not read the log, so `0 -> 0` agreed
+  with itself; it now returns `-1` and the check requires both readings to be `>= 0`.
+
+Offline check total 815 -> 816 (one new unit check covering the three-state helper). No threshold,
+no expectation and no fixture was relaxed anywhere in this release.
+
 ## v4.0.1 - 2026-10-06
 
 X-02 landed: the whole script now runs under `Set-StrictMode -Version Latest`.
