@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 3.1.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 4.0.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -24,6 +24,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
+# An absent property, an unset variable or a method on $null is now a FAILING COMMAND (ERROR + exit 1)
+# rather than a silent empty string - that is the whole point of the change. Reads that are meant to
+# be optional go through Get-OptValue, which is byte-equivalent to the bare read it replaced.
+Set-StrictMode -Version Latest
 
 # v3.0.0 (S-4): the offline check total is DECLARED here and pinned by a contract at the end
 # of selftest, so "how many checks does this version have" stops being a number somebody
@@ -34,7 +39,7 @@ $ErrorActionPreference = 'Stop'
 # Placed after param() because PowerShell allows only comments before it (measured: an
 # assignment up there is a parse error for the whole file).
 # Sync list: this line and the iteration-log entry. It is NOT a version number.
-$script:DeclaredCheckTotal = 814
+$script:DeclaredCheckTotal = 815
 
 # Emit stdout as UTF-8 (no BOM) so CJK window titles survive being piped to
 # other processes when invoked via powershell -File. Wrapped in try/catch
@@ -418,6 +423,33 @@ function Log-Action([string[]]$restArgs, [string]$target) {
 # the "every private flag is stripped, read and documented" check was VACUOUS for hover /
 # drag / find-click while reporting green) and the help-coverage lint in this round.
 # GetEnumerator() is not shadowed by keys, so it is the only honest way to enumerate.
+$script:ProcNameCache = $null
+
+# X-02 (Set-StrictMode): one reader for "this field may not be on this object".
+# Under StrictMode -Version Latest, reading an absent property is a STATEMENT-TERMINATING error that
+# $ErrorActionPreference cannot downgrade, so every optional-field read had to stop being a bare
+# member access. This helper returns $null for an absent field - which is exactly what the bare read
+# silently produced before - so converting a site cannot change any output line, comparison or exit
+# code. Absent-vs-present still means what it meant (an absent OcclusionMax is still threshold 0, an
+# absent ExpectAny still yields the one-empty-element loop), because the value handed back is the
+# same $null. Kept as one function so the shape is greppable and lints can forbid new bare reads.
+function Get-OptValue($o, [string]$k) {
+  if ($null -eq $o) { return $null }
+  if ($o -is [System.Collections.IDictionary] -and $o.Contains($k)) { return $o[$k] }
+  $p = $o.PSObject.Properties[$k]
+  if ($null -ne $p) { return $p.Value }
+  if ($o -is [System.Collections.IDictionary]) {
+    # Keys/Values/Count are members OF the dictionary type, not keys inside it, and PowerShell
+    # does not surface every one of them through PSObject.Properties (Values is the one that bit
+    # this file: a converted $opStrip.Values[flag] read null and the run died indexing a null
+    # array). Enumerated explicitly, so "intrinsic member" stays a visible decision, not a guess.
+    if ($k -ceq 'Keys') { return $o.Keys }
+    if ($k -ceq 'Values') { return $o.Values }
+    if ($k -ceq 'Count') { return $o.Count }
+  }
+  return $null
+}
+
 function Get-HashKeys($h) {
   if ($null -eq $h) { return @() }
   return @($h.GetEnumerator() | ForEach-Object { $_.Key })
@@ -665,7 +697,7 @@ function Get-SelectorAmbiguity($selHits, [string]$sel) {
   $ms = @($selHits)
   if ($ms.Count -le 1) { return @{ Ambiguous = $false; Message = ''; Count = $ms.Count } }
   $cands = (@($ms | ForEach-Object {
-    "pid=$($_.Pid) proc=$($_.Proc) class=$($_.Class) main=$($_.Main) title='$($_.Title)' rect=($($_.Left),$($_.Top),$($_.W)x$($_.H))"
+    "pid=$(Get-OptValue $_ 'Pid') proc=$(Get-OptValue $_ 'Proc') class=$(Get-OptValue $_ 'Class') main=$(Get-OptValue $_ 'Main') title='$(Get-OptValue $_ 'Title')' rect=($(Get-OptValue $_ 'Left'),$(Get-OptValue $_ 'Top'),$(Get-OptValue $_ 'W')x$(Get-OptValue $_ 'H'))"
   }) -join '; ')
   return @{
     Ambiguous = $true
@@ -2530,7 +2562,7 @@ function Merge-OcclusionHits($rows) {
   foreach ($r in @($rows)) {
     $key = [string]$r.Hwnd
     if (-not $byH.ContainsKey($key)) {
-      $byH[$key] = @{ Hwnd = $r.Hwnd; Pid = $r.Pid; Proc = $r.Proc; Title = $r.Title; Class = $r.Class; Count = 0 }
+      $byH[$key] = @{ Hwnd = (Get-OptValue $r 'Hwnd'); Pid = (Get-OptValue $r 'Pid'); Proc = (Get-OptValue $r 'Proc'); Title = (Get-OptValue $r 'Title'); Class = (Get-OptValue $r 'Class'); Count = 0 }
     }
     $byH[$key].Count++
   }
@@ -2629,13 +2661,13 @@ function Format-OcclusionCovering($covering, [int]$checked) {
   $items = @(@($covering) | Sort-Object -Property @{ Expression = { [int]$_.Count }; Descending = $true }, @{ Expression = { [string]$_.Hwnd } })
   $lines = New-Object System.Collections.ArrayList
   foreach ($c in $items) {
-    [void]$lines.Add("pid=$($c.Pid) proc=$($c.Proc) title=$(Format-WindowLabel $c.Title $c.Class) ($($c.Count) of $checked sample points)")
+    [void]$lines.Add("pid=$(Get-OptValue $c 'Pid') proc=$(Get-OptValue $c 'Proc') title=$(Format-WindowLabel (Get-OptValue $c 'Title') (Get-OptValue $c 'Class')) ($(Get-OptValue $c 'Count') of $checked sample points)")
   }
   $top = $null
   $summary = 'unknown'
   if (@($items).Count -gt 0) {
     $top = $items[0]
-    $summary = "pid=$($top.Pid) $(Format-WindowLabel $top.Title $top.Class) ($($top.Count) of $checked sample points)" + (Add-OcclusionMore @($items).Count 1)
+    $summary = "pid=$($top.Pid) $(Format-WindowLabel $top.Title (Get-OptValue $top 'Class')) ($($top.Count) of $checked sample points)" + (Add-OcclusionMore @($items).Count 1)
   }
   return @{ Items = @($items); Lines = @($lines); Summary = $summary; Top = $top }
 }
@@ -3056,14 +3088,14 @@ function Format-ExpectationVerdict([bool]$ok, [double]$elapsed, [double]$timeout
 # confusable-fold match MUST say so (same rule as the fold marker on the locators, R-10).
 function Format-ExpectationProof($er) {
   $bits = @()
-  if ($er.Matched) { $bits += "matched=$($er.Matched)" }
-  if ($er.Rect) { $bits += "at=$($er.Rect)" }
-  if ($er.Centre) { $bits += "centre=$($er.Centre)" }
-  if ($er.Hits -gt 1) { $bits += "hits=$($er.Hits)" }
-  if ($er.Via) { $bits += "via=$($er.Via)" }
-  if ($er.FoldedHits) { $bits += (Get-FoldMarkerFromCounts ([int]$er.FoldedHits) ([int]$er.Hits)) }
-  if ($er.Polls -gt 0) { $bits += "polls=$($er.Polls)" }
-  if ($er.OccErr) { $bits += "occ-sampler=$($er.OccErr)" }
+  if (Get-OptValue $er 'Matched') { $bits += "matched=$(Get-OptValue $er 'Matched')" }
+  if ((Get-OptValue $er 'Rect')) { $bits += "at=$((Get-OptValue $er 'Rect'))" }
+  if (Get-OptValue $er 'Centre') { $bits += "centre=$(Get-OptValue $er 'Centre')" }
+  if ((Get-OptValue $er 'Hits') -gt 1) { $bits += "hits=$(Get-OptValue $er 'Hits')" }
+  if ((Get-OptValue $er 'Via')) { $bits += "via=$((Get-OptValue $er 'Via'))" }
+  if ((Get-OptValue $er 'FoldedHits')) { $bits += (Get-FoldMarkerFromCounts ([int](Get-OptValue $er 'FoldedHits')) ([int](Get-OptValue $er 'Hits'))) }
+  if ((Get-OptValue $er 'Polls') -gt 0) { $bits += "polls=$(Get-OptValue $er 'Polls')" }
+  if (Get-OptValue $er 'OccErr') { $bits += "occ-sampler=$(Get-OptValue $er 'OccErr')" }
   if (@($bits).Count -eq 0) { return '' }
   return ' ' + ($bits -join ' ')
 }
@@ -3109,7 +3141,7 @@ function Invoke-ActionExpectation($p, $target, [string]$verb) {
   if ($er.Ok) {
     # Via is only meaningful alongside a rect (both come from the same satisfied hit);
     # a gone-list success has nothing to point at, so it gets polls= and nothing else.
-    if ($er.Rect) { $er.Via = Get-ExpectationVia $er.Scaled $er.Tiled $er.TileCount }
+    if (Get-OptValue $er 'Rect') { $er.Via = Get-ExpectationVia (Get-OptValue $er 'Scaled') (Get-OptValue $er 'Tiled') (Get-OptValue $er 'TileCount') }
     Write-Output ((Format-ExpectationVerdict $true $er.Elapsed $er.Timeout $er.Interval '' '' '' $verb) + (Format-ExpectationProof $er))
     return
   }
@@ -3198,7 +3230,7 @@ function Get-PasteReceiptVerdict($o) {
   # exactly as shipped.
   $occPct = 0.0
   try { $occPct = [double]$o.OccludedAfter } catch { }
-  if ($occPct -gt [double]$o.OcclusionMax) {
+  if ($occPct -gt [double](Get-OptValue $o 'OcclusionMax')) {
     return @{ Ok = $false; Degraded = $false; Criterion = 'occluded-refused'; Detail = ($uiTxt + '; ' + $hTxt + '; ' + $lTxt + ' - occluded-refused=' + $occPct + '% coveredBy=' + ('' + $o.CoveredBy) + ': the target rect is covered by other windows, so a screen-derived receipt cannot tell the target from its coverer (raise the target or pass --no-expect for send-only)') }
   }
   if (([int]$o.UiaBefore -ge 0) -and ([int]$o.UiaAfter -gt [int]$o.UiaBefore)) {
@@ -3266,7 +3298,7 @@ function Test-ExpectationGiven($p) {
   if ($p.NoExpect) { return $true }
   if ("$($p.Expect)" -ne '' -or "$($p.ExpectGone)" -ne '' -or "$($p.ExpectRegion)" -ne '') { return $true }
   foreach ($tKey in @('ExpectAny', 'ExpectAnyGone')) {
-    foreach ($tItem in @($p.$tKey)) { if ("$tItem" -ne '') { return $true } }
+    foreach ($tItem in @(Get-OptValue $p $tKey)) { if ("$tItem" -ne '') { return $true } }
   }
   return $false
 }
@@ -6886,20 +6918,20 @@ function Invoke-SelfTest([string[]]$Rest) {
   # A) THE contract the owner asked for: the one-line summary IS the first detailed
   # line's subject - not "whatever [0] happens to be in some other order".
   $oSumPid = ''
-  if ($oR.Summary -match '^pid=(\d+)') { $oSumPid = $Matches[1] }
+  if ((Get-OptValue $oR 'Summary') -match '^pid=(\d+)') { $oSumPid = $Matches[1] }
   $oFirstPid = ''
-  if (@($oR.Lines)[0] -match '^pid=(\d+)') { $oFirstPid = $Matches[1] }
+  if (@((Get-OptValue $oR 'Lines'))[0] -match '^pid=(\d+)') { $oFirstPid = $Matches[1] }
   ST-Check 'contract: the occlusion summary is the first rendered covering line (same pid, by construction)' (
     $oSumPid -ceq $oFirstPid -and $oSumPid -ceq '222')
   ST-Check 'contract: the covering list is ordered by sample points descending (unsorted input in, sorted out)' (
-    (@($oR.Items | ForEach-Object { $_.Count }) -join ',') -ceq '9,5,2')
+    (@((Get-OptValue $oR 'Items') | ForEach-Object { $_.Count }) -join ',') -ceq '9,5,2')
   # B) every coverer is named with its own count, and the summary ADMITS the rest.
   ST-Check 'contract: every coverer is named with its x/N share - nothing past the third is dropped' (
-    @($oR.Lines).Count -eq 3 -and
-    ($oR.Lines -join '|') -match 'pid=111 .*\(2 of 25 sample points\)' -and
-    ($oR.Lines -join '|') -match 'pid=222 .*\(9 of 25 sample points\)')
+    @((Get-OptValue $oR 'Lines')).Count -eq 3 -and
+    ((Get-OptValue $oR 'Lines') -join '|') -match 'pid=111 .*\(2 of 25 sample points\)' -and
+    ((Get-OptValue $oR 'Lines') -join '|') -match 'pid=222 .*\(9 of 25 sample points\)')
   ST-Check 'contract: the one-line summary admits it only names one of them (+K more)' (
-    $oR.Summary -like 'pid=222 * (+2 more)')
+    (Get-OptValue $oR 'Summary') -like 'pid=222 * (+2 more)')
   # the marker itself: same helper for both paths, and it never lies
   ST-Check 'unit: (+K more) is empty when nothing is hidden and counts exactly when something is' (
     (Add-OcclusionMore 3 3) -ceq '' -and (Add-OcclusionMore 5 3) -ceq ' (+2 more)' -and
@@ -6908,16 +6940,16 @@ function Invoke-SelfTest([string[]]$Rest) {
   $oC4 = @{ Hwnd = [IntPtr]44; Pid = 444; Proc = 'pD'; Title = 'T-D'; Count = 1 }
   $oR4 = Format-OcclusionCovering @($oC1, $oC2, $oC3, $oC4) 25
   ST-Check 'contract: with four coverers the gate list still names all four (R-25 was the 4th vanishing)' (
-    @($oR4.Lines).Count -eq 4 -and ($oR4.Lines -join '|') -match 'pid=444 ' -and
+    @((Get-OptValue $oR4 'Lines')).Count -eq 4 -and ((Get-OptValue $oR4 'Lines') -join '|') -match 'pid=444 ' -and
     $oR4.Summary -like '*(+3 more)')
   # summed with an explicit loop, NOT Measure-Object -Property Count: measured here,
   # on hashtables that carry their own 'Count' KEY, Measure-Object sums the INTRINSIC
   # key count (5+5=10) while foreach { $_.Count } reads the entry (2+9=11). Same
   # expression text, two meanings - so anything touching these coverer rows sums by hand.
   $oSum4 = 0
-  foreach ($it in @($oR4.Items)) { $oSum4 += [int]$it.Count }
+  foreach ($it in @((Get-OptValue $oR4 'Items'))) { $oSum4 += [int]$it.Count }
   ST-Check 'contract: the rendered items are exactly the input items (no drop, no duplicate) and their shares sum' (
-    @($oR4.Items).Count -eq 4 -and @($oR4.Lines).Count -eq @($oR4.Items).Count -and $oSum4 -eq 17)
+    @((Get-OptValue $oR4 'Items')).Count -eq 4 -and @($oR4.Lines).Count -eq @((Get-OptValue $oR4 'Items')).Count -and $oSum4 -eq 17)
   # anti-drift nail: the gate path must never go back to a silent cap. The owners
   # path is ALLOWED to cap (it now says so), so the pattern must exist exactly once.
   $oCap = New-Object System.Collections.ArrayList
@@ -6942,7 +6974,7 @@ function Invoke-SelfTest([string[]]$Rest) {
     @($oCapBound).Count -eq 1)
   if (@($oCap).Count -ne 1) { Write-Output "      -First 3 caps at line(s): $(@($oCap) -join ',')" }
   # the label that made two correct lines look contradictory must always be present
-  $oV = Format-OcclusionVerdict 'guard' @{ X = 10; Y = 20; W = 30; H = 40 } 36 $oR.Summary ''
+  $oV = Format-OcclusionVerdict 'guard' @{ X = 10; Y = 20; W = 30; H = 40 } 36 (Get-OptValue $oR 'Summary') ''
   $oV0 = Format-OcclusionVerdict 'read' @{ X = 1; Y = 2; W = 3; H = 4 } 0 'unknown' ''
   $oVErr = Format-OcclusionVerdict 'hit' $null 0 '' 'all-offscreen'
   ST-Check 'contract: every occlusion verdict names its scan AND the rect it measured' (
@@ -7109,10 +7141,10 @@ function Invoke-SelfTest([string[]]$Rest) {
   # ---------- unit: v1.5.5 Strip-OwnFlags (the flags are now actually reachable) ----------
   $sfHover = Strip-OwnFlags @('10', '20', '--dwell', '1500', '--to', 'Win') 'hover'
   ST-Check 'unit: hover --dwell is stripped with its value and the rest still parses' (
-    (@($sfHover.Rest) -join ' ') -ceq '10 20 --to Win' -and [int]$sfHover.Values['--dwell'] -eq 1500)
+    (@((Get-OptValue $sfHover 'Rest')) -join ' ') -ceq '10 20 --to Win' -and [int]$sfHover.Values['--dwell'] -eq 1500)
   $sfDrag = Strip-OwnFlags @('1', '2', '3', '4', '--steps', '30', '--hold', '50') 'drag'
   ST-Check 'unit: drag strips both of its flags and honours declared defaults' (
-    (@($sfDrag.Rest) -join ' ') -ceq '1 2 3 4' -and [int]$sfDrag.Values['--steps'] -eq 30 -and [int]$sfDrag.Values['--hold'] -eq 50)
+    (@((Get-OptValue $sfDrag 'Rest')) -join ' ') -ceq '1 2 3 4' -and [int]$sfDrag.Values['--steps'] -eq 30 -and [int]$sfDrag.Values['--hold'] -eq 50)
   $sfDef = Strip-OwnFlags @('1', '2', '3', '4') 'drag'
   ST-Check 'unit: an absent private flag reports its documented default, not null' (
     [int]$sfDef.Values['--steps'] -eq 14 -and [int]$sfDef.Values['--hold'] -eq 120)
@@ -7267,7 +7299,10 @@ function Invoke-SelfTest([string[]]$Rest) {
   foreach ($v6n in @($v6NoArg)) { Write-Output "      Resolve-Target call without --always-activate: line $v6n" }
   $v6Plant = '  $t = Resolve-Target $p.Sel $p.' + 'Force'
   ST-Check 'lint: the forward-check detects a planted two-argument call' ($v6Plant -match $v6FwdPat)
-  $v6ScriptMark = 'Resolve-Target $s.to ([bool]$s.force) ([bool]$s.' + 'alwaysActivate)'
+  # X-02: the pinned spelling moved with the code it pins (the step object's optional fields now
+  # go through the one reader), and the marker is still split so this scan line cannot match
+  # itself. This edits the LITERAL being looked for, NOT the comparison: exactly one site, same as before.
+  $v6ScriptMark = 'Resolve-Target (Get-OptValue $s ' + '''to'') ([bool](Get-OptValue $s ''force'')) ([bool](Get-OptValue $s ''alwaysActivate''))'
   $v6ScriptFwd = @($codeLines | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains($v6ScriptMark) })
   ST-Check 'lint: the script step path forwards alwaysActivate too (its own spelling)' (@($v6ScriptFwd).Count -eq 1)
   # both branches of the proof-of-effect verdict, asserted WITHOUT touching the desktop:
@@ -7333,7 +7368,7 @@ function Invoke-SelfTest([string[]]$Rest) {
     $sfNone.Values['--dry'] -eq $false -and $sfNone.Present['--dry'] -eq $false -and @($sfNone.Rest).Count -eq 3)
   $sfMenu = Strip-OwnFlags @('Pop', 'OK', '--allow-window', '--index', '2') 'menu-pick'
   ST-Check 'unit: menu-pick strips its two flags before its own parser sees them' (
-    $sfMenu.Values['--allow-window'] -eq $true -and [int]$sfMenu.Values['--index'] -eq 2 -and
+    (Get-OptValue $sfMenu 'Values')['--allow-window'] -eq $true -and [int](Get-OptValue $sfMenu 'Values')['--index'] -eq 2 -and
     ((@($sfMenu.Rest) -join ' ') -ceq 'Pop OK'))
   $sfMenuExpect = Strip-OwnFlags @('Pop', 'OK', '--expect', 'Saved') 'menu-pick'
   ST-Check 'unit: menu-pick lets through exactly the shared flags it declares' (
@@ -7357,7 +7392,7 @@ function Invoke-SelfTest([string[]]$Rest) {
     -not $sfUnmap2.Contains('--occlude '))
   $sfTi = Strip-OwnFlags @('--tab', '2', '100', '200', 'hello') 'type-in'
   ST-Check 'unit: type-in --tab works in any position now (it used to break x/y parsing)' (
-    [int]$sfTi.Values['--tab'] -eq 2 -and ((@($sfTi.Rest) -join ' ') -ceq '100 200 hello'))
+    [int](Get-OptValue $sfTi 'Values')['--tab'] -eq 2 -and ((@($sfTi.Rest) -join ' ') -ceq '100 200 hello'))
   $sfTiBad = ''
   try { [void](Strip-OwnFlags @('100', '200', '--tab', '--verify') 'type-in') } catch { $sfTiBad = $_.Exception.Message }
   ST-Check 'unit: --tab refuses a FLAG as its value instead of typing a number away' ($sfTiBad.Contains("got the flag '--verify' instead of its value"))
@@ -7367,8 +7402,14 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'unit: every command in the shared map declares a subset of the shared set' (
     $(
       $bad = @()
-      foreach ($k in @(Get-HashKeys (Get-CommandSharedMap))) {
-        foreach ($f in @(Get-CommandSharedMap)[$k]) { if (-not (@(Get-SharedFlagSet) -contains $f)) { $bad += "$k=$f" } }
+      # X-02: this used to wrap the map in @() and then index the WRAPPER by a command NAME.
+      # Wrapping a hashtable in @() yields ONE hashtable element (not its entries), so that
+      # index silently answered $null and the inner loop ran zero times - the check compared
+      # nothing and could never have gone red. Index the dictionary itself, like the
+      # production getter for the same table does.
+      $csMap = Get-CommandSharedMap
+      foreach ($k in @(Get-HashKeys $csMap)) {
+        foreach ($f in (Get-OptValue $csMap $k)) { if (-not (@(Get-SharedFlagSet) -contains $f)) { $bad += "$k=$f" } }
       }
       @($bad).Count -eq 0
     ))
@@ -7685,10 +7726,10 @@ function Invoke-SelfTest([string[]]$Rest) {
   Write-Output "      step serializer returns: comma=$commaReturns bare=$bareReturns"
   # positive control: the bare-return probe must not be vacuous
   ST-Check 'lint: planted bare return @() IS detected by the bare-return probe' (
-    ([regex]::Matches("    if ($x) { return @('one') }", 'return\s+@\(')).Count -eq 1)
+    ([regex]::Matches("    if (`$x) { return @('one') }", 'return\s+@\(')).Count -eq 1)
   # negative control: the fix form must not be flagged
   ST-Check 'lint: comma-wrapped return is NOT flagged by the bare-return probe' (
-    ([regex]::Matches("    if ($x) { return ,@('one') }", 'return\s+@\(')).Count -eq 0)
+    ([regex]::Matches("    if (`$x) { return ,@('one') }", 'return\s+@\(')).Count -eq 0)
 
   # assembly-level unit tests: the exact shape that regressed, and the control
   # shape that always worked (multi-token). Payload token must stay byte-exact and
@@ -8880,7 +8921,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'unit: a refusal names every candidate it could have guessed between' (
     $pick2.List.Contains("'Cancel'") -and $pick2.List.Contains("'$cnNameB'"))
   Write-Output ("      expect-verdict wiring sites: " + (@($evWire) -join ' '))
-  $evPlant = "  throw `"$verb OK but expectation NOT met: x`""
+  $evPlant = "  throw `"`$verb OK but expectation NOT met: x`""
   ST-Check 'lint: the single-producer scan would catch a hand-written expectation tail' (
     -not $evPlant.Contains($evMark))
   # uia-tree takes [maxDepth] and hands it to Uia-Dump; the header must say which depth it
@@ -9419,7 +9460,7 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'unit: open-and-pick refuses non-integer opener coordinates' ($opCoords.Contains('opener coordinates must be integers'))
   $opStrip = Strip-OwnFlags @('--region', '5,6,70,80', '--expect', 'Done', 'Notepad', '10', '20', 'File') 'open-and-pick'
   ST-Check 'unit: open-and-pick strips --region as a raw value and passes the expect family through to Split-Target' (
-    "$($opStrip.Values['--region'])" -ceq '5,6,70,80' -and $opStrip.Present['--region'] -and (@($opStrip.Rest) -contains '--expect'))
+    "$((Get-OptValue $opStrip 'Values')['--region'])" -ceq '5,6,70,80' -and $opStrip.Present['--region'] -and (@($opStrip.Rest) -contains '--expect'))
 
   # ---------- unit+lint: v2.3.0 red-3 - find --region's inverted validator (real machine 2026-10-02) ----------
   # The shipped inline check demanded "count of non-numeric segments == 4": every VALID
@@ -10588,9 +10629,9 @@ function Invoke-SelfTest([string[]]$Rest) {
     $c44WheelNone.ExpectChange -ceq '' -and (@($c44WheelNone.Words) -join ' ') -ceq '-4 2443 1350')
   Write-Output "      wheel parser: absent -> active=none difference=delivery-only"
   $c44WheelBareOwn = Strip-OwnFlags @('-3', '--expect-change', '--at', 'proc:dtx') 'wheel'
-  $c44WheelBare = Split-Target @($c44WheelBareOwn.Rest) 'wheel'
+  $c44WheelBare = Split-Target @((Get-OptValue $c44WheelBareOwn 'Rest')) 'wheel'
   ST-Check 'unit: wheel bare --expect-change means auto and strips --at through the shared path' (
-    $c44WheelBare.ExpectChange -ceq 'auto' -and $c44WheelBareOwn.Values['--at'] -ceq 'proc:dtx' -and
+    (Get-OptValue $c44WheelBare 'ExpectChange') -ceq 'auto' -and $c44WheelBareOwn.Values['--at'] -ceq 'proc:dtx' -and
     (@($c44WheelBare.Words) -join ' ') -ceq '-3')
   Write-Output "      wheel parser: bare -> active=auto difference=hash-check on target/virtual rect"
   $c44WheelRectOwn = Strip-OwnFlags @('-5', '--expect-change', '1,2,300,400') 'wheel'
@@ -14448,6 +14489,24 @@ $gaTimer.Start()
     if ($eps.Contains($pubConjMark)) { $pubConjLines++ }
     if ($eps.Contains($pubNoBytesMark)) { $pubNoBytesLines++ }
   }
+  # X-02: this helper shipped WITHOUT a test of its own, and that is exactly how the bug below hid.
+  # A hashtable's Keys / Values / Count are INTRINSIC members, not keys, so an early
+  # "if IDictionary -> return $null when the key is absent" made them read as missing. It surfaced
+  # only when a later batch rewrote a $spec.Keys read and the run died on "cannot index a null array"
+  # with 584 verdicts flipped. Intrinsic members must keep resolving through PSObject.
+  $x02Hasht = @{ A = 1 }
+  $x02Obj = [pscustomobject]@{ A = 2 }
+  $x02ObjNoA = [pscustomobject]@{ B = 3 }
+  ST-Check 'unit (X-02): Get-OptValue separates an absent KEY from an INTRINSIC member (hashtable Keys/Count are not keys - that early return once turned them into null, which is why the helper has a test now)' (
+    ((Get-OptValue $x02Hasht 'A') -eq 1) -and
+    ($null -eq (Get-OptValue $x02Hasht 'MissingKey')) -and
+    ($null -ne (Get-OptValue $x02Hasht 'Keys')) -and (@(Get-OptValue $x02Hasht 'Keys').Count -eq 1) -and
+    ((Get-OptValue $x02Hasht 'Count') -eq 1) -and
+    ($null -ne (Get-OptValue $x02Hasht 'Values')) -and ($((Get-OptValue $x02Hasht 'Values')[0]) -eq 1) -and
+    ((Get-OptValue $x02Obj 'A') -eq 2) -and
+    ($null -eq (Get-OptValue $x02ObjNoA 'A')) -and
+    ($null -eq (Get-OptValue $null 'A'))
+  )
   ST-Check 'lint (F-03): the BOM anchor publishes a SECOND, narrowed skip (published tree AND missing private anchor), self-reports that no bytes were compared, and the private tree keeps its red' (
     ($pubGateLines -eq 3) -and ($pubSkipLines -eq 1) -and ($pubProbeLines -eq 1) -and ($pubConjLines -eq 1) -and ($pubNoBytesLines -eq 1))
   Write-Output ("      anchor skip shapes: gate=$pubGateLines pub-skip=$pubSkipLines presence-probe=$pubProbeLines conjunction=$pubConjLines no-bytes-disclosure=$pubNoBytesLines")
@@ -14536,7 +14595,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v3.1.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.0.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -15390,6 +15449,21 @@ function Usage { Get-UsageText }
 # open adjudication item, not silently eaten.
 $script:JsonSchemaVersion = 3
 
+# X-02: script-scope STATE defaults, declared here rather than left to appear on first write.
+# Under Set-StrictMode -Version Latest a read of a variable that was never assigned is a
+# terminating error, and every one of these five is read DEFENSIVELY - "is the flag on?",
+# "is there a note to print?" - from a function that may legitimately be reached before
+# whoever normally sets it has run. Measured on this machine with StrictMode ON (the reads at
+# 334 / 734 / 735 / 736 / 1181 are the consumers): `wins --json` died on NoAutoTrim before it
+# printed a single window. ActivationLine/ActivationNotice/ResolveNote are set by the target
+# resolver and the activation helper, OcrCapNoteShown is a show-it-once latch inside
+# Invoke-OcrRegion - none of them is on the caller's path first.
+$script:NoAutoTrim = $false
+$script:ActivationLine = ''
+$script:ActivationNotice = ''
+$script:ResolveNote = ''
+$script:OcrCapNoteShown = $false
+
 function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
   $occJ = $null
   $covJ = @()
@@ -15697,7 +15771,7 @@ function Strip-OwnFlags([string[]]$tokens, [string]$cmd) {
   $present = @{}
   foreach ($k in @(Get-HashKeys $spec)) {
     $present[$k] = $false
-    if ($spec[$k].Bool) { $vals[$k] = $false } elseif ($spec[$k].Raw) { $vals[$k] = '' } else { $vals[$k] = [int]$spec[$k].Default }
+    if (Get-OptValue $spec[$k] 'Bool') { $vals[$k] = $false } elseif (Get-OptValue $spec[$k] 'Raw') { $vals[$k] = '' } else { $vals[$k] = [int](Get-OptValue $spec[$k] 'Default') }
   }
   $t = @($tokens)
   $i = 0
@@ -15706,8 +15780,8 @@ function Strip-OwnFlags([string[]]$tokens, [string]$cmd) {
     $tok = "$($t[$i])"
     if ($spec.ContainsKey($tok)) {
       $present[$tok] = $true
-      if ($spec[$tok].Bool) { $vals[$tok] = $true; $i++; continue }
-      if ($spec[$tok].Raw) {
+      if (Get-OptValue $spec[$tok] 'Bool') { $vals[$tok] = $true; $i++; continue }
+      if (Get-OptValue $spec[$tok] 'Raw') {
         if ($i + 1 -ge $t.Count) { throw "$cmd : '$tok' needs a value" }
         $vals[$tok] = "$($t[$i + 1])"
         $i += 2
@@ -15793,9 +15867,9 @@ function Format-OcrSampleTail($lines, [int]$max, $ctx = $null) {
   $txt = "OCR read $(@($all).Count) line(s) total: $($shown -join ', ')$more"
   if ($null -ne $ctx) {
     $segs = New-Object System.Collections.ArrayList
-    if ($ctx.Rect) { [void]$segs.Add("rect=$($ctx.Rect)") }
-    if ($ctx.Retry) { [void]$segs.Add("scan=$($ctx.Retry)") }
-    [void]$segs.Add('occluded=' + $(if ($ctx.Occlusion) { "$($ctx.Occlusion)" } else { 'not-scanned' }))
+    if (Get-OptValue $ctx 'Rect') { [void]$segs.Add("rect=$(Get-OptValue $ctx 'Rect')") }
+    if ((Get-OptValue $ctx 'Retry')) { [void]$segs.Add("scan=$((Get-OptValue $ctx 'Retry'))") }
+    [void]$segs.Add('occluded=' + $(if (Get-OptValue $ctx 'Occlusion') { "$(Get-OptValue $ctx 'Occlusion')" } else { 'not-scanned' }))
     # On a MISS the fold pass always ran (Find-OcrHits only tries the confusable fold
     # after the exact search found nothing), so what is worth printing is WHAT it
     # searched second: `Convert-ConfusableFold` returns the transformed string whether or
@@ -15807,7 +15881,7 @@ function Format-OcrSampleTail($lines, [int]$max, $ctx = $null) {
       $foldTxt = $(if ("$folded" -ceq "$($ctx.Needle)") { 'ran(identical)' } else { "ran($folded)" })
     }
     [void]$segs.Add("fold-pass=$foldTxt")
-    if ($ctx.MaxLinesCut -gt 0) { [void]$segs.Add("max-lines-cut=$($ctx.MaxLinesCut)") }
+    if ([int](Get-OptValue $ctx 'MaxLinesCut') -gt 0) { [void]$segs.Add("max-lines-cut=$(Get-OptValue $ctx 'MaxLinesCut')") }
     [void]$segs.Add("shown=$(@($shown).Count) of $(@($all).Count)")
     $txt += " ; premises: $(($segs -join ' ') -replace '\s+', ' ')"
   }
@@ -16791,7 +16865,13 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       # envelope keys are a pinned contract and machine consumers count lines themselves.
       $sparseWarn = ''
       # The density hint needs a box: screen px in region mode, IMAGE px in file mode.
-      $boxW = $region.W; $boxH = $region.H
+      # X-02: this used to read $region.W unconditionally, and in file mode $region is
+      # deliberately $null (set two branches above and never resolved, because no screen is
+      # involved) - so the value taken here was one this branch must not take at all. It was
+      # invisible only because the next line overwrites it. Under StrictMode the read itself
+      # is the failure: `read-text --file` died before printing a line.
+      $boxW = 0; $boxH = 0
+      if ($null -ne $region) { $boxW = $region.W; $boxH = $region.H }
       if ($fileResult) { $boxW = $fileResult.W; $boxH = $fileResult.H }
       $sparseSubject = 'region'
       if ($fileResult) { $sparseSubject = 'image' }
@@ -16833,9 +16913,9 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
           # GetFileName is also wildcard-safe where -Path would not be.
           $fn = [System.IO.Path]::GetFileName($filePath)
           $fTileSeg = ''
-          if ($fileResult.Tiles) { $fTileSeg = ", tiled: $($fileResult.Tiles) tile(s), $([math]::Round($fileResult.Ms / 1000.0, 1)) s" }
+          if (Get-OptValue $fileResult 'Tiles') { $fTileSeg = ", tiled: $(Get-OptValue $fileResult 'Tiles') tile(s), $([math]::Round((Get-OptValue $fileResult 'Ms') / 1000.0, 1)) s" }
           $fNoteSeg = ''
-          if (@($fileResult.Notes).Count -gt 0) { $fNoteSeg = ' ' + (@($fileResult.Notes) -join ' ') }
+          if (@(Get-OptValue $fileResult 'Notes').Count -gt 0) { $fNoteSeg = ' ' + (@(Get-OptValue $fileResult 'Notes') -join ' ') }
           "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" })$fTileSeg$(if ($fileRetry) { " [$fileRetry]" })$fNoteSeg$readLabel - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
           foreach ($e in $shown) { "L{0:D2} img-rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         } else {
@@ -17317,6 +17397,12 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       $hold = [int]$own.Values['--hold']
       $p = Split-Target @($own.Rest) 'drag'
       if ($p.Words.Count -lt 4) { throw 'usage: drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--to <sel>] [--guard-text <s>] [--force]' }
+      # X-02: every sibling of this case (click / dblclick / relclick / wheel / press-down /
+      # press-up / drag-to / menu-pick) initialises $tgt before the conditional resolve; drag
+      # was the one that did not, so a drag WITHOUT --to reached Invoke-HitWindowCheck with a
+      # never-set variable. Non-strict that reads as $null; under StrictMode it is a terminating
+      # error and the whole command dies before moving the cursor.
+      $tgt = $null
       if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
         $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
         Emit-ResolveNote
@@ -18702,7 +18788,7 @@ function Invoke-ScriptBatch([string[]]$Rest) {
         foreach ($s in $steps) {
           $i++
           $act = @($s.PSObject.Properties.Name | Where-Object { $_ -in $known })[0]
-          $mods = @(); if ($s.to) { $mods += "to=$($s.to)" }; if ($s.'guard-text') { $mods += 'guard-text' }; if ($s.'guard-region') { $mods += 'guard-region' }; if ($s.retry) { $mods += "retry=$($s.retry)" }; if ($s.expectText) { $mods += "expect=$($s.expectText)" }; if ($s.expectGone) { $mods += "expect-gone=$($s.expectGone)" }
+          $mods = @(); if (Get-OptValue $s 'to') { $mods += "to=$(Get-OptValue $s 'to')" }; if (Get-OptValue $s 'guard-text') { $mods += 'guard-text' }; if (Get-OptValue $s 'guard-region') { $mods += 'guard-region' }; if (Get-OptValue $s 'retry') { $mods += "retry=$(Get-OptValue $s 'retry')" }; if (Get-OptValue $s 'expectText') { $mods += "expect=$(Get-OptValue $s 'expectText')" }; if (Get-OptValue $s 'expectGone') { $mods += "expect-gone=$(Get-OptValue $s 'expectGone')" }
           $val = $s.$act
           $vs = if ($val -is [string]) { "'$val'" } else { ($val | ConvertTo-Json -Compress -Depth 3) }
           "#$i $act $vs$(if ($mods) { '  [' + ($mods -join ' ') + ']' })"
@@ -18715,7 +18801,7 @@ function Invoke-ScriptBatch([string[]]$Rest) {
         foreach ($s in $steps) {
           $si++
           $sa = @($s.PSObject.Properties.Name | Where-Object { $_ -in $known })[0]
-          if ($sa -in @('click', 'rclick', 'dblclick', 'drag', 'drag-to', 'wheel', 'find-click', 'menu-pick', 'relclick') -and -not $s.expectText -and -not $s.expectGone) { $noExp += "$si" }
+          if ($sa -in @('click', 'rclick', 'dblclick', 'drag', 'drag-to', 'wheel', 'find-click', 'menu-pick', 'relclick') -and -not (Get-OptValue $s 'expectText') -and -not (Get-OptValue $s 'expectGone')) { $noExp += "$si" }
         }
         if (@($noExp).Count -gt 0) {
           Write-Output "NOTICE: $(@($noExp).Count) action step(s) have no expect/expect-gone: #$($noExp -join ' #') - they will report 'ok' if the input was DELIVERED, not if the interface MOVED. Add expectText/expectGone (CLI: --expect-change for a pixel-delta check)."
@@ -18734,18 +18820,18 @@ function Invoke-ScriptBatch([string[]]$Rest) {
         $idx++
         $act = @($s.PSObject.Properties.Name | Where-Object { $_ -in $known })[0]
         $val = $s.$act
-        $desc = if ($s.desc) { " ($($s.desc))" } else { '' }
+        $desc = if (Get-OptValue $s 'desc') { " ($(Get-OptValue $s 'desc'))" } else { '' }
         try {
           if ($act -eq 'require-popup') {
             if ($null -ne $popupGuard) { throw "require-popup: a popup guard is already armed (step $($popupGuard.ArmedAtStep)) - release-popup first, one guarded popup at a time" }
-            $pgw = Resolve-Target ([string]$val) ([bool]$s.force) $false
+            $pgw = Resolve-Target ([string]$val) ([bool](Get-OptValue $s 'force')) $false
             Emit-ResolveNote
             $pgRect = Get-WindowVisibleRect $pgw.Handle
             if ($null -eq $pgRect) { throw "require-popup: the resolved window has no visible rect (pid=$($pgw.Pid) hwnd=$($pgw.Handle))" }
             $pgTol = 3
-            if ($s.tolerance) {
-              $pgTol = [int]$s.tolerance
-              if ($pgTol -lt 0) { throw "require-popup: tolerance must be >= 0, got: $($s.tolerance)" }
+            if (Get-OptValue $s 'tolerance') {
+              $pgTol = [int](Get-OptValue $s 'tolerance')
+              if ($pgTol -lt 0) { throw "require-popup: tolerance must be >= 0, got: $(Get-OptValue $s 'tolerance')" }
             }
             $pgOwner = [IntPtr][DT]::GetWindowLong($pgw.Handle, -8)   # GWL_HWNDPARENT: what the popup floats over
             # v2.0.1 merge: the merged differ takes a "before" set. Snapshot the owner's
@@ -18756,7 +18842,7 @@ function Invoke-ScriptBatch([string[]]$Rest) {
             if ($pgOwner -ne [IntPtr]::Zero) {
               $pgAbove0 = @(Get-SamePidWindowsAbove ([pscustomobject]@{ Handle = $pgOwner; Pid = $pgw.Pid }))
             }
-            $popupGuard = @{ Pid = $pgw.Pid; Hwnd = $pgw.Handle; Class = "$($pgw.Class)"; X = $pgRect.X; Y = $pgRect.Y; W = $pgRect.W; H = $pgRect.H; OwnerHwnd = $pgOwner; Above0 = $pgAbove0; Tolerance = $pgTol; MustBeFg = [bool]$s.'must-be-foreground'; ArmedAtStep = $idx }
+            $popupGuard = @{ Pid = $pgw.Pid; Hwnd = $pgw.Handle; Class = "$($pgw.Class)"; X = $pgRect.X; Y = $pgRect.Y; W = $pgRect.W; H = $pgRect.H; OwnerHwnd = $pgOwner; Above0 = $pgAbove0; Tolerance = $pgTol; MustBeFg = [bool](Get-OptValue $s 'must-be-foreground'); ArmedAtStep = $idx }
             Log-Action @($file) "popup guard armed at step $idx (pid=$($pgw.Pid) hwnd=0x$($pgw.Handle.ToString('X')) class=$($pgw.Class))"
             "popup guard: armed at step $idx (pid=$($pgw.Pid) hwnd=0x$($pgw.Handle.ToString('X')) class=$($pgw.Class) rect=($($pgRect.X),$($pgRect.Y),$($pgRect.W)x$($pgRect.H)) tolerance=$pgTol must-be-foreground=$($popupGuard.MustBeFg))"
           }
@@ -18787,17 +18873,17 @@ function Invoke-ScriptBatch([string[]]$Rest) {
           }
           if ($act -notin @('require-popup', 'release-popup')) {
             # hard foreground guard - aborts everything on failure
-            if ($s.to) {
-              $gt = Resolve-Target $s.to ([bool]$s.force) ([bool]$s.alwaysActivate)
+            if (Get-OptValue $s 'to') {
+              $gt = Resolve-Target (Get-OptValue $s 'to') ([bool](Get-OptValue $s 'force')) ([bool](Get-OptValue $s 'alwaysActivate'))
               Emit-ResolveNote
               if ([DT]::GetForegroundWindow() -ne $gt.Handle) {
-                throw "GUARD-ABORT: step #$idx to='$($s.to)' did not become foreground (fg: $(Get-ForegroundInfo))"
+                throw "GUARD-ABORT: step #$idx to='$(Get-OptValue $s 'to')' did not become foreground (fg: $(Get-ForegroundInfo))"
               }
             }
-            if ($s.'guard-text' -or $s.'guard-region') {
-              $tgt = if ($s.to) { $gt } else { Resolve-Target '' $false $false ([string]$s.expectHandle) }
+            if ((Get-OptValue $s 'guard-text') -or (Get-OptValue $s 'guard-region')) {
+              $tgt = if (Get-OptValue $s 'to') { $gt } else { Resolve-Target '' $false $false ([string](Get-OptValue $s 'expectHandle')) }
               Emit-ResolveNote
-              Invoke-ContentGuard $tgt $s.'guard-text' $s.'guard-region'
+              Invoke-ContentGuard $tgt (Get-OptValue $s 'guard-text') (Get-OptValue $s 'guard-region')
             }
             # resolve the win-close target BEFORE the step runs: after it the guarded
             # popup may already be gone and a re-resolve would find nothing
@@ -18805,8 +18891,8 @@ function Invoke-ScriptBatch([string[]]$Rest) {
             if ($act -eq 'win-close' -and $null -ne $popupGuard) {
               $pgWc = Resolve-Window ([string]@($val)[0])
             }
-            $attempts = if ($s.retry) { [int]$s.retry } else { 1 }
-            $interval = if ($s.intervalMs) { [int]$s.intervalMs } else { 800 }
+            $attempts = if (Get-OptValue $s 'retry') { [int](Get-OptValue $s 'retry') } else { 1 }
+            $interval = if (Get-OptValue $s 'intervalMs') { [int](Get-OptValue $s 'intervalMs') } else { 800 }
             if ($attempts -lt 1) { $attempts = 1 }
             for ($a = 1; $a -le $attempts; $a++) {
               try {
@@ -19034,19 +19120,19 @@ function Get-StepTokens([string]$name, $val, $step) {
   $tokens = @($converted)
       $expectCapable = @('click', 'rclick', 'dblclick', 'find-click', 'menu-pick', 'keys', 'type', 'paste', 'paste-file', 'open-and-pick')
   if ($null -ne $step -and $name -in $expectCapable) {
-    if ($step.expectText) { $tokens = $tokens + @('--expect', "$($step.expectText)") }
-    if ($step.expectGone) { $tokens = $tokens + @('--expect-gone', "$($step.expectGone)") }
+    if (Get-OptValue $step 'expectText') { $tokens = $tokens + @('--expect', "$(Get-OptValue $step 'expectText')") }
+    if (Get-OptValue $step 'expectGone') { $tokens = $tokens + @('--expect-gone', "$(Get-OptValue $step 'expectGone')") }
     # v3.0.0 (B-3): a step may assert an ANY-OF list (or an ALL-GONE list). The field takes a
     # JSON array or a comma string; both become the one token the CLI flag expects, so the
     # step path and the command-line path share a single grammar and a single parser.
-    if ($step.expectAny) { $tokens = $tokens + @('--expect-any', (@($step.expectAny) -join ',')) }
-    if ($step.expectAnyGone) { $tokens = $tokens + @('--expect-any-gone', (@($step.expectAnyGone) -join ',')) }
+    if ((Get-OptValue $step 'expectAny')) { $tokens = $tokens + @('--expect-any', (@((Get-OptValue $step 'expectAny')) -join ',')) }
+    if (Get-OptValue $step 'expectAnyGone') { $tokens = $tokens + @('--expect-any-gone', (@(Get-OptValue $step 'expectAnyGone') -join ',')) }
     # v3.0.0 (B-2): a step may carry the same identity pin the CLI flag gives. It goes
     # through the token path on purpose - one grammar, one parser, no step-only shortcut.
-    if ($step.expectHandle) { $tokens = $tokens + @('--expect-handle', "$($step.expectHandle)") }
-    if ($step.expectRegion) { $tokens = $tokens + @('--expect-region', "$($step.expectRegion)") }
-    if ($step.timeoutSec) { $tokens = $tokens + @('--timeout', "$($step.timeoutSec)") }
-    if ($step.intervalMs) { $tokens = $tokens + @('--interval', "$([int]$step.intervalMs)") }
+    if (Get-OptValue $step 'expectHandle') { $tokens = $tokens + @('--expect-handle', "$(Get-OptValue $step 'expectHandle')") }
+    if (Get-OptValue $step 'expectRegion') { $tokens = $tokens + @('--expect-region', "$(Get-OptValue $step 'expectRegion')") }
+    if (Get-OptValue $step 'timeoutSec') { $tokens = $tokens + @('--timeout', "$(Get-OptValue $step 'timeoutSec')") }
+    if (Get-OptValue $step 'intervalMs') { $tokens = $tokens + @('--interval', "$([int](Get-OptValue $step 'intervalMs'))") }
   }
   return ,$tokens
 }

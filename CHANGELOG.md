@@ -2,6 +2,71 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.0.1 - 2026-10-06
+
+X-02 landed: the whole script now runs under `Set-StrictMode -Version Latest`.
+
+- **What changes for a caller:** exactly one thing. An internal path that used to read a property
+  that is not there, a variable that was never set, or a method on `$null` used to silently obtain an
+  empty string and keep going. Under StrictMode that same path **fails**: stdout gets one
+  `ERROR:` line (e.g. `The property 'X' cannot be found on this object`, or the same message rendered
+  in the machine's UI language) and the exit code is 1. Nothing else moved.
+- **What did not change:** no command's output shape, argument grammar, threshold or exit code on the
+  success path. This was measured, not asserted: 16 read-only commands plus `script --dry-run` were run
+  twice - once on the tree before the switch and once on a landing-shape copy with StrictMode on -
+  and stdout's sha256 and the exit code matched on every one. The offline suite output was also
+  compared byte-for-byte before and after each of the eight commits: the only differences were
+  line-number drift and a random temp-file name, and the PASS/FAIL/SKIP conclusion lines were
+  identical in every batch.
+- **How the surface was found.** StrictMode violations are statement-terminating errors, so
+  `$ErrorActionPreference = 'Continue'` does not suppress them and a function reports only its FIRST
+  violation before the call dies - which is why earlier attempts could only advance ~26 checks per fix.
+  Two disposable copies were used to enumerate the surface instead of tripping over it one error at a
+  time: one with a `trap` that records and continues inside the test suite, and one with an observer
+  `trap` at the command dispatcher that records the failing line and then re-raises (so guards still
+  refuse and commands still die exactly as they would in the shipped script). The second one is what
+  found the product-path violations the suite alone could not see: five script-scope state variables
+  that were read before anyone had assigned them, a file-mode branch that read the screen region it
+  deliberately does not have, the optional fields of a parsed step object, and one command case missing
+  an initialisation all its sibling cases have.
+- **One check in the suite was found to be vacuous** (not a caller-visible change, but it is the
+  reason this release exists): a check that every command's shared-flag list is a subset of the shared
+  flag set wrapped a hashtable in `@()` and then indexed the wrapper by a command name. That silently
+  produced `$null`, the inner loop iterated zero times, and the check could never have gone red since
+  the day it was written. It now indexes the dictionary the way the production getter does; run for
+  real for the first time it finds 0 offenders, so it is still green - but green with teeth.
+- Optional field reads go through one helper (`Get-OptValue`), which is byte-equivalent to the bare
+  read it replaced. The convention for future work: fix the producer, never add a fallback at the
+  consumer to make a check pass.
+- **Known limit, stated plainly:** the evidence is "815 offline checks + a full `--live` run + 17
+  commands compared byte-for-byte", not a static proof about every line. Checks only cover paths that
+  execute; a branch no test reaches can still hold a bare optional read. If you hit one, that
+  `ERROR:` line is a genuine defect report - please send the command verbatim.
+- This tree declares **815** offline checks (two more than the internal tree's 813, both open-source
+  side); the badges on both READMEs moved 814 -> 815 in this commit.
+- `--live` after the switch: `928 passed / 1 failed / 1 skipped`. The one red is
+  `... accepted on readback=verbatim-tail ...`, an OCR-timing case with precedent in this project's
+  history. It was reproduced on a StrictMode-OFF copy of the same code with identical measured
+  readings, so it is not attributable to this change; no check, threshold or expectation was altered
+  for it (the occlusion threshold remains 0 by the maintainer's standing decision).
+
+## v4.0.0 - 2026-10-06
+
+A version position only: nothing about a command, a threshold, an output line or an exit code
+changed in this commit.
+
+- **Why a major:** the schemaVersion 2 -> 3 change that shipped under 3.1.0 is a breaking change
+  to the published JSON contract, and this repository's own rule (written into the v3.0.0
+  notes) is that a key-set change moves the major version. It was released as 3.1.0 with that
+  conflict recorded rather than absorbed; the maintainer has since called for the major bump, so
+  3.1.0 -> 4.0.0. Anyone pinning the top-level keys of any envelope is affected by that change,
+  not by this commit.
+- schemaVersion stays at **3**. It versions the envelope contract, not the release, and the two
+  axes are deliberately not kept in step.
+
+Everything listed under v3.1.0 below (the action-family --json envelope, the expectation-arity
+checks, the published-clone anchor skip and the disclosed spaced-path limitation) is what this
+major version now carries.
 ## v3.1.0 - 2026-10-05
 
 Behaviour changes a caller can see (all from the second external review batch; every item was re-verified against the source before being fixed, and every fix ships with checks that were seen to fail first):

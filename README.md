@@ -1,10 +1,10 @@
-# Agent Computer Use (Open Source Edition) v3.1.0
+# Agent Computer Use (Open Source Edition) v4.0.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=814%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=815%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
