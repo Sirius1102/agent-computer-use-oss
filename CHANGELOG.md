@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.1.1 - 2026-10-07
+
+Two fixes from the second external review round, plus one the maintainer's agent caught in its own
+previous release.
+
+- **Two live test fixtures had a guard that guarded the wrong variable.** Each block carried a bare
+  local null-initialiser before its `try`, while the `finally` (and, in one case, a helper
+  scriptblock) reads the *script-scoped* variable, whose own initialiser sat inside the `try`. When
+  fixture setup threw before that assignment ran, the `finally` read a never-assigned variable and -
+  this tool runs the whole file under `Set-StrictMode -Version Latest` - raised a second error that
+  masked the real one. The bare local was never read anywhere: dead code that looked like a guard.
+- **The challenge-fuse refusal added in 4.1.0 was partly unreachable.** The "record what we just
+  saw" write ran before the fuse state was consulted and was not guarded, so a fully locked log threw
+  an unrelated I/O error first and neither the honest `stale=unknown(...)` echo nor the refusal below
+  could be reached. That write is now folded into the state computation: a log this call cannot
+  write is a fuse that cannot be armed, so it blocks an attempt exactly like a log it cannot read.
+  The pure state helper grows to four answers - `absent` / `unreadable` / `unwritable` / `ok` - and
+  they are asserted pairwise distinct.
+- One new source lint forbids the "bare local null-initialiser standing in for the script-scoped
+  variable a `finally` reads" shape, and is proven against a planted copy of that shape so the lint
+  itself cannot be vacuous.
+
+Offline check total 816 -> 817. No threshold, expectation or fixture was relaxed, and exit codes on
+the affected error paths are unchanged (non-zero before, non-zero after).
+
 ## v4.1.0 - 2026-10-06
 
 Three fixes from an external review round, all from one family: **a failed read was being

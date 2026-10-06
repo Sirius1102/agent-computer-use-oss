@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 4.1.0  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 4.1.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -39,7 +39,7 @@ Set-StrictMode -Version Latest
 # Placed after param() because PowerShell allows only comments before it (measured: an
 # assignment up there is a parse error for the whole file).
 # Sync list: this line and the iteration-log entry. It is NOT a version number.
-$script:DeclaredCheckTotal = 816
+$script:DeclaredCheckTotal = 817
 
 # Emit stdout as UTF-8 (no BOM) so CJK window titles survive being piped to
 # other processes when invoked via powershell -File. Wrapped in try/catch
@@ -2097,16 +2097,19 @@ function Test-ChallengeLogLines($lines, [int]$pidToFind) {
   return @{ LastHash = $last; FuseHash = $fuse }
 }
 
-# Pure: what the reader is ALLOWED to claim about this pid's fuse, given how the log read went.
-# The three answers are different facts and must not collapse into one another: `absent` = the
-# log has never been written, so "first challenge for this pid" is a true statement; `unreadable`
-# = the file is there but THIS call could not read it, which says nothing at all about whether a
-# fuse is armed. Before this, the read carried -ErrorAction SilentlyContinue, so an unreadable
-# log arrived downstream as an empty array, was reported as `stale=first-seen`, and cleared the
-# armed fuse - a retry that risk-control was supposed to be protected from (v4.0.1 audit, finding 2).
-function Resolve-ChallengeLogState([bool]$logExists, [bool]$readOk) {
+# Pure: what the reader is ALLOWED to claim about this pid's fuse, given how the log read AND the
+# sighting write went. The four answers are different facts and must not collapse into one
+# another: `absent` = the log has never been written, so "first challenge for this pid" is a true
+# statement; `unreadable` = the file is there but THIS call could not read it, which says nothing
+# about whether a fuse is armed; `unwritable` = we could read but could not record what we just
+# saw, so the fuse cannot be armed for the NEXT call either - same consequence as unreadable.
+# Before this, the read carried -ErrorAction SilentlyContinue, so an unreadable log arrived
+# downstream as an empty array, was reported as `stale=first-seen`, and cleared the armed fuse -
+# a retry that risk-control was supposed to be protected from (v4.0.1 audit, finding 2).
+function Resolve-ChallengeLogState([bool]$logExists, [bool]$readOk, [bool]$writeOk = $true) {
   if (-not $logExists) { return 'absent' }
   if (-not $readOk) { return 'unreadable' }
+  if (-not $writeOk) { return 'unwritable' }
   return 'ok'
 }
 
@@ -10540,10 +10543,53 @@ function Invoke-SelfTest([string[]]$Rest) {
   # red instead of quietly re-opening the fail-open fuse.
   $c40LbAbsent = Resolve-ChallengeLogState $false $false
   $c40LbUnread = Resolve-ChallengeLogState $true $false
+  $c40LbUnwrit = Resolve-ChallengeLogState $true $true $false
   $c40LbOk = Resolve-ChallengeLogState $true $true
-  ST-Check 'unit: challenge log read state - absent / unreadable / ok are three distinct answers and absent never equals unreadable' (
-    ($c40LbAbsent -ceq 'absent') -and ($c40LbUnread -ceq 'unreadable') -and ($c40LbOk -ceq 'ok') -and
-    ($c40LbAbsent -cne $c40LbUnread))
+  $c40LbDflt = Resolve-ChallengeLogState $true $true $true
+  # pairwise distinctness is the whole point: if any two branches ever return the same token the
+  # unique-count drops and this goes red instead of quietly re-opening the fail-open fuse.
+  $c40LbSet = @($c40LbAbsent, $c40LbUnread, $c40LbUnwrit, $c40LbOk) | Sort-Object -Unique
+  ST-Check 'unit: challenge log read state - absent / unreadable / unwritable / ok are four pairwise distinct answers and the 2-arg form still means the write succeeded' (
+    ($c40LbAbsent -ceq 'absent') -and ($c40LbUnread -ceq 'unreadable') -and ($c40LbUnwrit -ceq 'unwritable') -and ($c40LbOk -ceq 'ok') -and
+    (@($c40LbSet).Count -eq 4) -and ($c40LbDflt -ceq $c40LbOk))
+  # v4.1.1 (X-02 residual, surfaced by the second external review round): a bare LOCAL null-init
+  # sitting next to a script-scoped read is NOT an initialiser for that read - it is dead code that
+  # LOOKS like the guard, and under StrictMode the finally then raises a second error that masks
+  # the real one. Two instances were live in the file (the challenge fixture and the popup-gate
+  # fixture). The predicate is proven against a planted copy of the shape, because a lint that has
+  # never fired on a known-bad input is not a lint. Plant strings are ASSEMBLED at runtime so this
+  # very block cannot be flagged by the scan it defines.
+  $scopeOffenders = {
+    param($slArr)
+    $bad2 = @()
+    foreach ($sl in $slArr) {
+      $mScope = [regex]::Match([string]$sl, '^\s*\$([A-Za-z][A-Za-z0-9_]*)\s*=\s*\$null\s*$')
+      if (-not $mScope.Success) { continue }
+      $sName = $mScope.Groups[1].Value
+      $asScript = 0; $asBare = 0
+      foreach ($sl2 in $slArr) {
+        $s2 = [string]$sl2
+        $asScript += ([regex]::Matches($s2, ('\$script:' + [regex]::Escape($sName) + '(?![A-Za-z0-9_])'))).Count
+        $asBare += ([regex]::Matches($s2, ('\$' + [regex]::Escape($sName) + '(?![A-Za-z0-9_])'))).Count
+      }
+      if ($asScript -gt 0 -and $asBare -le 1) { $bad2 += $sName }
+    }
+    return ,@($bad2)
+  }
+  $scopeReal = & $scopeOffenders $codeLines
+  $plStem = 'zz' + 'Proc'
+  $scopePlant = @(
+    ('      $' + $plStem + ' = ' + '$null'),
+    '      try {',
+    ('        $script:' + $plStem + ' = Start-Process x'),
+    '      } finally {',
+    ('        if ($script:' + $plStem + ') { Stop-Process }'),
+    '      }'
+  )
+  $scopeCaught = & $scopeOffenders $scopePlant
+  Write-Output ('      scope-shadow offenders=' + (@($scopeReal).Count) + ' [' + (@($scopeReal) -join ',') + '] plant-caught=' + (@($scopeCaught).Count))
+  ST-Check 'lint: no bare local null-initialiser may stand in for the script-scoped variable a finally actually reads, and the predicate catches a planted copy of the shape' (
+    (@($scopeReal).Count -eq 0) -and (@($scopeCaught).Count -eq 1) -and ($scopeCaught[0] -ceq $plStem))
   $c40HandWin = [pscustomobject]@{ Title = 'DTX-ChalProbe'; Pid = 4242; Left = 150; Top = 700; W = 700; H = 420 }
   $c40Hand = Build-ChallengeHandoff $c40Slider $c40HandWin 'deadbeef' 'shots\challenge-x.png'
   $c40HandAll = "$($c40Hand -join [char]10)"
@@ -11029,7 +11075,10 @@ $f.Controls.Add($lbl)
       # tool-owned - never a real app's flaky popup). mode=fuse destroys the popup 800ms
       # after it opens (the synthetic self-closing popup the task order demands); mode=keep
       # leaves it alive for the control run and the win-close dismissal path.
-      $pgProc = $null
+      # X-02 residual (v4.1.1): see the chProc note - this block reads $script:pgProc in its
+      # finally (and the inner finally re-reads it), while the real initialiser sat INSIDE the
+      # try, so a throw before it left the outer finally reading an unassigned variable.
+      $script:pgProc = $null
       $pgTmp = New-Object System.Collections.ArrayList
       try {
         foreach ($pgStale in @('DTX-PGMain', 'DTX-PGPopup')) {
@@ -11517,7 +11566,11 @@ $form.Add_Paint({
       # ignores clicks (the attempt must fail and arm the fuse); mode=clear hides the
       # challenge on the first click (the success path). No solver is being built - the
       # fixture decides the outcome so the GATE is what is under test.
-      $chProc = $null
+      # X-02 residual (v4.1.1): the handle is read as $script:chProc in the finally below AND in
+      # the $chStop scriptblock, so a bare LOCAL initialiser here initialised nothing. When the
+      # fixture assembly threw before the assignment ran, the finally read an unassigned variable
+      # and raised a SECOND StrictMode error that masked the real one. Same shape as pgProc.
+      $script:chProc = $null
       $chTmp = New-Object System.Collections.ArrayList
       try {
         $chOld = Resolve-Window 'DTX-ChalProbe'
@@ -14636,7 +14689,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.1.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.1.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -16398,11 +16451,17 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         try { $cpLog = @(Get-Content -LiteralPath $ActionLog -Encoding UTF8 -ErrorAction Stop) }
         catch { $cpLogErr = $_.Exception.Message }
       }
-      $cpLogState = Resolve-ChallengeLogState $cpLogExists ($cpLogErr -eq '')
       $cpState = Test-ChallengeLogLines $cpLog $cw.Pid
       $cpStale = Test-ChallengeStale $cpState.LastHash $cpHash
-      Log-Action @("pid=$($cw.Pid)") "seen hash=$cpHash"
-      if ($cpStale.Stale -eq $true) { Log-Action @("pid=$($cw.Pid)") "stale hash=$cpHash" }
+      # v4.1.1 (self-caught, would have made the finding-2 fix decoration): the sighting line used
+      # to be an UNGUARDED write that ran BEFORE the state was ever consulted. On a fully locked
+      # log it threw an unrelated IOException first, so neither the honest `stale=unknown(...)`
+      # echo nor the refusal below could be reached. The write is attempted here and its failure
+      # is folded INTO the state - a log we cannot write is a fuse we cannot arm.
+      $cpSeenErr = ''
+      try { Log-Action @("pid=$($cw.Pid)") "seen hash=$cpHash" } catch { $cpSeenErr = $_.Exception.Message }
+      if ($cpStale.Stale -eq $true) { try { Log-Action @("pid=$($cw.Pid)") "stale hash=$cpHash" } catch { } }
+      $cpLogState = Resolve-ChallengeLogState $cpLogExists ($cpLogErr -eq '') ($cpSeenErr -eq '')
       if (-not $cpVerdict.Challenge) {
         $cpNote = ''
         try {
@@ -16413,7 +16472,10 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       }
       "challenge: type=$($cpVerdict.Type) confidence=$($cpVerdict.Confidence) matched=[$(@($cpVerdict.Matched) -join ', ')] lines=$(@($cpLines).Count) rect=($([int]$cw.Left),$([int]$cw.Top),$([int]$cw.W)x$([int]$cw.H))"
       $cpStaleTxt = $cpStale.Stale
-      if ($cpLogState -ceq 'unreadable') { $cpStaleTxt = "unknown(log-unreadable: $cpLogErr)" }
+      $cpLogWhy = ''
+      if ($cpLogErr) { $cpLogWhy = $cpLogErr } elseif ($cpSeenErr) { $cpLogWhy = $cpSeenErr }
+      if ($cpLogState -ceq 'unreadable') { $cpStaleTxt = "unknown(log-unreadable: $cpLogWhy)" }
+      if ($cpLogState -ceq 'unwritable') { $cpStaleTxt = "unknown(log-unwritable: $cpLogWhy)" }
       "stale=$cpStaleTxt$(if ($cpStale.Recommend) { " recommend=$($cpStale.Recommend)" })"
       "action: DO NOT treat a needle miss on this window as 'the card is gone' - this window is covered by an in-window challenge modal; judge the underlying target only after the challenge is dismissed"
       $cpShot = Join-Path $OutDir ('challenge-' + (Get-Date -Format 'yyyyMMddTHHmmss') + '.png')
@@ -16425,14 +16487,15 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
         exit 0
       }
       # An UNKNOWN fuse is treated as ARMED. This fuse exists only because a second attempt on the
-      # same challenge image escalates account risk-control, so "could not check" must not buy a
-      # retry. The refusal is logged best-effort, and when even that write fails the thrown
-      # message says so instead of implying an audit line that was never written.
-      if ($cpLogState -ceq 'unreadable') {
+      # same challenge image escalates account risk-control, so "could not check" - whether the
+      # check failed because the log would not open for READING or because it would not accept the
+      # sighting WRITE - must not buy a retry. The refusal is logged best-effort, and when even
+      # that write fails the thrown message says so instead of implying an audit line that exists.
+      if ($cpLogState -ceq 'unreadable' -or $cpLogState -ceq 'unwritable') {
         $cpFuseNote = ''
-        try { Log-Action @("pid=$($cw.Pid)") "fuse-unknown hash=$cpHash reason=log-unreadable" }
+        try { Log-Action @("pid=$($cw.Pid)") "fuse-unknown hash=$cpHash reason=log-$($cpLogState.Substring(1))" }
         catch { $cpFuseNote = ' - and the audit line could not be written either: ' + $_.Exception.Message }
-        throw "challenge attempt refused: $ActionLog exists but could not be read ($cpLogErr), so the fuse state for pid=$($cw.Pid) is UNKNOWN and an unknown fuse is treated as armed (retries escalate account risk-control)$cpFuseNote. Free the log (another process is holding it) or have a human complete or dismiss the challenge"
+        throw "challenge attempt refused: $ActionLog could not be used to check the fuse ($cpLogWhy), so the fuse state for pid=$($cw.Pid) is UNKNOWN and an unknown fuse is treated as armed (retries escalate account risk-control)$cpFuseNote. Free the log (another process is holding it) or have a human complete or dismiss the challenge"
       }
       if ($cpState.FuseHash -eq $cpHash) {
         Log-Action @("pid=$($cw.Pid)") "fuse-blocked hash=$cpHash"
