@@ -34,7 +34,7 @@ $ErrorActionPreference = 'Stop'
 # Placed after param() because PowerShell allows only comments before it (measured: an
 # assignment up there is a parse error for the whole file).
 # Sync list: this line and the iteration-log entry. It is NOT a version number.
-$script:DeclaredCheckTotal = 803
+$script:DeclaredCheckTotal = 814
 
 # Emit stdout as UTF-8 (no BOM) so CJK window titles survive being piped to
 # other processes when invoked via powershell -File. Wrapped in try/catch
@@ -6830,11 +6830,13 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'contract: read-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+lines (add or drop one = breaking)' (
     $cGotRead -ceq $cWantRead)
   # v3.0.0 (B-6) BREAKING CHANGE, declared: 1 -> 2, because `contentTrust` joined the key set
-  # of every envelope. The literal expectation stays a literal ON PURPOSE - bumping the
-  # variable without coming here is the mistake this check exists to make impossible, and the
-  # second conjunct proves the builders read the same variable rather than a copied constant.
-  ST-Check 'contract: both envelopes report the declared schemaVersion, which is 2 since contentTrust joined the key set' (
-    [int]$script:JsonSchemaVersion -eq 2 -and $cFind.schemaVersion -eq 2 -and $cRead.schemaVersion -eq 2)
+  # of every envelope. v3.1.0 (X-01) BREAKING CHANGE, declared: 2 -> 3, because the action
+  # family got an envelope (see Get-ActionJsonCommandSet). The literal expectation stays a
+  # literal ON PURPOSE - bumping the variable without coming here is the mistake this check
+  # exists to make impossible, and the second conjunct proves the builders read the same
+  # variable rather than a copied constant.
+  ST-Check 'contract: both envelopes report the declared schemaVersion, which is 3 since the action family joined the contract' (
+    [int]$script:JsonSchemaVersion -eq 3 -and $cFind.schemaVersion -eq 3 -and $cRead.schemaVersion -eq 3)
   # the occlusion half of the contract, from a synthetic gate: a gate that ran must
   # produce an INTEGER percent (not 37.4, not ''), and coveredBy must be an array
   # even for a single coverer - a scalar here silently breaks JSON consumers that
@@ -8706,7 +8708,8 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'lint: every declared --json command is a real dispatch case (the refusal text cannot name a phantom)' (@($jcFake).Count -eq 0)
   ST-Check 'unit: --json is refused for a command that cannot render it, and accepted for one that can' (
     (Test-JsonCapableCommand 'wins') -and (Test-JsonCapableCommand 'read-text') -and
-    -not (Test-JsonCapableCommand 'cursor') -and -not (Test-JsonCapableCommand 'click') -and
+    (Test-JsonCapableCommand 'click') -and (Test-JsonCapableCommand 'paste') -and
+    -not (Test-JsonCapableCommand 'cursor') -and -not (Test-JsonCapableCommand 'shot') -and
     -not (Test-JsonCapableCommand ''))
   $jsonProbePos = ''
   $jsonProbePosCode = -1
@@ -8729,6 +8732,117 @@ function Invoke-SelfTest([string[]]$Rest) {
     -not ($jsonProbeNeg -match 'cursor='))
   Write-Output ("      --json gate: declared=" + @($jcDeclared).Count + ' pos-exit=' + $jsonProbePosCode +
     ' neg-exit=' + $jsonProbeNegCode + ' neg-hits-refusal=' + ($jsonProbeNeg.Contains('is not supported by')))
+  # ---------- v3.1.0 X-01: the action family's --json envelope --------------------------------
+  # The requirement this block exists to enforce is not "there is JSON", it is "the JSON cannot
+  # lie and cannot drift": ONE producer, a CLOSED command table, a PINNED key set, and a
+  # projection that is a subset of the text it carries. Every one of those has a planted
+  # positive control below, because a set comparison over two empty sets is how this repo has
+  # been fooled three times already (@($hashtable).Count, the scanner reading its own source,
+  # and the v3.0.0 key-set copy that lived in three places).
+  $xHelpSet = @(Get-ActionFamilyCommandsFromHelp (Get-UsageLines))
+  $xTableSet = @(Get-ActionJsonCommandSet | Sort-Object -Unique)
+  $xMissing = @($xHelpSet | Where-Object { $xTableSet -notcontains $_ })
+  $xPhantom = @($xTableSet | Where-Object { $xHelpSet -notcontains $_ })
+  Write-Output ('      action-json table: help=' + @($xHelpSet).Count + ' table=' + @($xTableSet).Count +
+    ' missing=[' + ($xMissing -join ',') + '] phantom=[' + ($xPhantom -join ',') + ']')
+  # the >=25 conjunct is the positive control: if the group parser ever returns an empty list,
+  # both diffs below are empty and the equality would be vacuously true.
+  ST-Check 'lint (X-01): the action --json command table is CLOSED (equals the help page act/text/clipboard set in BOTH directions, and the parse itself yields >=25 names)' (
+    @($xMissing).Count -eq 0 -and @($xPhantom).Count -eq 0 -and @($xTableSet).Count -ge 25 -and @($xHelpSet).Count -ge 25)
+  # Teeth for the parser itself: a group header must never be read as a command, and the option
+  # lists inside a synopsis must never be read as commands (Get-HelpEntryNames' documented trap).
+  $xFakeHelp = @('  act (absolute coords)', '    click <x> <y> [--occlude off|warn|strict]', '  clipboard', '    selftest [--live] = x')
+  $xFakeGot = @(Get-ActionFamilyCommandsFromHelp $xFakeHelp)
+  ST-Check 'unit (X-01): the action-set parser takes names from the act/clipboard groups only, never a group header and never an option token (off/warn/strict)' (
+    (@($xFakeGot | Where-Object { $_ -in @('off', 'warn', 'strict', 'act', 'clipboard') }).Count -eq 0) -and
+    (@($xFakeGot | Where-Object { $_ -eq 'click' }).Count -eq 1))
+  # ONE producer + ONE pair of emission sites, both at the process boundary. Tokens assembled at
+  # runtime: this scanner's own source sits on the face it scans (pit recorded in v3.1.0 7B).
+  $xProdMark = 'function Format-Action' + 'JsonEnvelope'
+  $xEmitMark = 'Format-Action' + 'JsonEnvelope $Cmd'
+  $xProd = 0; $xEmit = @()
+  for ($xi = 0; $xi -lt $codeLines.Count; $xi++) {
+    if ($xi -ge $j5ProdStart -and $xi -lt $j5ProdEnd) { continue }
+    if ($codeLines[$xi] -match '^\s*#') { continue }
+    $xl = [string]$codeLines[$xi]
+    if ($xl.StartsWith($xProdMark)) { $xProd++ }
+    if ($xl.Contains($xEmitMark)) { $xEmit += ($xi + 1) }
+  }
+  Write-Output ('      action-json outlets: producer=' + $xProd + ' emit=[' + ($xEmit -join ',') + ']')
+  ST-Check 'lint (X-01): the action envelope has exactly one producer and exactly two emission sites (stdout + --dump), never a per-case copy' (
+    $xProd -eq 1 -and @($xEmit).Count -eq 2)
+  # The key sets. `signals` is DERIVED from the pattern map, so the map and a hardcoded contract
+  # list are compared against each other - that is the drift nail; comparing the object to its
+  # own source would be vacuous.
+  $xWantSigLit = (@('expect', 'foreground', 'guard', 'hitWindow', 'notice', 'occluded', 'receipt', 'warning') | Sort-Object) -join ','
+  $xEnv1 = Format-ActionJsonEnvelope 'click' @('hit-window: pid=1 proc=p title=T', 'clicked 1,2')
+  $xObj1 = $null
+  try { $xObj1 = $xEnv1 | ConvertFrom-Json } catch { $xObj1 = $null }
+  $xTop = ''
+  if ($null -ne $xObj1) { $xTop = (@($xObj1.PSObject.Properties.Name) | Sort-Object) -join ',' }
+  ST-Check 'contract (X-01): the action envelope top-level keys are exactly schemaVersion+command+lines+signals and schemaVersion is the declared one (add or drop a key = breaking)' (
+    $xTop -ceq (Get-ActionJsonKeySet) -and $null -ne $xObj1 -and [int]$xObj1.schemaVersion -eq [int]$script:JsonSchemaVersion)
+  $xSigGot = ''
+  if ($null -ne $xObj1) { $xSigGot = (@($xObj1.signals.PSObject.Properties.Name) | Sort-Object) -join ',' }
+  ST-Check 'contract (X-01): signals carries exactly the eight pinned classes, the pattern map agrees with the pinned list, and the schema is 3 (this class of change was MAJOR in v3.0.0 - the conflict is registered, not eaten)' (
+    $xSigGot -ceq $xWantSigLit -and (Get-ActionJsonSignalKeySet) -ceq $xWantSigLit -and [int]$script:JsonSchemaVersion -eq 3)
+  # The projection has to be a SUBSET (it invents nothing) and COMPLETE per class (it drops
+  # nothing) and must keep an unclassed line - all three on one planted fixture.
+  $xL1 = 'hit-window: pid=7 proc=notepad title=T  (inside-target=True occluded=0% coveredBy=-)'
+  $xL2 = "target pid=7 (foreground after send: pid=7 notepad 'T')"
+  $xL3 = 'content guard FAILED: needle not present'
+  $xL4 = 'receipt-tried=occluded-refused (lines 3->4)'
+  $xL5 = 'unmap: C:\tmp\x.png (400x300 kind=rect scale=1) image (10,20) -> screen (110,220)'
+  $xL6 = 'WARNING: something the reader must not lose'
+  $xL7 = 'NOTICE: post-send foreground check unavailable: boom'
+  $xL8 = 'expect refused: target occluded=44% coveredBy=pid=9 p'
+  $xEnv2 = Format-ActionJsonEnvelope 'paste' @($xL1, $xL2, $xL3, $xL4, $xL5, $xL6, $xL7, $xL8)
+  $xObj2 = $null
+  try { $xObj2 = $xEnv2 | ConvertFrom-Json } catch { $xObj2 = $null }
+  $xInvent = 0
+  $xBlind = @()
+  if ($null -ne $xObj2) {
+    foreach ($pk in @($xObj2.signals.PSObject.Properties.Name)) {
+      $pv = @($xObj2.signals.$pk)
+      if ($pv.Count -lt 1) { $xBlind += $pk }
+      foreach ($v in $pv) { if (@($xObj2.lines) -notcontains [string]$v) { $xInvent++ } }
+    }
+  } else { $xInvent = -1 }
+  Write-Output ('      action-json projection: invented=' + $xInvent + ' blind=[' + ($xBlind -join ',') + '] lines=' +
+    $(if ($null -ne $xObj2) { @($xObj2.lines).Count } else { -1 }))
+  ST-Check 'unit (X-01): signals is a subset projection (invents nothing), every class catches its own planted line, and an unclassed line still survives in lines' (
+    $xInvent -eq 0 -and @($xBlind).Count -eq 0 -and $null -ne $xObj2 -and
+    @($xObj2.lines).Count -eq 8 -and (@($xObj2.lines) -contains $xL5))
+  # End to end on the road the caller actually drives: a real subprocess, a side-effect-free
+  # action (unmap = imgclick minus the click), and the refusal path must NOT be swallowed.
+  $xImg = Join-Path $env:TEMP ('x01unmap' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.png')
+  [System.IO.File]::WriteAllText($xImg + '.map.txt',
+    (@('origin_x=100', 'origin_y=200', 'scale=1', 'out_w=400', 'out_h=300', 'kind=rect') -join "`r`n"),
+    (New-Object System.Text.UTF8Encoding($false)))
+  $xSubOut = ''
+  $xSubCode = -1
+  try {
+    $xSubOut = (@(& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath unmap $xImg 10 20 --json 2>&1) -join "`n")
+    $xSubCode = $LASTEXITCODE
+  } catch { $xSubOut = 'THREW: ' + $_.Exception.Message }
+  $xSubObj = $null
+  try { $xSubObj = $xSubOut | ConvertFrom-Json } catch { $xSubObj = $null }
+  $xSubTop = ''
+  if ($null -ne $xSubObj) { $xSubTop = (@($xSubObj.PSObject.Properties.Name) | Sort-Object) -join ',' }
+  $xNegOut = ''
+  $xNegCode = -1
+  try {
+    $xNegOut = (@(& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath click 10 10 --to DTX-NoSuchWindow-ZZ --json 2>&1) -join "`n")
+    $xNegCode = $LASTEXITCODE
+  } catch { $xNegOut = 'THREW: ' + $_.Exception.Message }
+  Write-Output ('      action-json e2e: unmap-exit=' + $xSubCode + ' keys=[' + $xSubTop + '] refusal-exit=' + $xNegCode +
+    ' refusal-is-text=' + ($xNegOut.StartsWith('ERROR:')))
+  ST-Check 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' (
+    $xSubCode -eq 0 -and $xSubTop -ceq (Get-ActionJsonKeySet) -and
+    @($xSubObj.lines).Count -ge 1 -and [int]$xSubObj.schemaVersion -eq 3 -and "$($xSubObj.command)" -eq 'unmap' -and
+    $xNegCode -eq 1 -and $xNegOut.Contains('ERROR:') -and -not $xNegOut.Contains('"schemaVersion"'))
+  try { if (Test-Path -LiteralPath $xImg) { Remove-Item -LiteralPath $xImg -Force } } catch { }
+  try { if (Test-Path -LiteralPath ($xImg + '.map.txt')) { Remove-Item -LiteralPath ($xImg + '.map.txt') -Force } } catch { }
   # B-6 on the text side: one producer, and it must reach the outlets that were chosen - a
   # label that exists only in the JSON would be invisible to the agents that read text.
   $utNoteMark = 'Get-UntrustedContent' + 'Note'
@@ -12953,6 +13067,43 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
       if (-not $gitAnchorReady) {
         ST-Skip 'live: BOM introduction anchor (fixed blobs): parent BOM-less + child = BOM + frozen payload, sha256 pinned' 'no git binary in PATH - the anchor reads history objects, there is nothing to measure'
       } else {
+      # v3.1.0 (F-03, found by THIS round's own --live on the published tree, not by a review report):
+      # both pinned objects are PRIVATE-history anchors. A published clone is re-rooted at its own
+      # "Initial public release" commit, so `git cat-file` cannot resolve them and the case reported
+      # FAIL while comparing nothing at all. Absent tooling is already a SKIP (v3.0.1, audit #20);
+      # this narrows the other absent-input shape the same way - but ONLY for a tree that is
+      # demonstrably the published one (no internal overview beside desktop.ps1, the same signal F-01
+      # uses). In the private tree a vanished anchor is exactly the rewrite these pins exist to catch,
+      # so there it falls through to the assertions and still goes red. The skip also says out loud
+      # that no bytes were compared, so nobody can read it as a pass.
+      $anchRootDir = Split-Path -Parent $OutDir
+      $anchPublished = -not (Test-Path -LiteralPath (Join-Path $anchRootDir ("$([char]0x9879)$([char]0x76EE)$([char]0x603B)$([char]0x89C8).md")))
+      $anchMissing = @()
+      foreach ($anchOid in @('592ed7d', 'a039318')) {
+        $anchProbe = Join-Path $env:TEMP ('dtx-anchor-probe-' + [guid]::NewGuid().ToString('N') + '.txt')
+        try {
+          $apf = Start-Process -FilePath 'git' -ArgumentList 'cat-file', '-e', ($anchOid + ':desktop.ps1') -WorkingDirectory $anchRootDir -RedirectStandardOutput $anchProbe -RedirectStandardError ($anchProbe + '.err') -Wait -PassThru -NoNewWindow
+          if ($apf.ExitCode -ne 0) { $anchMissing += $anchOid }
+        } finally {
+          Remove-Item -LiteralPath $anchProbe, ($anchProbe + '.err') -Force -ErrorAction SilentlyContinue
+        }
+      }
+      $anchRootOid = 'unknown'
+      if ($anchMissing.Count -gt 0) {
+        $anchRt = Join-Path $env:TEMP ('dtx-anchor-root-' + [guid]::NewGuid().ToString('N') + '.txt')
+        try {
+          $arp = Start-Process -FilePath 'git' -ArgumentList 'rev-list', '--max-parents=0', 'HEAD' -WorkingDirectory $anchRootDir -RedirectStandardOutput $anchRt -Wait -PassThru -NoNewWindow
+          if ($arp.ExitCode -eq 0) {
+            $anchFirst = [string](Get-Content -LiteralPath $anchRt -TotalCount 1 -ErrorAction SilentlyContinue)
+            if ($anchFirst) { $anchRootOid = $anchFirst.Substring(0, [Math]::Min(12, $anchFirst.Length)) }
+          }
+        } finally {
+          Remove-Item -LiteralPath $anchRt -Force -ErrorAction SilentlyContinue
+        }
+      }
+      if ($anchPublished -and $anchMissing.Count -gt 0) {
+        ST-Skip 'live: BOM introduction anchor (fixed blobs): parent BOM-less + child = BOM + frozen payload, sha256 pinned' ('pinned objects ' + ($anchMissing -join ',') + ' are private-history anchors and this is the published tree (no internal overview beside desktop.ps1; this history roots at ' + $anchRootOid + ') - NO bytes were compared, read this as a known gap of a re-rooted clone, never as a pass')
+      } else {
       $bomOk = $false
       $bomInfo = 'not run'
       $tmpP = Join-Path $env:TEMP ('dtx-anchor-parent-' + [guid]::NewGuid().ToString('N') + '.bin')
@@ -12988,6 +13139,7 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
         Remove-Item -LiteralPath $tmpC -Force -ErrorAction SilentlyContinue
       }
       ST-Check 'live: BOM introduction anchor (fixed blobs): parent BOM-less + child = BOM + frozen payload, sha256 pinned' $bomOk
+      }
       }
     }
     # ---------- live: v1.8.0 a11y route, measured on whatever is really on screen ----------
@@ -13901,6 +14053,74 @@ $gaTimer.Start()
     ST-Check 'unit (P-04): the gate compares against Get-PasteReceiptOcclusionMax - the SAME 100%-covered anchor passes at knob=100 and refuses at the production knob (a hardcoded zero cannot pass this)' (
       ($ex5KnobPassed) -and ($ex5KnobOcrCalls -ge 1) -and ($ex5KnobErr -like '*expect refused*'))
     if (-not (($ex5KnobPassed) -and ($ex5KnobOcrCalls -ge 1) -and ($ex5KnobErr -like '*expect refused*'))) { Write-Output ("      P-04 leg4: knob100-pass=" + $ex5KnobPassed + " knob100-err=[" + $ex5KnobOpenErr + "] knob100-ocr=" + $ex5KnobOcrCalls + " prod-refused=[" + $ex5KnobErr + "] occ-calls=" + $script:ex5OccCalls) }
+    # ---------- F-02: the 7th positional argument IS the gate switch ------------------------
+    # Invoke-Expectation's LAST parameter ($anchorHandle) is the only thing that turns the v3.1.0
+    # P-04 occlusion front gate on; the body reads
+    #   if (($null -ne $anchorHandle) -and (-not $anchorHandle.Equals([IntPtr]::Zero)))
+    # so a call that forgets it does not fail, does not warn and does not refuse - it waits with
+    # the coverer free to answer the needle, which is the exact false-accept P-04 exists to stop.
+    # The pre-existing arity lint only catches TOO MANY arguments (Get-CallArgCount vs declared),
+    # so "one short" was structurally invisible. Three arities on the SAME wire, with a 100%
+    # covered anchor in place: handle -> refuse; nothing -> silently no gate (the defect);
+    # explicit [IntPtr]::Zero -> silently no gate (the documented anchor=no-target case).
+    # The behavioural half matters as much as the text count: a lint that counts arguments would
+    # still be green if the parameter did nothing at all.
+    $f2Rect5 = @{ X = 0; Y = 0; W = 100; H = 100 }
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $f2Six = $null; $f2SixErr = ''
+    try { $f2Six = Invoke-Expectation $f2Rect5 @('NEEDLE') @() $null 0.3 100 }
+    catch { $f2SixErr = "$($_.Exception.Message)" }
+    $f2SixOcc = $script:ex5OccCalls; $f2SixOcr = $script:ex5OcrCalls
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $f2ZeroErr = ''
+    try { $null = Invoke-Expectation $f2Rect5 @('NEEDLE') @() $null 0.3 100 ([IntPtr]::Zero) }
+    catch { $f2ZeroErr = "$($_.Exception.Message)" }
+    $f2ZeroOcc = $script:ex5OccCalls
+    $script:ex5OccCalls = 0; $script:ex5OcrCalls = 0
+    $f2SevenErr = ''
+    try { $null = Invoke-Expectation $f2Rect5 @('NEEDLE') @() $null 0.3 100 ([IntPtr]1) }
+    catch { $f2SevenErr = "$($_.Exception.Message)" }
+    $f2SevenOcc = $script:ex5OccCalls
+    Write-Output ('      F-02 arity behaviour: six(six-occ,ocr,err)=' + $f2SixOcc + ',' + $f2SixOcr + ',[' + $f2SixErr +
+      '] zero-occ=' + $f2ZeroOcc + ' seven-occ=' + $f2SevenOcc + ' seven-err=[' + $f2SevenErr + ']')
+    ST-Check 'unit (F-02): the anchor handle is load-bearing - same 100%-covered anchor, a handle refuses, NO handle silently skips the gate (occ-calls=0 and the needle is read off the coverer), an explicit [IntPtr]::Zero is the documented no-anchor case' (
+      ($null -ne $f2Six) -and ($f2Six.Ok) -and ($f2SixErr -eq '') -and ($f2SixOcc -eq 0) -and ($f2SixOcr -ge 1) -and
+      ($f2ZeroOcc -eq 0) -and ($f2ZeroErr -eq '') -and
+      ($f2SevenOcc -ge 1) -and ($f2SevenErr -like '*expect refused*'))
+    # The static half: every PRODUCTION call site must pass all seven (the two autoexpect/expect
+    # legs), and the declaration itself must still have seven parameters - an eighth added here
+    # without touching this check is a red, not a silent widening. Marker assembled at runtime:
+    # the scanner's own source names the function it hunts (fifth occurrence of that family).
+    $f2Mark = 'Invoke-' + 'Expectation '
+    $f2SigMark = 'function Invoke-' + 'Expectation'
+    $f2Sites = @(); $f2Offend = @(); $f2Decl = 0
+    for ($f2i = 0; $f2i -lt $codeLines.Count; $f2i++) {
+      if ($f2i -ge $j5ProdStart -and $f2i -lt $j5ProdEnd) { continue }
+      $f2l = [string]$codeLines[$f2i]
+      if ($f2l -match '^\s*#') { continue }
+      if ($f2l.StartsWith($f2SigMark)) {
+        # declared parameter count = comma-separated slots in the signature
+        $f2Decl = (("$f2l" -split ',').Count)
+        continue
+      }
+      $f2After = Get-CodeTailAfterMark $f2l $f2Mark
+      if ($null -eq $f2After) { continue }
+      $f2Sites += ($f2i + 1)
+      $f2N = Get-CallArgCount $f2After
+      if ($f2N -ne 7) { $f2Offend += ('' + ($f2i + 1) + '=' + $f2N) }
+    }
+    Write-Output ('      F-02 arity lint: sites=[' + ($f2Sites -join ',') + '] offenders=[' + ($f2Offend -join ',') + '] declared-params=' + $f2Decl)
+    ST-Check 'lint (F-02): every production Invoke-Expectation call site passes all seven arguments (a missing anchor handle is a silent gate-off, and the >=2 site floor proves the scan is looking)' (
+      @($f2Offend).Count -eq 0 -and @($f2Sites).Count -ge 2 -and $f2Decl -eq 7)
+    # Teeth for the detector itself (a text counter that always answers 7 fails nothing):
+    # the real production tail and a hand-stripped six-argument tail must read differently.
+    $f2RealTail = '$base $presentList $goneList $p.ExpectRegion $p.TimeoutSec $p.IntervalMs $exHandle'
+    $f2ShortTail = '$base $presentList $goneList $p.ExpectRegion $p.TimeoutSec $p.IntervalMs'
+    $f2ZoneTail = '$base $presentList $goneList $p.ExpectRegion $p.TimeoutSec $p.IntervalMs ([IntPtr]::Zero)'
+    Write-Output ('      F-02 counter: seven=' + (Get-CallArgCount $f2RealTail) + ' six=' + (Get-CallArgCount $f2ShortTail) +
+      ' zero-literal=' + (Get-CallArgCount $f2ZoneTail))
+    ST-Check 'unit (F-02): the arity counter reads 7 / 6 / 7 on the planted tails (a counter blind to a dropped argument would make the lint above decorative)' (
+      (Get-CallArgCount $f2RealTail) -eq 7 -and (Get-CallArgCount $f2ShortTail) -eq 6 -and (Get-CallArgCount $f2ZoneTail) -eq 7)
   } finally {
     ${function:Get-OcclusionVerdict} = $ex5OccReal
     ${function:Format-OcclusionCovering} = $ex5FocReal
@@ -14207,6 +14427,31 @@ $gaTimer.Start()
   ST-Check 'lint: the BOM introduction anchor SKIPs when there is no git binary instead of reporting the history as broken' (
     ($bomGate -ge 3) -and ($bomAnchorSkip -eq 1))
   Write-Output ("      bom-anchor gate lines=$bomGate skip-echoes=$bomAnchorSkip")
+  # v3.1.0 (F-03): that block now carries a SECOND skip shape - a private-history anchor read from a
+  # re-rooted public clone. It has to be pinned, not trusted: an unasserted skip is how this project
+  # shipped two "silently always green" cases already. The counts below are EXACT on purpose - a floor
+  # would survive deleting either half of the narrowing conjunction, and the private tree MUST still
+  # go red when its own anchors disappear. 3 = the assignment, the branch, and this file's own
+  # conjunction mark (which names the gate variable, not the full conjunction, so the conjunction
+  # count stays 1 and only the real branch can satisfy it).
+  $pubGateMark = '$anchPub' + 'lished'
+  $pubSkipMark = 'are private-history anchors and this is the ' + 'published tree'
+  $pubProbeMark = "'cat-file', '-e', (" + '$anchOid'
+  $pubConjMark = '$anchPublished -and $anchMissing' + '.Count -gt 0'
+  $pubNoBytesMark = 'NO bytes were ' + 'compared'
+  $pubGateLines = 0; $pubSkipLines = 0; $pubProbeLines = 0; $pubConjLines = 0; $pubNoBytesLines = 0
+  foreach ($ep in $srcLines) {
+    $eps = [string]$ep
+    if ($eps.Contains($pubGateMark)) { $pubGateLines++ }
+    if ($eps.Contains($pubSkipMark)) { $pubSkipLines++ }
+    if ($eps.Contains($pubProbeMark)) { $pubProbeLines++ }
+    if ($eps.Contains($pubConjMark)) { $pubConjLines++ }
+    if ($eps.Contains($pubNoBytesMark)) { $pubNoBytesLines++ }
+  }
+  ST-Check 'lint (F-03): the BOM anchor publishes a SECOND, narrowed skip (published tree AND missing private anchor), self-reports that no bytes were compared, and the private tree keeps its red' (
+    ($pubGateLines -eq 3) -and ($pubSkipLines -eq 1) -and ($pubProbeLines -eq 1) -and ($pubConjLines -eq 1) -and ($pubNoBytesLines -eq 1))
+  Write-Output ("      anchor skip shapes: gate=$pubGateLines pub-skip=$pubSkipLines presence-probe=$pubProbeLines conjunction=$pubConjLines no-bytes-disclosure=$pubNoBytesLines")
+
 
   # ---------- v3.0.1 (audit #23): the skill loader scripts carry the project guards ----------
   # The two scripts are tracked files and were written before the three-hard-guards rule
@@ -15136,7 +15381,14 @@ function Usage { Get-UsageText }
 # selftest asserts the set EXACTLY, so a key added or dropped here without that
 # bookkeeping goes red on purpose. Same technique that pins the Folded marker
 # semantics (audit R-10): the meaning is held by a test, not by a comment.
-$script:JsonSchemaVersion = 2
+# v3.1.0 (X-01) BREAKING CHANGE, declared: 2 -> 3. The ACTION family (30 commands) now emits an
+# envelope of its own, so `--json` stopped meaning "the read family's shape" and started meaning
+# "this command's published shape". The read/find key sets did not change - the version moved
+# because the CONTRACT SURFACE grew, which is what a schema version is for. History for this
+# class of change is MAJOR (the v3.0.0 B-6 note says so on record); this round ships it on the
+# Y position because the X position is the owner's to call. That conflict is registered as an
+# open adjudication item, not silently eaten.
+$script:JsonSchemaVersion = 3
 
 function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
   $occJ = $null
@@ -15158,11 +15410,111 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
 # and pinned by a selftest lint that DERIVES the real set by scanning each dispatch case body
 # for $script:Json - so this list cannot drift in either direction: neither a command that
 # honors --json goes unrefused-by-mistake, nor one that does not gets advertised.
+# v3.1.0 (X-01): the action family joins it through ONE table of its own (below), so the
+# capable set is the union - a caller asking for JSON on an action gets the action envelope.
 function Get-JsonCapableCommandSet {
-  return @('chrome-tabs', 'color-at', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'wait-stable', 'wins')
+  return (@('chrome-tabs', 'color-at', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
+    'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'wait-stable', 'wins') +
+    @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
+
+# ---------- v3.1.0 (X-01): ONE machine-readable outlet for the action family ----------
+# Why it was missing: --json was built for the READ family, where the bulk (lines, hits, rects)
+# is the product. For an action the product is the SENTENCE about what happened - `hit-window:`
+# says who the click landed on, `foreground after send:` says who held the keyboard afterwards,
+# `occluded=` says whether the verifier read the target or its coverer. This repo's own hard
+# rule (README pit 27 / spec 14) is that those lines must never be grepped away, yet until now
+# the ONLY way a caller could compress an action's output was to grep. So the envelope does NOT
+# replace the text: it CARRIES it verbatim in `lines` and adds `signals`, a projection that
+# names each class separately. A projection that could invent content would be worse than the
+# text, so selftest asserts every signals entry is byte-identical to a member of `lines`.
+# CLOSED TABLE, on purpose. selftest derives the act/text/clipboard command names from the help
+# page and requires the two sets to be EQUAL: add an action command without entering it here =
+# red, enter a name with no help entry = red. (Same shape as the v3.0.0 S-2 phantom check.)
+# BREAKING CHANGE, declared: the top-level key set below is new, so $script:JsonSchemaVersion
+# moved 2 -> 3 in THIS commit together with the README contract lines and the pinned key-set
+# checks. Note for the owner: a key-set change has always been MAJOR here (v3.0.0 B-6 comment is
+# on record saying so); this round ships it on the Y position because the X position is the
+# owner's to call, and that conflict is registered as an open adjudication, not silently eaten.
+function Get-ActionJsonCommandSet {
+  return @('click', 'copy-file', 'dialog-cancel', 'drag', 'drag-to', 'dblclick',
+    'find-click', 'focus', 'hover', 'imgclick', 'keys', 'menu-pick', 'move', 'open-and-pick',
+    'paste', 'paste-file', 'press-down', 'press-up', 'rclick', 'relclick', 'type', 'type-in',
+    'unmap', 'wheel', 'win-close', 'win-max', 'win-min', 'win-move', 'win-restore', 'win-resize')
+}
+function Test-ActionJsonCommand([string]$cmd) { return (@(Get-ActionJsonCommandSet) -contains $cmd) }
+
+# The help page is the authority on which commands ARE the action family: it already groups them
+# (act / text / clipboard) and its parser already refuses to read an option list as a command.
+# Pure over lines so this is an OFFLINE assertion, and selftest compares it to the table above
+# for equality - that is what makes the table closed in both directions.
+function Get-ActionFamilyHelpGroups { return @('act', 'text', 'clipboard') }
+function Get-ActionFamilyCommandsFromHelp([string[]]$usageLines) {
+  $group = ''
+  $found = New-Object System.Collections.ArrayList
+  foreach ($l in @($usageLines)) {
+    $s = [string]$l
+    if ($s -match '^  ([a-z][a-z0-9-]*)([^a-z0-9-]|$)') {
+      if ($s -match '^  ([a-z][a-z0-9-]*)[ ]*(\[|=)') {
+        # a page-level entry (selftest [--live] = ...) - a command, not a header
+        if (@(Get-ActionFamilyHelpGroups) -contains $group) { [void]$found.Add($Matches[1]) }
+        continue
+      }
+      $group = $Matches[1]
+      continue
+    }
+    if ($s -match '^    [a-z]') {
+      if (@(Get-ActionFamilyHelpGroups) -contains $group) {
+        foreach ($n in @(Get-HelpEntryNames $s)) { [void]$found.Add($n) }
+      }
+    }
+  }
+  return @($found | Sort-Object -Unique)
+}
+
+# ONE producer for the signal classes and the regexes that recognise them. The projection is
+# defined here and nowhere else, so `signals` can never carry a class the text outlet does not
+# emit, and the key set of the `signals` object is derived from this map (not hand-copied).
+# WHY every literal below is split and concatenated: this map describes lines that OTHER lints
+# in this file count. Written as plain literals, 'accepted on receipt=' became a second hit for
+# the receipt-announcement wiring lint and turned it red on the first run (the same
+# scanner-reads-its-own-source family this round already recorded three times: $cpPixelHash, the
+# paste-shape counter, and the help-promise scan). Splitting the literal keeps the RUNTIME string
+# identical - which the unit check below proves by matching eight planted lines.
+function Get-ActionJsonSignalPatterns {
+  $m = [ordered]@{}
+  $m['hitWindow'] = ('hit-' + 'window:')
+  $m['foreground'] = ('foreground ' + 'after send')
+  $m['occluded'] = ('occluded' + '=' + '|OCCLUDED' + '|\[occ:')
+  $m['receipt'] = ('receipt-' + 'tried=' + '|accepted on ' + 'receipt=' + '|read' + 'back=')
+  $m['guard'] = ('content ' + 'guard|landing ' + 'guard|expectation ' + 'anchor|foreground ' + 'guard')
+  $m['expect'] = ('expect ' + 'refused|expectation ' + 'NOT met|\+ ' + 'verified|clicked OK ' + 'but')
+  $m['warning'] = ('^WARN' + 'ING')
+  $m['notice'] = ('^NOT' + 'ICE')
+  return $m
+}
+function Get-ActionJsonSignalKeySet {
+  return (@(@(Get-ActionJsonSignalPatterns).Keys) | Sort-Object) -join ','
+}
+function Get-ActionJsonKeySet {
+  return (@('schemaVersion', 'command', 'lines', 'signals') | Sort-Object) -join ','
+}
+# The single emission point. Returns ONE compressed JSON string; the caller at the process
+# boundary decides whether to print it or --dump it. It never throws and never drops a line:
+# `lines` is the complete text output, `signals` is a pure subset projection of it.
+function Format-ActionJsonEnvelope([string]$cmd, $lines) {
+  $ls = @(@($lines) | ForEach-Object { [string]"$_" })
+  $pats = Get-ActionJsonSignalPatterns
+  $sig = [ordered]@{}
+  foreach ($k in @($pats.Keys)) {
+    $pat = [string]$pats[$k]
+    $sel = @($ls | Where-Object { $_ -match $pat })
+    $sig[$k] = @($sel)
+  }
+  $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; command = $cmd; lines = $ls; signals = [pscustomobject]$sig }
+  return ([pscustomobject]$map | ConvertTo-Json -Compress -Depth 4)
+}
 
 # v3.0.0 (B-6, borrowed from the built-in page tool, which puts this in its own tool
 # description): everything this tool READS is content produced by some other application -
@@ -18931,16 +19283,31 @@ try {
   # machine consumer reads the key instead). Under --dump the label goes INTO the file,
   # because the file is the thing that will be re-read later without its context.
   $needTrustNote = (Test-UntrustedTextCommand $Cmd) -and (-not $script:Json)
+  # v3.1.0 (X-01): the action family has ONE json outlet, and it is HERE, not inside the cases.
+  # Reason for the placement: an action command emits its verdicts from eight different helpers
+  # (hit-window, content guard, landing guard, foreground guard, expectation anchor, occlusion
+  # gate, paste receipt, post-send popup). Teaching every case to build an object is how the
+  # read family got three copies of one key set and two live checks sat red unseen for two
+  # rounds (v3.0.0 B-6). Capturing at the boundary means the envelope CANNOT disagree with the
+  # text: `lines` is literally the text that would have been printed.
+  # A refused action still takes the catch path below (`ERROR: ...` + exit 1) - the entry
+  # contract is untouched, and selftest pins that the envelope never swallows a refusal.
+  $actJson = $script:Json -and (Test-ActionJsonCommand $Cmd)
   if ($script:DumpPath) {
     # Captured, not piped: the whole point of --dump is that the bulk never reaches the
     # caller's context. stderr (cost self-reports, WARN lines the command writes there) is
     # NOT captured and still goes to the terminal as it always did.
     $produced = @(& { Invoke-DesktopCommand $Cmd $Rest })
-    if ($needTrustNote) { $produced = @($produced) + (Get-UntrustedContentNote) }
+    if ($actJson) { $produced = @(Format-ActionJsonEnvelope $Cmd $produced) }
+    elseif ($needTrustNote) { $produced = @($produced) + (Get-UntrustedContentNote) }
     Emit-DumpOutput $produced $script:DumpPath $Cmd
   } else {
-    Invoke-DesktopCommand $Cmd $Rest
-    if ($needTrustNote) { Write-Output (Get-UntrustedContentNote) }
+    if ($actJson) {
+      Write-Output (Format-ActionJsonEnvelope $Cmd @(& { Invoke-DesktopCommand $Cmd $Rest }))
+    } else {
+      Invoke-DesktopCommand $Cmd $Rest
+      if ($needTrustNote) { Write-Output (Get-UntrustedContentNote) }
+    }
   }
   exit 0
 } catch {

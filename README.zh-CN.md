@@ -4,7 +4,7 @@
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=803%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=814%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -228,6 +228,17 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 
 `win`/`rect`/`shot`/`find-text`/OCR 各条路都在目标矩形上采一个 5×5 的 `WindowFromPoint` 网格（**不是**矩形重叠，所以全屏点击穿透层和 `Program Manager` 不会被算成覆盖者），打印 `scan=<角色> rect=(x,y,WxH) occluded=N% coveredBy=pid '标题'`，并在 stderr 把**每一个**覆盖者都单独列一行。守卫类与 `assert-*` 在被遮挡时**拒绝**执行；纯读取不因遮挡失败（要找的东西也许正在可见部分）。开关：`--occlude off|warn|strict`、`--occlude-grid n`、`--allow-occluded`。
 
+### `--json` 信封（每条命令都有，动作族也算）
+
+v3.1.0 起 `--json` 不再是只读命令的待遇：`act` / `text` / `clipboard` 三组共 30 条动作命令全部接受它。它**不替换**人读输出，而是把人读输出**整包含进去**：
+
+```text
+{"schemaVersion":3,"command":"click","lines":["activated=no (was fg)","sent keys '{F5}', target pid=33316 title='…'"],"signals":{"hitWindow":[…],"foreground":[…]}}
+```
+
+`lines` 就是普通跑法本来会打印的那些文字——一行一个字符串，一行不删、一字不改；`signals` 是这些行的**按类投影**，八类各自成组（`hitWindow`、`foreground`、`occluded`、`receipt`、`guard`、`expect`、`warning`、`notice`）。判据断言投影不许发明内容（`signals` 里每一项都必须原样出现在 `lines` 中），也断言一条不属于任何类的行仍然留在 `lines` 里。做这一族的理由就是本仓操作规则里明写"绝不许 grep 掉"的那两行——`hit-window:` 与 `foreground after send`：在此之前，想压缩动作输出只有 grep 一条路，而一次点错窗口的点击正是这样被读成成功的。现在机器拿结构化字段，证据不必被剪掉。**被拒绝**的动作不做包装：守卫拦下时仍旧打印 `ERROR: …` 并 exit 1，一份形状正确的 JSON 藏不住一次拒绝。`schemaVersion` 从 2 升到 3，对钉住键集的调用方是破坏性变更。信封只有一个生产者、两处发射点（stdout 与 `--dump`），由一条 lint 钉死——v3.0.0 的读族键集被抄了三份，那正是两条 live 判据连着两轮红了却没人看见的原因。
+
+
 ### 界面自动化（仅当应用暴露了无障碍树）
 
 | 命令 | 作用 |
@@ -307,6 +318,7 @@ CDP 通道只与 `127.0.0.1` 通信；`0.0.0.0`、局域网地址、裸端口、
 13. **整窗读文本可能读到秘密。** 实测对聊天窗口做整窗 `read-text`，读数里带出过含会话 key 的支付 URL。请用 `--max-lines` / `--filter` 收窄，也不要记录你不必记录的原文。
 14. **`selftest --live` 会真动桌面。** 它创建并关闭自己的 `DTX-*` 夹具窗口；只在没有别的东西需要前台时运行。另外：夹具进程仍是 System-aware DPI，而工具进程是 Per-Monitor V2 —— 单屏无影响，混合 DPI 多屏下夹具可能落偏。
 15. **按键是物理输入** —— agent 在驱动时人不要碰鼠标键盘；agent 在做不可逆动作（发消息、删除）之前必须先用截图确认目标窗口。
+16. **`selftest --live` 必须从**路径不含空格**的目录里跑。** live 套件用 `Start-Process -ArgumentList` 起它的辅助子进程，而这个 API **不会**给含空的值加引号——于是 `-File D:\My Tools\desktop.ps1` 到子进程手里被从空格处截断，子进程静默地什么都没跑（本机实测：不加引号 `exit=-196608`，PowerShell 抱怨 `…\Temp\qt` 不是 `.ps1`；加引号 `exit=0`）。**工具本身不受影响**——调用方自己给 `-File` 参数加引号，任何路径都正常；坏的是测试装置，它会报出 `pressed-by-child=False` 这类与代码无关的红。把所有起子进程的地方补上引号已单独立为一轮。在那之前，请从不含空格的目录跑套件，否则这样的红要读成装置问题，不是回归。
 
 ## 截图坐标系（读一次，少踩所有脱靶）
 

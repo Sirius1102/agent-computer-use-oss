@@ -4,7 +4,7 @@
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=803%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=814%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -236,6 +236,16 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 
 `win`/`rect`/`shot`/`find-text`/OCR roads sample a 5×5 hit-test grid (`WindowFromPoint`, not rectangle overlap, so click-through full-screen overlays and `Program Manager` never count as coverers) and print `scan=<role> rect=(x,y,WxH) occluded=N% coveredBy=pid 'title'`, plus a stderr warning naming **every** coverer. Guard and `assert-*` commands **refuse** when occluded; plain reads never fail on occlusion (the needle may sit in the visible part). Switches: `--occlude off|warn|strict`, `--occlude-grid n`, `--allow-occluded`.
 
+### `--json` envelope (every command, including the action family)
+
+`--json` is no longer a read-only affordance: as of v3.1.0 the whole action family — the 30 `act` / `text` / `clipboard` commands — accepts it too. It does **not** replace the human-readable output, it *contains* it:
+
+```json
+{"schemaVersion":3,"command":"click","lines":["activated=no (was fg)","sent keys '{F5}', target pid=33316 title='…'"],"signals":{"hitWindow":[…],"foreground":[…]}}
+```
+
+`lines` is exactly the text the plain run would have printed — one string per line, nothing trimmed, nothing reworded. `signals` is a **projection of those lines** into eight classes (`hitWindow`, `foreground`, `occluded`, `receipt`, `guard`, `expect`, `warning`, `notice`); a check asserts the projection invents nothing (every signal must appear verbatim in `lines`) and that a line belonging to no class still survives. The reason this exists is the two lines this README's own operator rules say never to grep away — `hit-window:` and `foreground after send`: before, compacting action output meant grepping, and grepping is how a click that landed in the wrong window read as success. Now a machine can take the structured fields without the evidence being cut. A **refused** action is never wrapped: guards still print `ERROR: …` and exit 1, so JSON cannot hide a refusal behind a well-shaped payload. `schemaVersion` moves 2 → 3, which is breaking for anyone pinning the key set. The envelope has a single producer and two emission points (stdout and `--dump`), enforced by a lint — the read family's key set had been copied three times in v3.0.0, and that is what let two live checks stay red for two releases with nobody seeing them.
+
 ### ui automation (only if the app exposes its accessibility tree)
 
 | command | what it does |
@@ -315,6 +325,7 @@ Guessing a point off a fitted or downscaled screenshot is not step 5 and is not 
 13. **Reading a whole chat window can surface secrets.** A `read-text` over a full messaging window has been observed to return a payment URL carrying a session key. Use `--max-lines`/`--filter`, and never log raw payloads you did not have to log.
 14. **`selftest --live` touches the real desktop.** It creates and closes its own `DTX-*` fixture windows; run it only when nothing else needs the foreground, and note that the fixture processes keep System-aware DPI while the tool process opts into Per-Monitor V2 (harmless on one monitor; on mixed-DPI multi-monitor a fixture can land offset).
 15. **Keystrokes are physical input** — the user should not touch mouse/keyboard while an agent drives, and an agent should confirm the target window from a screenshot before irreversible actions (sending messages, deleting things).
+16. **`selftest --live` needs to be run from a directory whose path contains no spaces.** The live suite spawns its helper processes with `Start-Process -ArgumentList`, and that API does **not** quote a value containing a space — so a `-File` path such as `D:\My Tools\desktop.ps1` arrives at the child cut in half, and the child silently never runs (measured on this machine: unquoted `exit=-196608` with PowerShell complaining that `…\Temp\qt` is not a `.ps1`, quoted `exit=0`). **The tool itself is unaffected** — a caller who quotes their own `-File` argument works normally in any path; what breaks is the test harness, which then reports legs like `pressed-by-child=False` that are not the code's fault. Quoting every launch site is queued as its own round. Until then, run the suite from a space-free path, or read such a red as the harness, not as a regression.
 
 ## Screenshot coordinate system (read once, saves misclicks)
 
