@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.1.2 - 2026-10-07
+
+Closes a live self-test check that had been intermittently red for four releases. **No threshold,
+tolerance, expectation or fixture window geometry was changed** - the fix is to what the fixture
+paints, not to how the tool judges.
+
+Two independent causes were measured:
+
+1. **The needle's alphabet.** The failing check's log line (`lines 1->6`) had been read for four
+   rounds as "the last line was not painted". Dumping the tool's own OCR of the same window showed
+   the line is present every time - what failed was the *character* comparison. Windows OCR reads
+   the digit one as the letter capital-I (and once as a lowercase L) and inserts a space, so a
+   synthetic tail like `PREFIX` followed by random digits cannot be a verbatim anchor. This is the
+   `0/O/1/I/l` confuseable set.
+2. **The needle's length.** The old tail appended an unbounded random integer, so the tail was
+   12-21 characters and the whole payload 196-205 bytes - it could fall **below the fold threshold
+   of 200**, in which case the folding leg is asked to produce a verbatim read it can never get.
+   This had nothing to do with OCR and had not been recorded before.
+
+A hypothesis that turned out to be wrong is also recorded here, because it was tried first: switching
+the tail to CJK (the conclusion this repository already holds for *synthetic bitmap* OCR) made the
+check fail **5 times out of 5** in the same three-window context - that lesson does not transfer to
+live screen OCR. Keeping the existing wrapping and only removing the confuseable characters gave
+4/4, and two non-wrapping shapes also gave 4/4, so wrapping was not the variable. A same-session A/B
+against the same context measured old-tail 4/6 versus new-tail 6/6.
+
+The tail is now a fixed 20 characters drawn from an alphabet with no `0/O/1/I/l`, so the payload is
+always 204 bytes, and three guards throw inside the block's own `try` if the tail ever re-enters the
+confuseable set, changes length, or drops the payload below the fold threshold. Check count is
+unchanged. Measured after the change: a full live round is 931 passed / 0 failed / 1 skipped, and the
+previously flaky leg now resolves on its **first** poll (0.1s) instead of polling out its 6-second
+patience and degrading to a weaker receipt.
+
 ## v4.1.1 - 2026-10-07
 
 Two fixes from the second external review round, plus one the maintainer's agent caught in its own

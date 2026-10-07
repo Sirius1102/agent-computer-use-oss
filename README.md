@@ -1,4 +1,4 @@
-# Agent Computer Use (Open Source Edition) v4.1.1
+# Agent Computer Use (Open Source Edition) v4.1.2
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)

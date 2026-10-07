@@ -1,4 +1,4 @@
-# Agent Computer Use 开源版 v4.1.1
+# Agent Computer Use 开源版 v4.1.2
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)

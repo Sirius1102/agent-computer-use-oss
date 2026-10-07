@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 4.1.1  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 4.1.2  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -13478,8 +13478,31 @@ $f.Add_Shown({ [void]$tb.Focus() })
       [System.IO.File]::WriteAllText($nfScript, $nfSrc, (New-Object System.Text.UTF8Encoding($false)))
       [System.IO.File]::WriteAllText($shScript, $shSrc, (New-Object System.Text.UTF8Encoding($false)))
       # >= fold-threshold chars, one distinctive final line the fold fixture will eat.
-      $frTail = 'DTXFOLDTAIL' + (Get-Random)
+      # v4.1.2 (owner ruling 2026-10-07: fix the fixture, touch no threshold). Two independent
+      # flakiness sources were measured in the old construction 'DTXFOLDTAIL' + (Get-Random):
+      #  (1) ALPHABET. The tail row is always painted and always OCR'd - the CHARACTER match is
+      #      what fails. Measured mis-reads on this machine: 'DTXFOLDTAIL1752305831' came back as
+      #      'DTXFOLDTAILI 752305831' (digit 1 read as the letter I, plus an inserted space) and
+      #      'DTXFOLDTAIL1416373754' as 'DTXFOLDTAlL1416373754'. That is the 0/O/1/I/l confuseable
+      #      set. Same-session A/B in this very three-fixture context: old tail 4/6 verbatim
+      #      (2 accepted on a receipt), new tail 6/6, and 12/12 across three payload shapes.
+      #  (2) LENGTH. Get-Random returns 1-10 digits, so the tail was 12-21 chars and the payload
+      #      196-205 bytes - it could fall BELOW the 200-char fold threshold, which would make the
+      #      FOLD leg demand a verbatim read it can never get. The tail is now fixed at 20 chars,
+      #      so the payload is always 204: above the threshold by a stated margin, and still inside
+      #      the 24-char autoexpect cap.
+      # The value stays unique per run, so a stale anchor still cannot satisfy the check.
+      $frTailAlpha = '23456789'
+      $frTailDigits = ''
+      for ($frI = 0; $frI -lt 12; $frI++) { $frTailDigits += $frTailAlpha[(Get-Random -Maximum $frTailAlpha.Length)] }
+      $frTail = 'DTXCHECK' + $frTailDigits
       $frBody = ('A' * 90) + "`r`n" + ('B' * 90) + "`r`n" + $frTail
+      # Two guards, so neither cause can come back silently. They throw INSIDE the block's own
+      # try, which the existing setup check turns into a FAIL - not into a passing run that quietly
+      # measures something else.
+      if ($frTail -match '[01OIl]') { throw "fold fixture tail left the confuseable-free alphabet: $frTail" }
+      if ($frTail.Length -ne 20) { throw "fold fixture tail must be exactly 20 chars (autoexpect cap is 24, payload floor is the fold threshold): got $frTail.Length" }
+      if ($frBody.Length -lt (Get-PasteFoldThreshold)) { throw "fold fixture payload ($($frBody.Length) chars) is below fold-threshold ($(Get-PasteFoldThreshold)) - the fold leg could not fold: $frTail" }
       [System.IO.File]::WriteAllText($frPayload, $frBody, (New-Object System.Text.UTF8Encoding($false)))
       $frProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $frScript -PassThru
       $nfProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $nfScript -PassThru
@@ -14689,7 +14712,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.1.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.1.2 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
