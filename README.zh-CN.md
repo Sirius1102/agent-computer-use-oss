@@ -1,12 +1,14 @@
-# Agent Computer Use 开源版 v4.1.2
+# Agent Computer Use 开源版 v4.1.4
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=817%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=829%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
+
+> 第一次使用请先读本页的[快速上手](#快速上手)。开局先 `wins`，陌生目标先截图或定位；不要猜坐标，每次动作后都回读结果。
 
 `desktop.ps1` 给 agent 提供 "computer use" 的四件基本能力：**看**（整屏 / 窗口 / 区域的截图，外加 OCR）、**指**（在真实像素坐标上移动 / 点击 / 滚动 / 拖拽）、**打字**（键盘、剪贴板、以及直接走 UIA 写值）、**读界面树**（UI Automation，另有一条 Chrome DevTools 通道）。没有常驻进程、没有安装器、没有第三方依赖——每条命令都是一次短命的 `powershell -File` 调用，所以整套东西可审计、也很难进入卡死状态。上面的 badge 只是文档图片，不是要装的东西：除了这一个文件，没有任何可安装项。
 
@@ -89,6 +91,10 @@ flowchart LR
 
 ## 快速上手
 
+首次操作固定走这条链：`wins` → `info` / `win` 截图 → `find` / `uia-find` / `find-text` 定位 → 点击或输入 → `read-text` / 截图回读。截图不是最后才补的证据：第一次接触陌生应用、目标窗口不明确、文字太小、或动作后状态不确定时，都应主动调用截图。
+
+定位按可靠性降级：`find` → `uia-find` → `find-text` / `find-click` → `imgclick`。不要从缩放截图肉眼猜坐标；图片里的点必须通过同一张图旁边的 `.map.txt` 配合 `imgclick` 或 `unmap` 回映射。
+
 ```powershell
 # 现在屏幕上有什么？
 powershell -ExecutionPolicy Bypass -File desktop.ps1 wins
@@ -97,7 +103,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 wins
 powershell -ExecutionPolicy Bypass -File desktop.ps1 win notepad shot.png
 
 # 这段文字在哪（屏幕像素）？先 UIA 再 OCR，并说明是哪条路答的话
-powershell -ExecutionPolicy Bypass -File desktop.ps1 find "文件" --to notepad
+powershell -ExecutionPolicy Bypass -File desktop.ps1 find "文件" --target notepad
 
 # 在绝对屏幕坐标点击
 powershell -ExecutionPolicy Bypass -File desktop.ps1 click 800 500
@@ -111,6 +117,10 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste --to notepad .\sample
 # 往聊天类应用发文件：文件进剪贴板（FileDrop）+ Ctrl+V
 powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWindow" C:\path\to\file.zip
 ```
+
+中文输入优先用 `type` / `type-in`；它们直接发送 Unicode 字符，在微信输入法等中文 IME 激活时也能写入最终文本。能走 UIA 的输入框优先 `uia-settext`，长文本或包含复杂 shell 字符时用 UTF-8 文件配合 `paste`。`keys` 适合 Ctrl、Esc 等组合键，不要用它发送中文正文。上述路径不等于自动代替输入法操作拼音候选、表情面板或候选词选择；这类界面仍需先截图，再定位候选项并回读结果。
+
+操作后不要只看退出码：用 `read-text`、`find-text`、`assert-text` 或再次 `win` 截图确认业务结果。`REFUSED`、遮挡提示或 OCR 0 命中时先读完整回显，再按它给出的替代路线处理。
 
 `help <命令>` 打印单条命令的说明（旗标、语义、版本注记）；`help --<旗标>` 打印提到该旗标的每一行。
 

@@ -1,12 +1,14 @@
-# Agent Computer Use (Open Source Edition) v4.1.2
+# Agent Computer Use (Open Source Edition) v4.1.4
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=817%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=829%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
+
+> First use? Start with [Quick start](#quick-start). Run `wins` first, capture or locate unfamiliar targets, never guess coordinates, and read the result back after every action.
 
 `desktop.ps1` gives an agent the four primitives of "computer use": **see** (screenshots of screen/window/region, plus OCR), **point** (move/click/scroll/drag at real pixel coordinates), **type** (keyboard, clipboard, and direct UIA value-setting), and **read the UI tree** (UI Automation, plus a Chrome DevTools route). No daemon, no installer, no third-party dependencies — every command is one short-lived `powershell -File` invocation, so the whole tool is trivially auditable and hard to get into a stuck state. The badges above are documentation images, not packages: there is nothing to install beyond the one file.
 
@@ -97,6 +99,10 @@ design, but they are still refusals.
 
 ## Quick start
 
+For a first operation, use this chain: `wins` → `info` / `win` screenshot → `find` / `uia-find` / `find-text` locator → click or type → `read-text` / screenshot readback. Screenshots are part of observation, not a last resort: call them when an app is unfamiliar, the target window is unclear, text is small, or the post-action state is uncertain.
+
+Use the locator ladder in this order: `find` → `uia-find` → `find-text` / `find-click` → `imgclick`. Never eyeball coordinates from a fitted screenshot; a pixel seen in a saved image must go through that image's `.map.txt` with `imgclick` or `unmap`.
+
 ```powershell
 # what's on screen?
 powershell -ExecutionPolicy Bypass -File desktop.ps1 wins
@@ -105,7 +111,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 wins
 powershell -ExecutionPolicy Bypass -File desktop.ps1 win notepad shot.png
 
 # where is this text, in screen pixels? (UIA first, OCR second, says which answered)
-powershell -ExecutionPolicy Bypass -File desktop.ps1 find "File" --to notepad
+powershell -ExecutionPolicy Bypass -File desktop.ps1 find "File" --target notepad
 
 # click at absolute screen coordinates
 powershell -ExecutionPolicy Bypass -File desktop.ps1 click 800 500
@@ -119,6 +125,10 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste --to notepad .\sample
 # send a file to a chat app: file on the clipboard as a file drop, then Ctrl+V
 powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWindow" C:\path\to\file.zip
 ```
+
+For Chinese final text, prefer `type` / `type-in`: they send Unicode characters directly and work while a Chinese IME such as WeChat Input Method is active. Prefer `uia-settext` for a writable UIA field; use `paste` with a UTF-8 file for long text or shell-sensitive content. Use `keys` for combinations such as Ctrl or Esc, not for Chinese prose. This does not automate pinyin candidate selection, emoji panels, or IME candidate windows; those still require a screenshot, a locator, and a readback.
+
+After an action, do not treat exit code 0 as the business result. Use `read-text`, `find-text`, `assert-text`, or another `win` screenshot. When a command says `REFUSED`, reports occlusion, or returns zero OCR hits, read the full evidence and follow its suggested fallback road.
 
 `help <command>` prints one command's entry (flags, semantics, version notes); `help --<flag>` prints every line that mentions a flag.
 

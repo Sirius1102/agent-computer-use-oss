@@ -2,6 +2,67 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.1.4 - 2026-10-09
+
+Documents the first-use workflow for agents that drive the desktop. The tool's command semantics and
+guards are unchanged in this release.
+
+- The English and Chinese Quick start sections now require the same observable chain: `wins` →
+  `info`/`win` screenshot → locator → action → readback.
+- Screenshot-first observation, the locator ladder (`find` → `uia-find` → `find-text`/`find-click` →
+  `imgclick`), `.map.txt` mapping, and refusal/zero-hit handling are stated at the entry point.
+- Chinese final text is documented as compatible with an active Chinese IME, including WeChat Input
+  Method: prefer `type`/`type-in`, `uia-settext`, or UTF-8-file `paste`; `keys` remains for combinations,
+  not Chinese prose. IME candidate selection itself is outside the tool's automation contract.
+- The loadable skill now points new agents to the public Quick start before they act.
+- In `--json` action mode, mouse-watchdog warnings now stay on stderr so stdout remains one
+  parseable JSON envelope; ordinary text mode keeps the warning on stdout.
+
+## v4.1.3 - 2026-10-07
+
+Makes the offline gate honest about what it could not measure. **No threshold, tolerance or
+expectation was loosened** - the change is to what the gate reports when a capability is missing.
+
+Before this release the declared check total held on exactly one machine. Measured on the same box,
+same build, four contexts gave four different numbers - 825 (PowerShell 5.1, normal PATH), 794
+(PowerShell 7), 813 (5.1 with a PATH missing `System32`), 792 (7 with that PATH) - and three of them
+were red. The cause was not that checks failed: **whole blocks of checks stopped emitting**. A region
+guarded by "is a recognizer reachable?" held nineteen checks in its `else` branch and emitted one skip
+in its `if` branch, so eighteen checks vanished without a trace; three more sat behind a parent
+precondition; three pure unit checks were accidentally parked inside a repository-checkout guard.
+
+- A block that cannot run now **accounts for itself**: its check names are read back out of this
+  file's own source between two markers, and the skip side emits one `SKIP` per name. No hand-maintained
+  list, so a check added inside a region cannot be forgotten by the skip side. A reconciliation check
+  runs in both branches and compares the names the region *declares* against the names it *emitted*.
+- Subprocess-backed checks now probe for `powershell.exe` first and skip with a reason when it is not
+  resolvable - the same treatment the git-backed anchors already gave, which the file contradicted itself about.
+- One check asserted a Windows PowerShell 5.1 behaviour (`ConvertFrom-Json` folding an array) as if it
+  were a language fact, so it was structurally red on PowerShell 7. It is now pinned per engine, with
+  the measured value self-reported, and the engine-independent half asserted separately.
+- The skill loader's command list is treated as an outward contract: every command name it teaches must
+  exist as a dispatcher case in the tree that ships it.
+- A bare `Write-Output 'SKIP  ...'` line that looked like a check result but was never counted is now a
+  real skip, and nothing outside the two emitters may print an outcome prefix.
+
+**Two defects found while doing this, both ours:**
+
+1. The end-to-end `--json` checks merged the child's error stream into its stdout and then parsed it as
+   JSON - so any legitimate warning (`released a button left down by a previous run`) made the check red
+   while the tool was correct. Two sites had the same shape; the second was caught only by a confirming
+   run after the first was already believed finished. The parsed legs now read the success stream only.
+2. An inventory lint compared the documented file count against `git ls-files`, which answers from the
+   **index** - so thirteen files deleted from a working tree went completely unnoticed by every gate.
+   Two new checks require every tracked name to exist on disk, with a planted absent name proving the
+   predicate bites.
+
+After: all four contexts report the **same total, zero failures**. The comment above the total has
+claimed that property since v2.5.4; it is now the first release where it is actually true.
+
+Known limits: the live ladder was not run in this release, so the shared counter and recording hooks are
+verified only across the four offline contexts. The reconciliation catches "declared but not emitted";
+it does not catch "deleted wholesale", which only the declared total can see.
+
 ## v4.1.2 - 2026-10-07
 
 Closes a live self-test check that had been intermittently red for four releases. **No threshold,

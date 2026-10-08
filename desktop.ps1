@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident state: stateless by design (reproducible, crash leaves no residue, no
 # daemon surface to attack or orphan). Long chains batch in-process via `script`.
-# version: 4.1.2  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
+# version: 4.1.4  (version sync list: this header, the Usage banner, README.md H1, README.zh-CN.md H1, CHANGELOG.md latest entry)
 #
 # Single-file tool: no installer, no config file, no resident process. The
 # repository root is wherever you cloned it; runtime output goes to shots\.
@@ -38,8 +38,16 @@ Set-StrictMode -Version Latest
 # the discipline; the value is just what it happens to be equal to right now.
 # Placed after param() because PowerShell allows only comments before it (measured: an
 # assignment up there is a parse error for the whole file).
-# Sync list: this line and the iteration-log entry. It is NOT a version number.
-$script:DeclaredCheckTotal = 817
+# Sync list: this line and the CHANGELOG entry for the release. It is NOT a version number.
+# v4.1.3: the number also carries WHERE it was obtained, because without that a changed
+# environment is indistinguishable from a lost check. Measured on Windows 11 in four
+# contexts - PowerShell 5.1 and PowerShell 7, each with a normal PATH and with a PATH
+# missing System32 / WindowsPowerShell / git. The recognizer was reachable from 5.1 and not
+# from 7, which is the axis that used to move the total; all four contexts now print this
+# same number. If a run reports a different one, this tree gained or lost a check - it is
+# not your machine. (Verified on the private build tree; the published tree was checked in
+# the 5.1/normal-PATH context only.)
+$script:DeclaredCheckTotal = 829
 
 # Emit stdout as UTF-8 (no BOM) so CJK window titles survive being piped to
 # other processes when invoked via powershell -File. Wrapped in try/catch
@@ -5895,6 +5903,7 @@ function Uia-SettableValue($el) {
 # same shape). The lint below forbids that call shape for every comma-returning
 # helper, discovered dynamically so a new helper is covered automatically.
 function ST-Check([string]$name, [bool]$ok) {
+  if ($null -ne $script:StRecord) { [void]$script:StRecord.Add($name) }
   if ($ok) {
     $script:StPass++
     if ($null -ne $script:StPassLines) { [void]$script:StPassLines.Add("PASS  $name") }
@@ -5908,6 +5917,7 @@ function ST-Check([string]$name, [bool]$ok) {
 # It shows up in the summary as skipped - never silently absorbed into passed.
 function ST-Skip([string]$name, [string]$reason) {
   $script:StSkip++
+  if ($null -ne $script:StRecord) { [void]$script:StRecord.Add($name) }
   Write-Output "SKIP  $name - $reason"
 }
 
@@ -5923,6 +5933,69 @@ function Get-BadgeCheckTotal([int]$Passed, [int]$Failed, [int]$Skipped) {
   return $Passed + $Failed + $Skipped + 1
 }
 
+# v4.1.3 (external review A/B): a block of checks that cannot run in THIS context used
+# to vanish from the count instead of reporting itself, so the offline total measured
+# the machine (recognizer reachable, PATH shape, engine) rather than the product - and
+# the declared total could only ever agree on one box. The fix is structural: the check
+# names inside a marked region are read back out of this file's own source, and the
+# cannot-run branch emits one SKIP per name. No hand-maintained list, so a check added
+# inside a region cannot be forgotten by the skip side, and ST-ReconcileRegion proves the
+# two agree on every machine - including the ones where the region really does run.
+function Get-RegionCheckNames {
+  param([string[]]$Lines, [string]$Tag)
+  $rgBegin = -1
+  $rgEnd = -1
+  for ($i = 0; $i -lt $Lines.Count; $i++) {
+    if ($rgBegin -lt 0) {
+      if ($Lines[$i].Contains('REGION-BEGIN ' + $Tag)) { $rgBegin = $i }
+      continue
+    }
+    if ($Lines[$i].Contains('REGION-END ' + $Tag)) { $rgEnd = $i; break }
+  }
+  $rgNames = New-Object System.Collections.ArrayList
+  if ($rgBegin -ge 0 -and $rgEnd -gt $rgBegin) {
+    for ($i = $rgBegin + 1; $i -lt $rgEnd; $i++) {
+      if ($Lines[$i] -match "ST-Check '([^']+)'") { [void]$rgNames.Add($Matches[1]) }
+    }
+  }
+  return @{ Begin = $rgBegin; End = $rgEnd; Names = @($rgNames) }
+}
+
+# The cannot-run half of a region: one SKIP per declared name, so the total does not move.
+function ST-SkipRegion([string]$Tag, [string]$Reason) {
+  $rg = Get-RegionCheckNames -Lines @($script:StSourceLines) -Tag $Tag
+  if ($rg.Begin -lt 0 -or $rg.End -le $rg.Begin) {
+    ST-Check ("contract: region '" + $Tag + "' is delimited by both of its marker lines") $false
+    return 0
+  }
+  if (@($rg.Names).Count -lt 1) {
+    ST-Check ("contract: region '" + $Tag + "' yields at least one check name from its own source") $false
+    return 0
+  }
+  foreach ($rgn in @($rg.Names)) { ST-Skip $rgn $Reason }
+  Write-Output ("      region " + $Tag + ": " + @($rg.Names).Count + " check(s) skipped as a block")
+  return @($rg.Names).Count
+}
+
+# Runs in BOTH halves of a region. Whatever the region emitted at runtime must be exactly
+# the set its source declares - a check that disappears because a precondition went false
+# and nobody accounted for it turns this red, which is the point of the mechanism.
+function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
+  $rg = Get-RegionCheckNames -Lines @($script:StSourceLines) -Tag $Tag
+  $declared = @($rg.Names)
+  $got = @($Emitted)
+  $a = (@($got) | Sort-Object) -join "`n"
+  $b = (@($declared) | Sort-Object) -join "`n"
+  ST-Check ("contract: region '" + $Tag + "' emitted exactly the check names its source declares") (
+    @($declared).Count -ge 1 -and @($got).Count -eq @($declared).Count -and ($a -ceq $b))
+  if ($a -cne $b) {
+    $miss = @(@($declared) | Where-Object { -not (@($got) -contains $_) })
+    $extra = @(@($got) | Where-Object { -not (@($declared) -contains $_) })
+    Write-Output ("      region " + $Tag + " declared=" + @($declared).Count + " emitted=" + @($got).Count +
+      " never-emitted=[" + ($miss -join ' | ') + "] unexpected=[" + ($extra -join ' | ') + "]")
+  }
+}
+
 function Invoke-SelfTest([string[]]$Rest) {
   # v2.6.0: a selftest run must never have its own captures moved out from under it -
   # `--live` writes st-* fixtures early and reads them back later, and the automatic
@@ -5933,8 +6006,36 @@ function Invoke-SelfTest([string[]]$Rest) {
   $live = @($Rest) -contains '--live'
   $script:StPass = 0; $script:StFail = 0; $script:StSkip = 0
   $script:StPassLines = New-Object System.Collections.ArrayList
+  # StrictMode is on: ST-Check/ST-Skip read this on EVERY call, so it must exist before
+  # the first check runs - an unset script variable aborts the whole gate, which is a
+  # louder failure than the one it guards but a useless one. Regions set it to a list.
+  $script:StRecord = $null
   $self = $PSCommandPath
   $src = Get-Content -LiteralPath $self -Raw
+  # v4.1.3: the region helpers below need the file's own lines from the FIRST gated
+  # region onward, which is earlier than $codeLines is built - so the raw split is
+  # published here. Line numbers match $codeLines exactly (that pass never deletes lines).
+  $script:StSourceLines = @($src -split "`r?`n")
+
+  # v4.1.3 (external review D): the call operator resolves through PATH, so a harness whose
+  # PATH lacks WindowsPowerShell cannot spawn a child at all - three offline checks then
+  # reported a product failure for the caller's environment. The git family in this same
+  # file already treats "no git in PATH" as "nothing to measure" and SKIPS; that stance is
+  # now shared. One probe, and every `& powershell` check accounts for itself either way.
+  # (Start-Process -FilePath 'powershell.exe' still resolves through App Paths, so the
+  # fixture families that spawn that way are unaffected - measured in the 4-context matrix.)
+  $script:PsChildOk = $true
+  $script:PsChildWhy = ''
+  try {
+    if ($null -eq (Get-Command powershell.exe -ErrorAction SilentlyContinue)) {
+      $script:PsChildOk = $false
+      $script:PsChildWhy = 'no powershell.exe resolvable in PATH'
+    }
+  } catch {
+    $script:PsChildOk = $false
+    $script:PsChildWhy = 'probe threw: ' + $_.Exception.Message
+  }
+  Write-Output ('      child-spawn probe: ok=' + [bool]$script:PsChildOk + $(if ($script:PsChildOk) { '' } else { ' reason=' + $script:PsChildWhy }))
 
   # ---------- lint: file encoding invariants ----------
   $bytes = [System.IO.File]::ReadAllBytes($self)
@@ -6049,8 +6150,36 @@ function Invoke-SelfTest([string[]]$Rest) {
   ST-Check 'lint: both READMEs state tracked=<N> and it equals git ls-files (no stale inventory)' (
     ($tfEn -gt 0) -and ($tfZh -gt 0) -and ($tfEn -eq $tfReal) -and ($tfZh -eq $tfReal))
   Write-Output ("      tracked files: README=$tfEn README.zh-CN=$tfZh git=$tfReal")
+  # ---------- v4.1.3: tracked in the INDEX is not the same as present on the DISK ----------
+  # Found the hard way, during this very round: thirteen tracked task-order documents were
+  # deleted from this working tree while the gate was running, and nothing noticed. The lint
+  # above reads `git ls-files`, which answers from the INDEX - an unstaged deletion is
+  # invisible to it. That is the same disease this version is about: "cannot see it" reported
+  # as "nothing wrong". The two views must now agree, and every missing name is printed.
+  $tfOnDisk = @()
+  try {
+    $tfRaw = & git -C $PSScriptRoot ls-files -z 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      $tfOnDisk = @((($tfRaw -join ([string][char]0)) -split [char]0 | ForEach-Object { "$_".Trim() } | Where-Object { "$_" -ne '' }))
+    }
+  } catch { $tfOnDisk = @() }
+  $tfMissing = @($tfOnDisk | Where-Object { -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "$_")) })
+  # The predicate gets a planted absent name, because a check that passes by measuring an
+  # empty set is exactly the failure mode being fixed here.
+  $tfPlantCaught = 0
+  foreach ($tfName in @('DTX-no-such-tracked-file-ZQX.md')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "$tfName"))) { $tfPlantCaught++ }
+  }
+  ST-Check 'lint: every name tracked in the index exists on disk (an unstaged deletion cannot read as "nothing wrong")' (
+    (@($tfOnDisk).Count -gt 0) -and (@($tfMissing).Count -eq 0))
+  ST-Check 'lint: the tracked-on-disk predicate flags a planted absent name (the check above cannot pass by seeing nothing)' (
+    $tfPlantCaught -eq 1)
+  if (@($tfMissing).Count -gt 0) { Write-Output ("      tracked but absent on disk (" + @($tfMissing).Count + '): ' + ((@($tfMissing) | Sort-Object) -join ', ')) }
+  Write-Output ('      tracked inventory: index=' + @($tfOnDisk).Count + ' present=' + (@($tfOnDisk).Count - @($tfMissing).Count))
   } else {
     ST-Skip 'lint: both READMEs state tracked=<N> and it equals git ls-files (no stale inventory)' $skipNoRepo
+    ST-Skip 'lint: every name tracked in the index exists on disk (an unstaged deletion cannot read as "nothing wrong")' $skipNoRepo
+    ST-Skip 'lint: the tracked-on-disk predicate flags a planted absent name (the check above cannot pass by seeing nothing)' $skipNoRepo
   }
 
   # ---------- lint: the overview header's offline-check total IS the declaration in this file ----------
@@ -6422,9 +6551,17 @@ function Invoke-SelfTest([string[]]$Rest) {
     if ($null -ne $oe) { $ocrPackTag = "$($oe.RecognizerLanguage.LanguageTag)" }
   } catch { $ocrPackTag = '' }
   $ocDir = Join-Path $env:TEMP ('st_ocrfile_' + [guid]::NewGuid().ToString('N'))
+  # v4.1.3 (external review B): the else branch below holds NINETEEN checks, while this
+  # branch used to emit ONE skip - so every engine that cannot reach the recognizer lost
+  # eighteen checks without saying so (measured here: pwsh 7 emits 795 of 815). The skip
+  # side now accounts for the whole region by name, read back out of this file's source.
+  $script:StRecord = New-Object System.Collections.ArrayList
   if ($ocrPackTag -eq '') {
-    ST-Skip 'e2e: read-text --file round-trips a rendered string back through the recognizer' 'no OCR language pack installed on this machine - the road itself is unavailable, so this is not a regression'
+    ST-SkipRegion 'ocr-file' 'no OCR language pack / recognizer unreachable from this engine - the road itself is unavailable, so this is not a regression'
   } else {
+    # REGION-BEGIN ocr-file  (every ST-Check between here and REGION-END is accounted for
+    # by ST-SkipRegion when the recognizer is missing - a check that needs something ELSE
+    # must not join this region, or the skip side would excuse it too)
     New-Item -ItemType Directory -Force -Path $ocDir | Out-Null
     $ocPng = Join-Path $ocDir 'render.png'
     $ocWant = 'File Edit View Run Terminal Help'
@@ -6641,7 +6778,11 @@ function Invoke-SelfTest([string[]]$Rest) {
     } finally {
       Remove-Item -LiteralPath $ocDir -Recurse -Force -ErrorAction SilentlyContinue
     }
+    # REGION-END ocr-file
   }
+  $ocrFileEmitted = @($script:StRecord)
+  $script:StRecord = $null
+  ST-ReconcileRegion 'ocr-file' $ocrFileEmitted
 
   # ---------- unit: v1.5.3 R-06 same-process popup delta ----------
   # The RULE is pure (which handles count as newly on top), the enumeration is
@@ -7957,8 +8098,24 @@ function Invoke-SelfTest([string[]]$Rest) {
   $badIdiom = @($jarr | ConvertFrom-Json)
   $goodRaw = $jarr | ConvertFrom-Json
   $goodIdiom = @($goodRaw)
+  # v4.1.3 (external review C): this asserted "$badIdiom.Count -eq 1" unconditionally, but
+  # that is not a language fact, it is a Windows PowerShell 5.1 fact - 5.1 folds a JSON
+  # array into ONE object while PowerShell 7 unrolls it (measured on this box: 1 vs 2). The
+  # check was therefore red on every machine that ran the other engine, and the repo does
+  # run on both. Both halves are pinned now: the folding value per engine (an unknown
+  # engine is a failure, not a free pass), and the loader shape that holds on either.
+  $jEngine = 'other'
+  if ($PSVersionTable.PSVersion.Major -eq 5) { $jEngine = '5.1' }
+  elseif ($PSVersionTable.PSVersion.Major -ge 7) { $jEngine = 'pwsh7' }
+  $jBadExpect = -1
+  if ($jEngine -eq '5.1') { $jBadExpect = 1 }
+  elseif ($jEngine -eq 'pwsh7') { $jBadExpect = 2 }
   ST-Check 'unit: JSON array needs assign-then-@() (script loader)' (
-    $badIdiom.Count -eq 1 -and $goodIdiom.Count -eq 2 -and @($goodIdiom[0].click).Count -eq 2)
+    $jBadExpect -gt 0 -and $badIdiom.Count -eq $jBadExpect)
+  ST-Check 'unit: the assign-then-@() loader shape yields every element on either engine (the engine-independent half)' (
+    $goodIdiom.Count -eq 2 -and @($goodIdiom[0].click).Count -eq 2)
+  Write-Output ('      json unwrap: engine=' + $jEngine + ' @()-over-pipeline=' + $badIdiom.Count +
+    ' assign-then-@()=' + $goodIdiom.Count + ' expected-fold=' + $jBadExpect)
 
   # ---------- unit: pure helpers ----------
   $rgb = Convert-HexToRgb '#00FF80'
@@ -8776,7 +8933,15 @@ function Invoke-SelfTest([string[]]$Rest) {
   $jsonProbePos = ''
   $jsonProbePosCode = -1
   try {
-    $jsonProbePos = (& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath wins --json 2>&1) -join "`n"
+    # v4.1.3 (found by this round's own matrix, red on real data): this used to merge the
+    # child's error stream into its stdout (`2>&1`) and then feed the result to
+    # ConvertFrom-Json. Any warning the tool legitimately prints - the one that caught it is
+    # "released a button left down by a previous run" - lands ahead of the JSON and the check
+    # goes red while the product is correct: measured, `wins --json` with stderr discarded is
+    # pure JSON, exit 0. A caller piping this command gets the success stream only, so that is
+    # the road this must test. The refusal leg below KEEPS 2>&1 on purpose: it asserts on text
+    # (and ERROR: goes to stdout anyway), so merging there adds diagnostics, not false reds.
+    $jsonProbePos = (& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath wins --json) -join "`n"
     $jsonProbePosCode = $LASTEXITCODE
   } catch { $jsonProbePos = 'THREW: ' + $_.Exception.Message }
   $jsonPosObj = $null
@@ -8787,13 +8952,38 @@ function Invoke-SelfTest([string[]]$Rest) {
     $jsonProbeNeg = (& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath cursor --json 2>&1) -join "`n"
     $jsonProbeNegCode = $LASTEXITCODE
   } catch { $jsonProbeNeg = 'THREW: ' + $_.Exception.Message }
+  if (-not $script:PsChildOk) {
+    ST-Skip 'contract: --json on a capable command yields parseable JSON end to end (wins, real command line)' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
+    ST-Skip 'contract: --json on an incapable command REFUSES with exit 1 instead of printing text it never promised' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
+  } else {
   ST-Check 'contract: --json on a capable command yields parseable JSON end to end (wins, real command line)' (
     $jsonProbePosCode -eq 0 -and $null -ne $jsonPosObj -and @($jsonPosObj).Count -ge 1)
   ST-Check 'contract: --json on an incapable command REFUSES with exit 1 instead of printing text it never promised' (
     $jsonProbeNegCode -eq 1 -and $jsonProbeNeg.Contains("--json is not supported by 'cursor'") -and
     -not ($jsonProbeNeg -match 'cursor='))
+  }
   Write-Output ("      --json gate: declared=" + @($jcDeclared).Count + ' pos-exit=' + $jsonProbePosCode +
     ' neg-exit=' + $jsonProbeNegCode + ' neg-hits-refusal=' + ($jsonProbeNeg.Contains('is not supported by')))
+  # The channel rule the fix above introduces must survive the next edit, so it is pinned as a
+  # shape: the probe whose output is PARSED AS JSON may not merge the error stream, and the
+  # refusal probe (which asserts on text) must keep merging it - both sides counted, because a
+  # one-sided lint is satisfied by deleting the pattern. The marker is built by concatenation
+  # and so is the planted sample: this file scans ITSELF, so a literal copy of the shape in the
+  # scanner or in the plant would be counted as a real site (it did exactly that on first run -
+  # the check red on its own source lines).
+  $jsMarks = @(('$jsonProbePos ' + '= (& powershell'), ('$xSubOut ' + '= (@(& powershell'))
+  $jsNegMark = '$jsonProbeNeg ' + '= (& powershell'
+  $jsBadShape = { param($l) $hit = $false; foreach ($m in $jsMarks) { if ($l.Contains($m) -and $l.Contains('2>&1')) { $hit = $true } }; return $hit }
+  $jsPosSites = @($codeLines | Where-Object { $seen = $false; foreach ($m in $jsMarks) { if ($_.Contains($m)) { $seen = $true } }; $seen })
+  $jsBadSites = @($codeLines | Where-Object { & $jsBadShape $_ })
+  $jsNegSites = @($codeLines | Where-Object { $_.Contains($jsNegMark) -and $_.Contains('2>&1') })
+  $jsPlantLine = @(('    ' + '$jsonProbePos ' + '= (& powershell -File x wins --json 2>&1) -join "x"'))
+  $jsPlantCaught = @($jsPlantLine | Where-Object { & $jsBadShape $_ }).Count
+  ST-Check 'lint: every child probe whose stdout is parsed as JSON keeps stderr out of it, and the refusal probe keeps it in (shared predicate, planted copy caught)' (
+    (@($jsPosSites).Count -eq 2) -and (@($jsBadSites).Count -eq 0) -and (@($jsNegSites).Count -eq 1) -and ($jsPlantCaught -eq 1))
+  Write-Output ('      json channel: parsed-probes=' + @($jsPosSites).Count + ' merged=' + @($jsBadSites).Count +
+    ' refusal-merged=' + @($jsNegSites).Count + ' plant-caught=' + $jsPlantCaught)
+  if (@($jsBadSites).Count -gt 0) { Write-Output '      a JSON probe merges the error stream again - warnings will break every caller that parses it' }
   # ---------- v3.1.0 X-01: the action family's --json envelope --------------------------------
   # The requirement this block exists to enforce is not "there is JSON", it is "the JSON cannot
   # lie and cannot drift": ONE producer, a CLOSED command table, a PINNED key set, and a
@@ -8884,7 +9074,11 @@ function Invoke-SelfTest([string[]]$Rest) {
   $xSubOut = ''
   $xSubCode = -1
   try {
-    $xSubOut = (@(& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath unmap $xImg 10 20 --json 2>&1) -join "`n")
+    # v4.1.3 (finding M, second site - caught by the post-docs confirming run, not by the
+    # matrix): same channel bug as the --json probe above. Measured here: the child exited 0
+    # and `keys=[]`, i.e. the JSON was unparseable only because a legitimate warning was
+    # merged into stdout. The refusal leg below keeps 2>&1 on purpose (it asserts on text).
+    $xSubOut = (@(& powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath unmap $xImg 10 20 --json) -join "`n")
     $xSubCode = $LASTEXITCODE
   } catch { $xSubOut = 'THREW: ' + $_.Exception.Message }
   $xSubObj = $null
@@ -8899,10 +9093,14 @@ function Invoke-SelfTest([string[]]$Rest) {
   } catch { $xNegOut = 'THREW: ' + $_.Exception.Message }
   Write-Output ('      action-json e2e: unmap-exit=' + $xSubCode + ' keys=[' + $xSubTop + '] refusal-exit=' + $xNegCode +
     ' refusal-is-text=' + ($xNegOut.StartsWith('ERROR:')))
+  if (-not $script:PsChildOk) {
+    ST-Skip 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
+  } else {
   ST-Check 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' (
     $xSubCode -eq 0 -and $xSubTop -ceq (Get-ActionJsonKeySet) -and
     @($xSubObj.lines).Count -ge 1 -and [int]$xSubObj.schemaVersion -eq 3 -and "$($xSubObj.command)" -eq 'unmap' -and
     $xNegCode -eq 1 -and $xNegOut.Contains('ERROR:') -and -not $xNegOut.Contains('"schemaVersion"'))
+  }
   try { if (Test-Path -LiteralPath $xImg) { Remove-Item -LiteralPath $xImg -Force } } catch { }
   try { if (Test-Path -LiteralPath ($xImg + '.map.txt')) { Remove-Item -LiteralPath ($xImg + '.map.txt') -Force } } catch { }
   # B-6 on the text side: one producer, and it must reach the outlets that were chosen - a
@@ -9295,8 +9493,17 @@ function Invoke-SelfTest([string[]]$Rest) {
 
   # Synthetic-bitmap two-state pair (the task order's acceptance). Memory-only canvases:
   # no window is created and no screen is captured, so the pair runs in the OFFLINE gate.
-  # Both OCR calls are catch-guarded (a throwing unit would abort the whole gate instead
-  # of failing by name).
+  # v4.1.3 (external review B): "catch-guarded" used to mean the caught error was fed to the
+  # assertion as a FAIL condition, so an engine that cannot reach the recognizer reported a
+  # product failure for a missing capability - against the contract this file states at the
+  # read-text --file check ("On a box with no OCR language pack it SKIPS with a reason").
+  # The pair is now gated on the same probe the live family uses, and the region accounts
+  # for itself by name, so the total cannot move between machines.
+  $script:StRecord = New-Object System.Collections.ArrayList
+  if ($ocrPackTag -eq '') {
+    ST-SkipRegion 'ocr-synthetic' 'no OCR language pack / recognizer unreachable from this engine - the bitmap road cannot be measured, so this is not a regression'
+  } else {
+  # REGION-BEGIN ocr-synthetic
   $srGrayErr = ''
   $srGray = New-Object System.Drawing.Bitmap(2000, 1200)
   $sgGray = [System.Drawing.Graphics]::FromImage($srGray)
@@ -9322,6 +9529,11 @@ function Invoke-SelfTest([string[]]$Rest) {
   if ($srDenseErr) { Write-Output "      OCR unavailable: $srDenseErr" }
   Write-Output "      synthetic sparse pair: gray=$(@($srGrayLines).Count) line(s), dense=$(@($srDenseLines).Count) line(s) (density $([math]::Round(@($srDenseLines).Count / 24.0, 2)) lines per 100k px2, threshold 1.5)"
   $srGray.Dispose(); $srDense.Dispose()
+  # REGION-END ocr-synthetic
+  }
+  $ocrSynEmitted = @($script:StRecord)
+  $script:StRecord = $null
+  ST-ReconcileRegion 'ocr-synthetic' $ocrSynEmitted
 
   # Wiring: the hint must stay attached to all negative paths, the wording must
   # keep its single producer, and the tuning flag must stay reachable everywhere it is
@@ -9399,6 +9611,14 @@ function Invoke-SelfTest([string[]]$Rest) {
   # (J-05 granularity), each needle's aim moves to its own side of the line centre by at
   # least 1/7 of the line width - i.e. the OLD line-centre behaviour clicked a materially
   # different, wrong point - and the needle/line ratio stays in NOTE territory.
+  # v4.1.3 (external review B): gated like the synthetic pair above - and the three checks
+  # nested under the merged-line precondition now report SKIP when it does not hold,
+  # instead of vanishing (measured: pwsh 7 lost exactly those three on top of the pair).
+  $script:StRecord = New-Object System.Collections.ArrayList
+  if ($ocrPackTag -eq '') {
+    ST-SkipRegion 'ocr-merged' 'no OCR language pack / recognizer unreachable from this engine - the merged-line shape cannot be measured, so this is not a regression'
+  } else {
+  # REGION-BEGIN ocr-merged
   $gaBmp = New-Object System.Drawing.Bitmap(460, 100)
   $gaG = [System.Drawing.Graphics]::FromImage($gaBmp)
   $gaG.Clear([System.Drawing.Color]::White)
@@ -9432,8 +9652,20 @@ function Invoke-SelfTest([string[]]$Rest) {
       ((($gaAimL.SpanEnd - $gaAimL.SpanStart) / $gaAimL.NormLen) -le 0.6) -and
       ((($gaAimR.SpanEnd - $gaAimR.SpanStart) / $gaAimR.NormLen) -le 0.6))
     Write-Output "      synthetic aim pair: line rect=($($gaHit.X),$($gaHit.Y),$($gaHit.W)x$($gaHit.H)) text='$($gaHit.Text)' normLen=$($gaAimL.NormLen) aimL=$($gaAimL.AimX) aimR=$($gaAimR.AimX) lineCentre=$gaCentre"
+  } else {
+    # v4.1.3 (external review B): these three sat behind a precondition and used to be
+    # skipped from EXISTING when it did not hold - the run got shorter instead of narrower,
+    # and that is where a third of the missing 24 went. They now account for themselves.
+    ST-Skip 'unit: the merged row is still exactly ONE hit for the left needle (J-05 line granularity intact)' 'the merged-line precondition did not hold - there is no single line to aim at'
+    ST-Skip 'unit: both needles aim into their own half, each at least 1/7 line-width away from the old line-centre point' 'the merged-line precondition did not hold - there is no single line to aim at'
+    ST-Skip 'unit: the merged line is much wider than either needle, so the wider-than-needle NOTE condition holds' 'the merged-line precondition did not hold - there is no single line to aim at'
   }
   $gaBmp.Dispose()
+  # REGION-END ocr-merged
+  }
+  $ocrMergedEmitted = @($script:StRecord)
+  $script:StRecord = $null
+  ST-ReconcileRegion 'ocr-merged' $ocrMergedEmitted
 
   $aimSites = @()
   for ($gai = 0; $gai -lt $codeLines.Count; $gai++) {
@@ -9642,6 +9874,46 @@ function Invoke-SelfTest([string[]]$Rest) {
     ST-Skip 'lint: every command in the README quick reference exists in the dispatcher (no stale references)' 'README documentation not present (installed copy)'
     ST-Skip 'lint: every dispatcher command appears in the README (no under-documented command)' 'README documentation not present (installed copy)'
     ST-Skip 'lint: both README editions document the SAME command set (a one-language-only update cannot pass)' 'README documentation not present (installed copy)'
+  }
+
+  # ---------- v4.1.3 (external review L): the skill loader's command list is an outward ----
+  # contract, so it may only name commands THIS tree can run. The loader docs ship with the
+  # installed skill, which means a phantom there is something an agent will keep trying to
+  # call. The README sweep above only reads README.md, so when this tree dropped the
+  # Per-Monitor V2 block that the published tree still carries, `dpi` stayed taught in
+  # SKILL.md and every offline check stayed green. Traversal, not a hand list: the case set
+  # comes from the dispatcher itself, and the exemption list is pinned against it.
+  $skCaseSet = @(Get-HashKeys $hCaseStarts)
+  $skMeta = @('script', 'replay', 'selftest')
+  $skDocs = @('skill/agent-computer-use/SKILL.md', 'skill/agent-computer-use/reference.md')
+  $skPresent = @($skDocs | Where-Object { Test-Path -LiteralPath (Join-Path $PSScriptRoot $_) })
+  if (@($skPresent).Count -eq @($skDocs).Count) {
+    $skPhantom = @()
+    $skSeen = 0
+    foreach ($skDoc in @($skPresent)) {
+      $skLines = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot $skDoc) -Encoding UTF8)
+      foreach ($skl in $skLines) {
+        if ($skl -match '^-\s+`([a-z][a-z0-9-]+)') {
+          $skName = $Matches[1]
+          $skSeen = $skSeen + 1
+          if ((-not (@($skCaseSet) -contains $skName)) -and (-not (@($skMeta) -contains $skName))) { $skPhantom += ($skDoc + ':' + $skName) }
+        }
+      }
+    }
+    # script/replay/selftest are dispatched OUTSIDE Invoke-DesktopCommand (the same
+    # exemption the README sweep makes), so they are not in $skCaseSet by construction -
+    # they must still be proven to be real targets, or the exemption list becomes a second
+    # command universe that the phantom lint cannot see.
+    $skMetaLive = @($codeLines | Where-Object { $_ -match ('^\s{4}' + "'" + '(script|replay|selftest)' + "'" + ' \{') })
+    ST-Check 'lint: the loader-doc exemptions are real dispatch targets (script/replay/selftest cases exist outside the main dispatcher)' (
+      (@($skCaseSet).Count -ge 50) -and (@($skMetaLive).Count -ge 3) -and (@($skMeta).Count -eq 3))
+    ST-Check 'lint: every command the skill loader teaches exists in this tree dispatcher (no phantom in the outward contract)' (
+      $skSeen -ge 40 -and (@($skPhantom).Count -eq 0))
+    if (@($skPhantom).Count -gt 0) { Write-Output ("      loader teaches commands this tree cannot run: " + ((@($skPhantom) | Sort-Object -Unique) -join ', ')) }
+    Write-Output ("      loader command lines seen=" + $skSeen + " dispatcher cases=" + @($skCaseSet).Count)
+  } else {
+    ST-Skip 'lint: the loader-doc exemptions are real dispatch targets (script/replay/selftest cases exist outside the main dispatcher)' 'skill loader docs not both present (installed copy) - the sweep cannot run'
+    ST-Skip 'lint: every command the skill loader teaches exists in this tree dispatcher (no phantom in the outward contract)' 'skill loader docs not both present (installed copy) - the sweep cannot run'
   }
 
   # ---------- v1.8.0 CDP client and a11y route (task book A-0..A-6) ----------
@@ -13684,9 +13956,39 @@ $gaTimer.Start()
       foreach ($gt in $gateTmp) { if (Test-Path -LiteralPath $gt) { Remove-Item -LiteralPath $gt -Force -ErrorAction SilentlyContinue } }
     }
   } else {
-
-    Write-Output 'SKIP  live OCR checks (pass --live to run them)'
+    # v4.1.3 (external review A, found while measuring the four-context matrix): this used
+    # to be a bare Write-Output shaped like a check outcome. The log therefore printed a
+    # "SKIP  " line the summary never counted - 815 passed / 0 skipped on screen next to a
+    # SKIP row. It IS a "could not run here" outcome, so it is one now.
+    ST-Skip 'live OCR checks (pass --live to run them)' 'offline run - the live ladder was not requested'
   }
+
+  # The outcome prefixes are the gate's wire format: every log parser downstream (including
+  # the 'PASS line count equals passed' contract above) reads a line starting with one as a
+  # check result. So only the two emitters may print them - found by traversal, and the
+  # boundary itself is asserted, because a lint whose exemption window silently failed to
+  # locate would pass for the wrong reason.
+  $stEmitFrom = -1
+  $stEmitTo = -1
+  for ($oci = 0; $oci -lt $codeLines.Count; $oci++) {
+    if ($stEmitFrom -lt 0) {
+      if ($codeLines[$oci].StartsWith('function ST-Check')) { $stEmitFrom = $oci }
+      continue
+    }
+    if ($codeLines[$oci].StartsWith('function Get-RegionCheckNames')) { $stEmitTo = $oci; break }
+  }
+  ST-Check 'contract: the outcome-emitter range was located by traversal (a missing boundary would make the bare-prefix lint vacuous)' (
+    $stEmitFrom -ge 0 -and $stEmitTo -gt $stEmitFrom)
+  $bareOutcome = @()
+  for ($oci = 0; $oci -lt $codeLines.Count; $oci++) {
+    if ($codeLines[$oci] -match '^\s*#') { continue }
+    if ($codeLines[$oci] -notmatch 'Write-Output\s+.?(PASS|FAIL|SKIP)  ') { continue }
+    if ($oci -ge $stEmitFrom -and $oci -lt $stEmitTo) { continue }
+    $bareOutcome += (($oci + 1).ToString())
+  }
+  ST-Check 'contract: only ST-Check and ST-Skip print an outcome prefix (a bare SKIP line is not a counted outcome)' (
+    @($bareOutcome).Count -eq 0)
+  if (@($bareOutcome).Count -gt 0) { Write-Output ("      bare outcome-prefix writes at lines: " + (@($bareOutcome) -join ', ')) }
 
   # ---------- v2.4.0: action tokens + structural path handles (pure rules, no UIA) ----------
   # The pattern singletons need the UIA assemblies: load them here (idempotent) -
@@ -14712,7 +15014,7 @@ $gaTimer.Start()
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.1.2 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.1.4 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -19514,7 +19816,10 @@ try {
   # The two commands that act ON a press state (press-up / drag-to) are exempted by
   # the gate, so they can still see and report what they are given.
   $pressWarn = Invoke-PressWatchdog $Cmd
-  if ($pressWarn) { Write-Output $pressWarn }
+  if ($pressWarn) {
+    if ($script:Json) { [Console]::Error.WriteLine($pressWarn) }
+    else { Write-Output $pressWarn }
+  }
 
   # v3.0.0 (B-6): the text outlets get the same label the JSON envelopes carry as
   # `contentTrust`. Printed AFTER the command, so a reader who pipes the bulk somewhere still
@@ -19558,7 +19863,9 @@ try {
   # released on the way out rather than left for the owner to drag. A press left by an
   # earlier process is caught by the entry watchdog above, not here.
   if (Get-LeftButtonDown) {
-    Write-Output 'WARNING: exiting with the left button still DOWN - releasing it now (P-3 watchdog)'
+    $exitPressWarn = 'WARNING: exiting with the left button still DOWN - releasing it now (P-3 watchdog)'
+    if ($script:Json) { [Console]::Error.WriteLine($exitPressWarn) }
+    else { Write-Output $exitPressWarn }
     Release-Press $script:PressId 'process-exit' @()
   }
 }

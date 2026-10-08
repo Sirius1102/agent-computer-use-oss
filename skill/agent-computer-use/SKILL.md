@@ -5,6 +5,8 @@ description: Operates a real Windows desktop for an agent — screenshots, windo
 
 # Agent Computer Use
 
+For a first-use workflow, read the public [Quick start](../../README.md#quick-start) (or the [Chinese edition](../../README.zh-CN.md#快速上手)) before acting. It makes screenshot-first observation, locator fallback, post-action readback, and Chinese IME input choices explicit.
+
 A **single-file, stateless Windows desktop automation CLI**. One short-lived `powershell` process per invocation: no daemon, no HTTP server, no installer, no third-party dependencies.
 
 ## When to Use This Skill
