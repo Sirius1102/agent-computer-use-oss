@@ -28,7 +28,7 @@ If a title/proc/class selector matches several windows, resolution **refuses and
 
 ## Screenshots And Reading
 
-- `shot [out] [--fit px] [--grid [step] | --no-grid] [--mark x,y] [--occlude off|warn|strict]` — whole virtual screen. `--fit` downscales wider crops and the echo carries the explicit scale; the grid is labelled in SCREEN pixels; `--mark` draws a candidate click point.
+- `shot [out] [--fit px] [--grid [step] | --no-grid] [--mark x,y] [--occlude off|warn|strict]` — whole virtual screen; accepts at most one output path and rejects unknown flags or extra positions before capture. For a local full-resolution crop use `rect 0 2010 400 80 <outPath> --fit 0`; use its `.map.txt` with `imgclick` or `unmap`, and recapture after the window or layout changes. `--fit` downscales wider crops and the echo carries the explicit scale; the grid is labelled in SCREEN pixels; `--mark` draws a candidate click point.
 - `win <sel> [out] [--fit px|0] [--grid...] [--mark x,y]` — a window; echoes the image→screen mapping (`screen = image + (L,T)` or `(L + ix/scale, T + iy/scale)`).
 - `rect <x> <y> <w> <h> [out] [--fit...] [--grid...] [--mark x,y]` — a region.
 - `zoom <x> <y> <w> <h> [scale] [out]` — small region enlarged (default 2x) with mapping echo.
@@ -86,8 +86,8 @@ find <text...> [--target <sel>] [--region x,y,w,h] [--needle <text>] [--json]
 - `move` · `hover [--dwell ms]` (tooltips need the dwell) · `click` · `rclick` · `dblclick` — absolute screen pixels; `--to <sel>` activates + verifies a window first; `--guard-text <s>` / `--guard-region x,y,w,h=<s>` assert context BEFORE the click.
 - `drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms]` — press, interpolate, release.
 - Mid-state trio (surfaces that decide on release): `press-down [--max-hold ms]` → `drag-to <x> <y>` → `press-up <x> <y>`. Watchdogs: a held button self-releases at the deadline, and any later invocation releases a button left down by a previous run.
-- `wheel <amount> [x y | --at <sel>] [--focus-first]` — scroll (negative = down).
-- `relclick <sel> <dx> <dy>` — click relative to a window's top-left.
+- `wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>|--at <sel>] [--focus-first] [--expect-change [x,y,w,h]] [--verify-scroll [--expect-change x,y,w,h]|--expect-visible-text <needle>]` — scroll. Omitted amount remains -120 raw delta. Defaults are raw delta and vertical; `notches` requires an explicit amount and multiplies it by 120. Vertical positive/negative is up/down; horizontal positive/negative is right/left. `--to` verifies the actual point against the selected top-level window; when x/y is omitted it checks the current cursor. `--at` requires explicit x/y; a window centre does not identify the target panel. `--focus-first` stays opt-in and rechecks target, foreground and landing after its real click. Verification is opt-in and requires a selector plus amount/x/y. `--verify-scroll` reads UIA ScrollPattern position; only an explicit in-window region enables the pixel-only fallback. `--expect-visible-text` verifies that a caller-specified UIA name becomes visible in the target window. Receipts separate input insertion from observed effect, report actual wait/sample count and label pixel-only evidence. Boundary avoids injection; no-effect, target-change and unavailable states fail distinctly; no automatic retry.
+- `relclick <sel> <dx> <dy>` — click relative to a window's top-left, from the rect re-read after activation; refused when the point misses the target or a window other than the target answers the hit test (`--allow-outside` relaxes both and says so).
 - `imgclick <img> <ix> <iy> [--dry] [--stale-ok]` — reverse-map through the image's `.map.txt`; `--dry` prints the mapping without clicking; a moved/resized window fails the sidecar check unless `--stale-ok`.
 - `unmap <img> <ix> <iy>` — mapping echo only, no click.
 
@@ -108,7 +108,7 @@ Clipboard write-back is verified; a clipboard that cannot be confirmed is report
 
 ## Windows
 
-- `focus <sel>` — restore + front; prints `fg_ok=True/False`.
+- `focus <sel>` — restore + front, then re-read the SAME handle: prints the at-select and after-activate readings (`fg=` faces) plus the `fg_ok=` contract token, and exits 1 unless the window really is foreground, not minimized, visible and on-screen.
 - `win-move <sel> <x> <y>` · `win-resize <sel> <w> <h>` (visible size, DWM-corrected) · `win-max` / `win-min` / `win-restore` / `win-close`.
 - `wait-win <sel> <sec>` / `wait-gone <sel> <sec>` — 500 ms polling with clear timeout messages.
 - `wait-stable <sel|x y w h> <sec> [--interval ms]` — two consecutive identical frames; replaces fixed sleeps.
@@ -157,10 +157,17 @@ uia-click "MyApp" @/0/2/1/4 "Button||123,45,80x24"   # verify-then-act
 type --to "MyApp" "hello" --verify
 ```
 
-**Send a file into a chat window:**
+`type` sends literal characters (`"^a"` is two characters); `keys --to "MyApp" "^a"` sends Ctrl+A. Numeric PIDs go in the `--to` selector. `activated=no (was fg)` only means the window was already foreground; it does not prove the edit control has focus. `uia-focus` reports SetFocus without reading the keyboard-focus property back. Read the actual field value after typing when available. Use `keys "^a"` followed by `paste` only when replacing the entire, confirmed field, then compare its full readback.
+
+If the expected pre-action text is readable, guard it with `--guard-text` or `--guard-region`. One `type` call that cannot be read back only describes that call and read path; do not generalize it into a blanket Qt/Electron compatibility claim.
+
+**Hand a file to a window (fixture form only):**
 ```
-paste-file --to "MyChat" report.pdf
+paste-file --to "Notepad" dtx-fixture.txt
 ```
+The example file and the target window are ones this run creates and destroys (a generated text file, a local editor). Its receipt is the file name, so `+ verified` on that line means only "the name showed up in that window".
+
+**项目红线 / hard red line:** do not aim `paste` / `paste-file` / `copy-file` at a real chat, mail or any other person-facing conversation window (WeChat / QQ / DingTalk / Slack / Outlook / webmail in a browser — anything with a human on the other side) unless the user, in this same turn, named that recipient and that file and confirmed it. Foreground and occlusion guards check *which window the keys land in*; they never authorize the send. 不得向任何真实聊天会话发送消息或文件；活体验收只用本项目自建自销的夹具；已经开在屏幕上的聊天窗口不是夹具。
 
 **Region screenshot → pixel click:**
 ```

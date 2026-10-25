@@ -1,0 +1,19 @@
+# v4.4.0 (G-04, owner ruling 2026-10-15, landed by the A-plan construction line):
+# pin the line endings this repository's own gates describe.
+#
+# Before this file, "desktop.ps1 is UTF-8 BOM + pure ASCII + LF" was only true of the one
+# working tree where an editor had written the bytes. core.autocrlf=true plus no attributes
+# meant any fresh checkout came out CRLF: measured 2026-10-15, a new worktree held 20,669 CR
+# bytes and hashed cb18ddf0... while the main tree held 0 CR and hashed a8b5eec1... for the
+# SAME blob. Two consequences, both measured: a sha256 baseline recorded in one tree did not
+# reproduce in another, and a working file that was force-converted to LF read as "modified"
+# in git status for all eleven files while git diff stayed empty - a gate that has to be
+# eyeballed through permanent false-dirty output is a gate nobody reads.
+#
+# Attributes take precedence over core.autocrlf, so every checkout now matches the blob.
+# The pattern list is deliberately narrow: only the text types this repository tracks.
+*.ps1 text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+.gitignore text eol=lf
+LICENSE text eol=lf

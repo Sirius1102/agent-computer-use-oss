@@ -2,6 +2,51 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.5.5 - 2026-10-25
+
+The open-source edition catches up with the maintained line. The tool keeps its runtime shape - one
+pure-ASCII PowerShell file, no daemon, no installer, no third-party dependencies - but the repository
+now also ships the full source the tool is stitched from, and the offline gate grew from 829 to 1020
+checks. User-visible changes since v4.1.4:
+
+- **Source layout with a deterministic stitched build.** The tool's source lives in `src/` (a
+  `desktop.ps1` entry plus 22 `lib/*.ps1` modules). The root `desktop.ps1` is the build product:
+  `skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1` stitches the sources into it - identical
+  sources always yield a byte-identical artifact, and a missing declared source aborts the stitch with a
+  named error instead of writing a partial file.
+- **Local caller registration and overlap warnings.** Every invocation registers a lease under its
+  caller identity before acting. A second invocation that touches a runtime root with an active lease
+  gets a stderr warning (identity and command digest) while stdout stays one parseable JSON envelope;
+  leases left behind by processes that died without cleanup are recovered by the next invocation; caller
+  history is segmented and capped.
+- **The offline gate learned to talk about itself.** `selftest --index` lists every check by name and
+  `selftest --only <needle>` runs a named subset in isolation; skip rows account for themselves per
+  check name; subprocess streams are preserved whole for forensics; and a JSON-safe exit watchdog keeps
+  the exit code and the `--json` envelope from disagreeing.
+- **Wheel semantics made explicit and verifiable.** `--unit raw|notches` (notches multiply by 120) and
+  `--axis vertical|horizontal` pin what used to be implicit; `--to <sel>`/`--at <sel>` verify the
+  actual landing point against the selected window; `--focus-first` stays opt-in and re-checks target,
+  foreground and landing after its real click; `--verify-scroll` reads UIA ScrollPattern position (the
+  pixel-only fallback requires an explicit in-window region) and `--expect-visible-text` waits for a
+  named element to become visible.
+- **`relclick` and `focus` joined the common target chain.** `relclick` goes through the same
+  verified activate-and-check chain as the other act commands and re-checks the landing identity;
+  `focus` reads back the same window handle it activated.
+- **Region captures refuse misuse with guidance.** Invocations that would produce a useless capture are
+  refused with a hint toward the supported form, instead of failing silently later.
+- **Text-input semantics and stale-target hints.** The text family states what each path guarantees and
+  which IME interaction it bypasses; a failed target handoff names the window that actually holds the
+  foreground.
+- **Chrome DevTools round-trips are budgeted on both sides.** Connect, send and receive each carry an
+  explicit timeout budget; a peer that completes the handshake but never reads fails the call inside the
+  budget instead of hanging it.
+- **Uninstall protection.** The skill's `uninstall.ps1` recursive delete sits behind a confirmation
+  gate and refuses repository roots, worktrees, volume roots and reparse points by shape.
+- **Safer recipes in the docs.** Examples no longer teach sending a file into a real chat window - they
+  use self-built fixture windows, and the red line is stated in both languages.
+- **The Quick start ships with the skill.** `skill/agent-computer-use/快速上手指南.md` installs together
+  with the skill files, so a newcomer's first link resolves after installation.
+
 ## v4.1.4 - 2026-10-09
 
 Documents the first-use workflow for agents that drive the desktop. The tool's command semantics and

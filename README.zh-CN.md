@@ -1,16 +1,16 @@
-# Agent Computer Use 开源版 v4.1.4
+# Agent Computer Use 开源版 v4.5.5
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=829%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1020%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
 > 第一次使用请先读本页的[快速上手](#快速上手)。开局先 `wins`，陌生目标先截图或定位；不要猜坐标，每次动作后都回读结果。
 
-`desktop.ps1` 给 agent 提供 "computer use" 的四件基本能力：**看**（整屏 / 窗口 / 区域的截图，外加 OCR）、**指**（在真实像素坐标上移动 / 点击 / 滚动 / 拖拽）、**打字**（键盘、剪贴板、以及直接走 UIA 写值）、**读界面树**（UI Automation，另有一条 Chrome DevTools 通道）。没有常驻进程、没有安装器、没有第三方依赖——每条命令都是一次短命的 `powershell -File` 调用，所以整套东西可审计、也很难进入卡死状态。上面的 badge 只是文档图片，不是要装的东西：除了这一个文件，没有任何可安装项。
+`desktop.ps1` 给 agent 提供 "computer use" 的四件基本能力：**看**（整屏 / 窗口 / 区域的截图，外加 OCR）、**指**（在真实像素坐标上移动 / 点击 / 滚动 / 拖拽）、**打字**（键盘、剪贴板、以及直接走 UIA 写值）、**读界面树**（UI Automation，另有一条 Chrome DevTools 通道）。没有常驻进程、没有安装器、没有第三方依赖——每条命令都是一次短命的 `powershell -File` 调用，所以整套东西可审计、也很难进入卡死状态。上面的 badge 只是文档图片，不是要装的东西：除了这一个文件，没有任何可安装项。自 v4.5.5 起仓库同时携带工具的全部源码（`src/`）；根目录 `desktop.ps1` 是这些源码确定性缝合出的构建产物——用 `skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1` 再生成，不要手改。
 
 > 🇬🇧 English edition: [README.md](README.md)
 
@@ -350,22 +350,30 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 selftest --live   # 追加�
 ## 目录结构
 
 ```
-desktop.ps1            # 工具本体（全部逻辑都在这一个文件里）
+desktop.ps1            # 工具本体——src/ 的确定性缝合产物（不要手改）
+src/                   # 工具全部源码：desktop.ps1 入口 + 22 个 lib/*.ps1 模块
 README.md              # 英文文档
 README.zh-CN.md        # 中文文档（命令集合与英文版一致，由门禁钉住）
 CHANGELOG.md           # 版本历史
 LICENSE                # MIT
-CONTRIBUTING.md        # 提 PR 前要跑什么（selftest、出网闸门、版本位）
+CONTRIBUTING.md        # 提 PR 前要跑什么（构建、selftest、出网闸门、版本位）
 SECURITY.md            # 工具能做什么、审计日志与脱敏、漏洞上报
+.gitattributes         # 换行钉位（LF）：工具、文档与样本
 .github/               # issue 模板 + PR 模板
 samples/selftest.txt   # 验证粘贴写路径的中文样本
 skill/                 # 可装载 Agent 技能：agent-computer-use/{SKILL.md, reference.md,
-                       #   install.ps1, uninstall.ps1}
+                       #   快速上手指南.md, install.ps1, uninstall.ps1}
 shots/                 # 运行期目录（已 gitignore）：默认截图 + actions.log
 .cowork-temp/          # 运行期目录（已 gitignore）：--live 日志
 ```
 
-本仓库 git 在册文件共 16 个（`tracked=16`，该数字由离线门禁与 `git ls-files` 比对钉住）。
+本仓库 git 在册文件共 41 个（`tracked=41`，该数字由离线门禁与 `git ls-files` 比对钉住）。
+
+**从源码构建：**在仓库根目录运行
+`powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`。
+缝合是确定性的——同一份源码永远缝出逐字节相同的产物；声明的源文件缺失时它点名报错退出，不写任何产物。
+`install.ps1 -TargetDir <目录>` 安装可装载技能布局并对装机件做烟测；`-RepoRoot` 在
+`src/desktop.ps1` 存在时自动认 `src/`，否则回退到 v4.5.5 之前的单文件布局。
 
 ## 许可
 

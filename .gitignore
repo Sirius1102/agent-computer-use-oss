@@ -1,14 +1,16 @@
-# runtime output (screenshots + audit log) — never commit
+# runtime artifacts — screenshots and the audit log live here, never commit
 shots/
-*.png
-*.jpg
-*.map.txt
 
-# --live run logs and one-off probe scripts: kept on disk, never committed
+# runtime artifacts + one-off probe scripts (user ruling 2026-09-29: keep on
+# disk, never commit, never run — see commit message for the full rationale)
 .cowork-temp/
 
-# editor / OS noise
+# agent session data (memory notes). Never commit: the tracked-file inventory is a
+# pinned number (13 names listed in the overview, enforced by a lint), and this
+# directory is machine-local session state, not part of the tool.
+.workbuddy/
+
+# OS / editor noise
 Thumbs.db
 Desktop.ini
-.vscode/
 *.tmp

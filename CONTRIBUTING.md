@@ -1,13 +1,24 @@
 # Contributing
 
 Thanks for considering a contribution. This repository is a single-file Windows
-desktop automation tool plus its documentation and engineering shell, so most
-contributions are docs, tests and CI — and the tool's own regression gate is the
-arbiter for all of them.
+desktop automation tool, its documentation and engineering shell, and the full source
+the tool is stitched from (`src/`), so most contributions are docs, tests and CI — and
+the tool's own regression gate is the arbiter for all of them.
 
 ## Before you open a PR
 
-1. **Run the offline self-test and paste the summary line.**
+1. **Change `src/`, then rebuild the artifact — in the same commit.** The root `desktop.ps1` is a
+   deterministic stitch product of `src/` (the `desktop.ps1` entry plus 22 `lib/*.ps1` modules);
+   it is never edited by hand. Change the source, then regenerate it:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1
+   ```
+
+   The stitch is deterministic (identical sources yield a byte-identical artifact) and exits non-zero
+   without writing anything when a declared source file is missing.
+
+2. **Run the offline self-test and paste the summary line.**
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File desktop.ps1 selftest
@@ -18,28 +29,30 @@ arbiter for all of them.
    nothing else. `selftest --live` drives real synthetic windows on a real desktop,
    so it is out of scope for CI by design and must never be added to a workflow.
 
-2. **Run the outbound-content gate over every file you touched.** The gate and
+3. **Run the outbound-content gate over every file you touched.** The gate and
    its rig deliberately live outside this repository (they encode this machine's
    private surface, which is exactly what must not enter a public tree). A
    "zero hits" result is only meaningful next to a known-dirty sample scoring
    non-zero in the same run — without that control, zero proves nothing.
 
-3. **Version bits: bump by hand, one location at a time.** Feature work raises
-   the Y bit, fixes raise the Z bit. Every bump must land in the same commit in
-   all version carriers: the header comment near the top of the tool file, its
-   usage banner, both README H1s, and the top entry of the changelog. Decide
+4. **Version bits: bump by hand, one location at a time.** The definition site is
+   the `$script:ToolVersion` constant in `src/desktop.ps1`; the file header comment
+   and the usage banner must carry the same value, and a repo-contract lint fails
+   any drift. Feature work raises the Y bit, fixes raise the Z bit. Every bump must
+   land in the same commit in all version carriers: the constant, both README H1s,
+   and the top entry of the changelog. Decide
    each occurrence of an old version number individually — historical numbers
    in changelog entries and review notes stay exactly as they are. Never
    bulk-replace.
 
-4. **Tracked-file inventory.** Adding or removing a file changes what
+5. **Tracked-file inventory.** Adding or removing a file changes what
    `git ls-files` reports. The count written in both README editions
    (`tracked=N`) and the repository layout trees must be updated in the same
    commit — the self-test compares the written number with reality and fails a
    stale inventory. Do not edit that lint's pinned set or loosen the criteria
    to make it pass; the pin follows the tree, not the other way around.
 
-5. **Both README editions move together.** `README.md` and `README.zh-CN.md`
+6. **Both README editions move together.** `README.md` and `README.zh-CN.md`
    must document the same command set — the self-test fails a one-language-only
    update. A command row changed in one language must land in the other in the
    same commit. The same goes for structural additions (sections, tables,
@@ -47,6 +60,7 @@ arbiter for all of them.
 
 ## Never commit
 
+- Edits to the root `desktop.ps1`. It is a build product; change `src/` and re-stitch (step 1).
 - Local machine paths (user-profile directories, drive-letter work roots),
   listening ports, window coordinates captured on your own desktop, names of
   other projects or sessions, credentials of any kind. The outbound gate looks

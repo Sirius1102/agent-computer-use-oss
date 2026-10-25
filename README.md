@@ -1,16 +1,16 @@
-# Agent Computer Use (Open Source Edition) v4.1.4
+# Agent Computer Use (Open Source Edition) v4.5.5
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=829%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1020%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
 > First use? Start with [Quick start](#quick-start). Run `wins` first, capture or locate unfamiliar targets, never guess coordinates, and read the result back after every action.
 
-`desktop.ps1` gives an agent the four primitives of "computer use": **see** (screenshots of screen/window/region, plus OCR), **point** (move/click/scroll/drag at real pixel coordinates), **type** (keyboard, clipboard, and direct UIA value-setting), and **read the UI tree** (UI Automation, plus a Chrome DevTools route). No daemon, no installer, no third-party dependencies — every command is one short-lived `powershell -File` invocation, so the whole tool is trivially auditable and hard to get into a stuck state. The badges above are documentation images, not packages: there is nothing to install beyond the one file.
+`desktop.ps1` gives an agent the four primitives of "computer use": **see** (screenshots of screen/window/region, plus OCR), **point** (move/click/scroll/drag at real pixel coordinates), **type** (keyboard, clipboard, and direct UIA value-setting), and **read the UI tree** (UI Automation, plus a Chrome DevTools route). No daemon, no installer, no third-party dependencies — every command is one short-lived `powershell -File` invocation, so the whole tool is trivially auditable and hard to get into a stuck state. The badges above are documentation images, not packages: there is nothing to install beyond the one file. Since v4.5.5 the repository also carries the tool's full source under `src/`; the root `desktop.ps1` is the deterministic build product of those sources - regenerate it with `skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`, never edit it by hand.
 
 > 🇨🇳 中文版文档见 [README.zh-CN.md](README.zh-CN.md)
 
@@ -23,9 +23,9 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Window selector `<sel>`](#window-selector-sel)
-- [Commands](#commands)
+- [命令速查 (Commands)](#命令速查-commands)
 - [Taking a coordinate off the screen — the order, not a menu](#taking-a-coordinate-off-the-screen--the-order-not-a-menu)
-- [Known limitations (learned the hard way)](#known-limitations-learned-the-hard-way)
+- [必须记住的坑 (Known limitations — learned the hard way)](#必须记住的坑-known-limitations--learned-the-hard-way)
 - [Screenshot coordinate system (read once, saves misclicks)](#screenshot-coordinate-system-read-once-saves-misclicks)
 - [Testing](#testing)
 - [Repository layout](#repository-layout)
@@ -35,7 +35,7 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 
 |  | in one line | where to read on |
 |---|---|---|
-| **Four primitives** | `see` (screenshots + OCR), `point` (move/click/scroll/drag at real pixels), `type` (keyboard, clipboard, UIA write), `read` (UIA tree, Chrome route) | [Quick start](#quick-start), [Commands](#commands) |
+| **Four primitives** | `see` (screenshots + OCR), `point` (move/click/scroll/drag at real pixels), `type` (keyboard, clipboard, UIA write), `read` (UIA tree, Chrome route) | [Quick start](#quick-start), [Commands](#命令速查-commands) |
 | **Guarded by default** | keystrokes go out only after the target verifiably owns the foreground — and the foreground is re-checked after sending | [Why this design](#why-this-design) |
 | **Never silently** | every number names the measurement it came from (`source=uia|ocr`, `occluded=N%`, `hit-window:`, named receipts); zero is never evidence of absence | [Why this design](#why-this-design) |
 | **Auditable** | one append-only log line per executed action; typed payloads redacted by default; `replay` refuses redacted steps | [Why this design](#why-this-design) |
@@ -140,9 +140,106 @@ After an action, do not treat exit code 0 as the business result. Use `read-text
 - When a title/proc/class selector matches **several** windows the tool *refuses* and prints every candidate — it will not silently pick the largest one. Disambiguate with a pid, `proc:` or `class:`.
 - Minimized windows (parked at −32000,−32000) are only used as a last resort.
 
-## Commands
+## 命令速查 (Commands)
 
 All coordinates are **physical screen pixels**. `|` marks the read-only/assertion commands that never move anything.
+
+**Read and measure**
+
+- `shot` — capture the whole virtual screen
+- `win` — capture one window, with its `occluded=` verdict
+- `rect` — capture a screen region
+- `zoom` — capture a small region enlarged
+- `wins` — list visible windows (`pid proc class popup owner main rect size title`)
+- `info` — one window's pid/handle/class/rects and why it was picked
+- `rect-of` — print a window's `x y w h` only
+- `cursor` — print the cursor position
+- `color-at` — pixel colour as `#RRGGBB`
+- `find-color` — first (or all, capped) pixels of a colour in a region
+- `hash` — MD5 of a region capture (the input for `assert-hash`)
+- `find` — UIA first, OCR fallback, and it says which road answered
+- `find-text` — OCR matching line rects plus clickable centres
+- `read-text` — OCR a region, print lines with their screen rects
+- `ime` — IME and keyboard-layout state of the foreground thread
+- `ime-state` — conversion mode of the default IME
+- `ime-en` — switch to alphanumeric input and read it back
+- `ime-cn` — switch to native composition and read it back
+- `ocr-cap` — OCR engine limits and installed language packs
+- `a11y-probe` — read-only: does this app expose a usable accessibility tree
+- `challenge-probe` — read-only: report a verification challenge, never solve it
+- `status-summary` — read-only checkpoint of a working copy
+- `shots-cleanup` — bound the screenshot folder (dry run; `--go` moves to quarantine)
+- `help` — this page, one command's entry, or one flag
+
+**Chrome via CDP**
+
+- `chrome-tabs` — list open tabs (host and port only)
+- `chrome-read` — visible page text of the matching tab
+- `chrome-find` — find text, return its screen rect and centre
+- `chrome-click` — click the element `chrome-find` located
+- `chrome-a11y` — relaunch Chrome with `--force-renderer-accessibility`
+- `chrome-debug-off` — close Chrome and relaunch without the debug flag
+- `chrome-menu-read` — list Chrome's own app-menu items via UIA, then dismiss
+
+**Assertions (exit-code checkpoints, nothing is clicked)**
+
+- `assert-window` — exit 0 when a window matches the selector
+- `assert-text` — OCR the region and turn the match into the exit code
+- `assert-color` — pixel equality as an exit-code verdict
+- `assert-hash` — region MD5 against a hash taken by `hash`
+- `assert-stable` — two identical consecutive frames = settled
+- `assert-changed` — wait until the region changes (a timeout says nothing happened)
+
+**Wait**
+
+- `wait-win` — poll until a matching window appears
+- `wait-gone` — poll until a matching window disappears
+- `wait-stable` — poll until two consecutive captures hash identical
+
+**Act (absolute screen coordinates)**
+
+- `move` — move the cursor
+- `click` — left click, with `--to` and guard options
+- `rclick` — right click, same guards as `click`
+- `dblclick` — double left click
+- `drag` — press, interpolate, release
+- `drag-to` — travel while the button is held
+- `press-down` — press and hold, for look-then-release flows
+- `press-up` — release; the drop carries the verdict
+- `wheel` — scroll (negative scrolls down)
+- `hover` — move and stay so tooltips render
+- `focus` — restore a window and bring it to the front
+- `keys` — raw SendKeys spec (still honours the IME)
+- `type` — type text through SendInput Unicode (bypasses the IME)
+- `type-in` — click, send TABs, then type (webview forms)
+- `paste` — file to clipboard, Ctrl+V, previous clipboard restored
+- `paste-file` — put a real file into the target app and paste it
+- `copy-file` — put a file on the clipboard as `FileDrop`
+- `relclick` — click inside a window, relative to its top-left
+- `imgclick` — click a pixel from a saved image through its `.map.txt`
+- `unmap` — print the image-to-screen mapping without clicking
+- `open-and-pick` — click the opener, capture, click the first matching line
+- `menu-pick` — click the matching row of a popup menu
+- `dialog-cancel` — press the dialog's cancel control and prove it
+- `find-click` — OCR-locate text and click the needle's own sub-span
+
+**UIA controls**
+
+- `uia-find` — search elements by name and type
+- `uia-tree` — dump the control tree with depth and rects
+- `uia-path` — resolve a path printed by `uia-tree`
+- `uia-click` — invoke a control (InvokePattern, else centre click)
+- `uia-focus` — SetFocus on a control
+- `uia-settext` — write text through ValuePattern, read back
+
+**Window management**
+
+- `win-close` — graceful `WM_CLOSE`
+- `win-max` — maximize a window
+- `win-min` — minimize a window
+- `win-move` — move the window (visible top-left at x,y)
+- `win-resize` — set the visible size (DWM border corrected)
+- `win-restore` — restore from minimized or maximized
 
 ### read and measure
 
@@ -318,7 +415,7 @@ The step file is **a JSON array** — do not wrap it in `{"steps": [...]}`. Each
 
 Guessing a point off a fitted or downscaled screenshot is not step 5 and is not a method. It has been measured in one session: four clicks placed that way, all four wrong, each one costing a retry cycle to notice.
 
-## Known limitations (learned the hard way)
+## 必须记住的坑 (Known limitations — learned the hard way)
 
 1. **Chromium-shell apps** (Electron/Tauri-style editors, chat clients) often expose an accessibility tree that stops at `Pane` — `uia-*` is useless there; fall back to screenshots + coordinates. Setting the `SPI_SETSCREENREADER` system flag does **not** make Chromium expand its tree (tested); the only reliable route is restarting the target app with `--force-renderer-accessibility` (`chrome-a11y` does exactly that, and verifies it).
 2. **UIA's first contact can be shallow.** The a11y tree is lit up *by a client connecting*, and often only after the walk that triggered it has finished. `uia-find` therefore re-contacts once before letting 0 become a verdict — and a still-empty re-contact says "no such Name", never "nothing is there".
@@ -357,22 +454,32 @@ The offline gate is a hard requirement before committing: it pins the version st
 ## Repository layout
 
 ```
-desktop.ps1            # the entire tool
+desktop.ps1            # the entire tool - a deterministic stitch product of src/ (do not hand-edit)
+src/                   # the tool's full source: desktop.ps1 entry + 22 lib/*.ps1 modules
 README.md              # this document
 README.zh-CN.md        # the Chinese edition (same command set, enforced by a gate rule)
 CHANGELOG.md           # release history
 LICENSE                # MIT
-CONTRIBUTING.md        # what to run before a PR (selftest, outbound gate, version bits)
+CONTRIBUTING.md        # what to run before a PR (build, selftest, outbound gate, version bits)
 SECURITY.md            # what the tool can do, audit log + redaction, how to report
+.gitattributes         # line-ending pins (LF) for the tool, the docs and the samples
 .github/               # issue templates + pull-request template
 samples/selftest.txt   # CJK sample for verifying the paste path
 skill/                 # loadable agent skill: agent-computer-use/{SKILL.md, reference.md,
-                       #   install.ps1, uninstall.ps1}
+                       #   快速上手指南.md, install.ps1, uninstall.ps1}
 shots/                 # runtime dir (gitignored): default screenshots + actions.log
 .cowork-temp/          # runtime dir (gitignored): --live logs
 ```
 
-The tracked-file inventory of this repository is 16 files (`tracked=16`, asserted against `git ls-files`).
+The tracked-file inventory of this repository is 41 files (`tracked=41`, asserted against `git ls-files`).
+
+**Build from source:** from the repository root run
+`powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`.
+The stitch is deterministic - identical sources always yield a byte-identical artifact - and it refuses to
+write any output when a declared source file is missing (it exits with a named error instead).
+`install.ps1 -TargetDir <dir>` installs the loadable skill layout and smoke-tests the installed copy;
+`-RepoRoot` resolves `src/` automatically when `src/desktop.ps1` exists and falls back to the
+pre-v4.5.5 single-file layout.
 
 ## License
 

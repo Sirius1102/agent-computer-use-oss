@@ -5,7 +5,7 @@ description: Operates a real Windows desktop for an agent — screenshots, windo
 
 # Agent Computer Use
 
-For a first-use workflow, read the public [Quick start](../../README.md#quick-start) (or the [Chinese edition](../../README.zh-CN.md#快速上手)) before acting. It makes screenshot-first observation, locator fallback, post-action readback, and Chinese IME input choices explicit.
+首次使用先阅读[电脑操控快速上手](快速上手指南.md)。这份文档随技能包一起交付（仓库根目录与本目录各一份，两份逐字节相同由离线判据钉死，改一处必改两处），它把截图、定位、动作和回读串成一条标准流程，并说明中文输入法下 `type`、`uia-settext`、`paste` 的选择。
 
 A **single-file, stateless Windows desktop automation CLI**. One short-lived `powershell` process per invocation: no daemon, no HTTP server, no installer, no third-party dependencies.
 
@@ -43,7 +43,7 @@ Each entry: command — what it does — minimal example.
 
 ### Screenshots (read)
 
-- `shot` — capture the whole virtual screen; e.g. `shot shots/full.png --grid`
+- `shot [outPath]` — capture the whole virtual screen; it accepts at most one output path and rejects unknown flags or extra positions before capture. For a local full-resolution crop use `rect 0 2010 400 80 <outPath> --fit 0`; use that image's `.map.txt` with `imgclick` or `unmap`, and capture again after the window or layout changes.
 - `win <sel>` — capture one window + its image-to-screen mapping; e.g. `win "Notepad" win.png --fit 900`
 - `rect <x> <y> <w> <h>` — capture a region; e.g. `rect 100 100 800 600 r.png --grid`
 - `zoom <x> <y> <w> <h> [scale]` — enlarge a small region with a mapping echo; e.g. `zoom 500 400 200 80 2 z.png`
@@ -55,7 +55,7 @@ Each entry: command — what it does — minimal example.
 
 ### Windows
 
-- `focus <sel>` — bring a window to the front, echo `fg_ok=`; e.g. `focus "Notepad"`
+- `focus <sel>` — bring a window to the front, then RE-READ the same handle (foreground / minimized / visible / rect on screen); echoes both readings with `fg_ok=` and exits 1 when the window is not actually usable; e.g. `focus "Notepad"`
 - `win-move <sel> <x> <y>` / `win-resize <sel> <w> <h>` — place / size a window; e.g. `win-move "Notepad" 0 0`
 - `win-max` / `win-min` / `win-restore` / `win-close <sel>` — window state changes; e.g. `win-restore "Notepad"`
 - `wait-win <sel> <sec>` / `wait-gone <sel> <sec>` — poll for appearance / disappearance; e.g. `wait-win "Save As" 10`
@@ -84,8 +84,8 @@ Each entry: command — what it does — minimal example.
 - `move <x> <y>` / `hover <x> <y> [--dwell ms]` — move / stay (tooltips need a dwell); e.g. `hover 800 600 --dwell 1000`
 - `drag <x1> <y1> <x2> <y2>` — press, interpolate, release; e.g. `drag 400 400 900 400`
 - `press-down` / `drag-to` / `press-up` — the mid-state trio for surfaces that decide on release; e.g. `press-down 400 400` then `press-up 900 400`
-- `wheel <amount> [x y]` — scroll; e.g. `wheel -3 800 600`
-- `relclick <sel> <dx> <dy>` — click relative to a window's top-left; e.g. `relclick "Notepad" 100 60`
+- `wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>|--at <sel>] [--focus-first] [--verify-scroll [--expect-change x,y,w,h]|--expect-visible-text <needle>]` — scroll. Omitted amount still means -120 raw delta; defaults stay raw delta and vertical. Notches multiply an explicit amount by 120. Positive/negative means up/down vertically and right/left horizontally. `--to` checks that the explicit point, or current cursor when no x/y is given, hits the selected window; `--at` requires explicit x/y and never substitutes the window centre. Verification is opt-in and requires a selected window plus explicit amount/x/y. `--verify-scroll` reads the point's UIA ScrollPattern, with an explicit local pixel rectangle as a labeled pixel-only fallback; `--expect-visible-text` checks for a newly visible UIA name. Boundary, no-effect, target-change and unavailable states stay distinct, polling is capped at 13 samples and no input is retried. Example: `wheel -3 800 600 --unit notches --axis vertical --to "Some App"`.
+- `relclick <sel> <dx> <dy>` — click relative to a window's top-left; the origin is the rect re-read after activation, and the click is refused when the point misses the target or another window (even a same-pid top-level) sits under it; e.g. `relclick "Notepad" 100 60`
 - `imgclick <img> <ix> <iy>` — the ONLY supported way from a pixel you SAW in a saved image to a screen click (uses the image's `.map.txt` sidecar); e.g. `imgclick shots/win.png 120 40`
 
 ### Type And Clipboard
@@ -94,8 +94,12 @@ Each entry: command — what it does — minimal example.
 - `type-in <x> <y> [--tab <n>] <text...>` — click a spot then type (webview forms need it); e.g. `type-in 500 300 "hi"`
 - `keys [--to <sel>] <spec>` — raw SendKeys spec; e.g. `keys --to "Notepad" "^s"`
 - `paste [--to <sel>] <file>` — read a UTF-8 file, set clipboard, Ctrl+V, restore the old clipboard afterwards; e.g. `paste --to "Notepad" text.txt`
-- `paste-file [--to <sel>] <path>` — copy a real file as FileDrop + Ctrl+V (for chat windows); e.g. `paste-file --to "MyChat" photo.png`
-- `copy-file <path>` — put a file on the clipboard as FileDrop (stays there); e.g. `copy-file photo.png`
+- `paste-file [--to <sel>] <path>` — copy a real file as FileDrop + Ctrl+V, then restore the old clipboard; the receipt needle is the file NAME, so the file has to be one this run owns. Fixture form only: `paste-file --to "Notepad" dtx-fixture.txt` — a generated file into a local editor window this run opened. **Red line below applies before you point this at any messaging surface.**
+- `copy-file <path>` — put a file on the clipboard as FileDrop (stays there); e.g. `copy-file dtx-fixture.txt`
+
+`type` treats `^a` as literal text; `keys` treats it as Ctrl+A. A numeric PID is a window selector after `--to`, not part of the text. `activated=no (was fg)` means the top-level window was already foreground; it says nothing about the edit control's focus or whether its value changed. `uia-focus` reports a SetFocus call, not a readback of keyboard focus. Read the actual field value after input when it is exposed; use `uia-settext` only as its separate ValuePattern write-and-readback route. Use Ctrl+A plus `paste` only for an explicitly confirmed whole-field replacement.
+
+Use `--guard-text` or `--guard-region` when the expected pre-action content is readable. If a `type` call cannot be read back, record that call's limit and re-check its control/focus/read path; do not infer that every Qt or Electron app rejects `type`.
 
 ### Assertions (exit-code checkpoints)
 
@@ -112,7 +116,6 @@ Each entry: command — what it does — minimal example.
 
 - `selftest` — the offline gate: environment + behaviour checks (part of the smoke test after installation); e.g. `selftest`
 - `help [<cmd>]` — the full command page, or one command's entry; e.g. `help uia-click`
-- `dpi` — DPI awareness mode + per-monitor bounds (when coordinates look scaled); e.g. `dpi`
 - `status-summary [--json]` — read-only checkpoint: HEAD / clean state / selftest counts; e.g. `status-summary`
 
 ## Default Behavior You Must Respect
@@ -127,6 +130,8 @@ Each entry: command — what it does — minimal example.
 
 This skill **clicks, types, reads/writes the clipboard and sends real file payloads into applications** — installing it is equivalent to handing the desktop's input devices to the agent that calls it. Run it only when the user asked for a desktop action, keep actions within the requested scope, and prefer read-only commands (`wins` / `uia-tree` / `read-text` / `screenshot` family) to explore first. The tool's audit log records act/text/clipboard commands **with payloads redacted** (`<redacted:Nchars>`), so logs are safe to read back.
 
+**项目红线 / hard red line — messaging surfaces.** Never send a message or a file into a **real** chat, mail or any other person-facing conversation window (WeChat / QQ / DingTalk / Slack / Outlook / a browser webmail, and any window that stands for a human on the other side) unless the user, in this same turn, named **that recipient and that file** and confirmed it. `paste` / `paste-file` / `copy-file` / `keys` / `type` all reach whatever window is in the foreground, so a guard passing is *not* permission to send. 不得向任何真实聊天会话发送消息或文件；活体验收只用本项目自己创建、自己销毁的夹具（一个本地编辑器窗口 + 一个生成的测试文件）。已经开在屏幕上的聊天窗口不是夹具，"守卫绿了"不是发送许可。
+
 ## Self-Check After Installation
 
 Run the offline gate once after installing (or after any environment change):
@@ -135,7 +140,7 @@ Run the offline gate once after installing (or after any environment change):
 powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-dir>/scripts/desktop.ps1" selftest
 ```
 
-It verifies the environment (PowerShell version, DPI awareness, OCR language packs) plus the tool's own behaviour contract. If it fails, read its FAIL lines before anything else — a red self-test means fix the environment, not bypass the tool.
+It verifies the environment (PowerShell version, DPI awareness, OCR language packs) plus the tool's own behaviour contract. Read its three outcomes apart, because they mean three different things: a **FAIL** line is the tool being wrong — fix that, and it is the only outcome that blocks delivery; a **SKIP** line names a capability this machine or this engine cannot measure (no OCR language pack, a PATH without `powershell.exe`, no `git`), and it is neither a pass nor a defect — do not install packages to make a SKIP disappear, and do not read one as proof the road works; `--live` adds checks the offline declaration does not cover, so a live run legitimately reports more. The offline total is the same number on every engine and every PATH shape (that is what the SKIP accounting buys), so a total that disagrees with the version's declaration means a check was added or lost — not that your machine is odd.
 
 ## Detailed Reference
 
