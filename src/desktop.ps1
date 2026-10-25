@@ -2299,7 +2299,7 @@ $script:StFamilyFragments = @{
 $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive delete is gated and bounded', 'the outward docs must not teach a send into a real conversation')
 $script:StFamilyCounts = @{
   'split-machine' = 'banners=23,lines=1323'
-  'repo-contract' = 'banners=5,lines=283'
+  'repo-contract' = 'banners=5,lines=322'
   'gate-meta' = 'banners=30,lines=2765'
   'flags-grammar' = 'banners=16,lines=882'
   'capture-ocr' = 'banners=8,lines=683'
@@ -2361,7 +2361,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
   'Invoke-SelftestFamily-ClipboardInput=21',
-  'Invoke-SelftestFamily-RepoContract=23',
+  'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
   'Invoke-SelftestFamily-AuditOutput=79',

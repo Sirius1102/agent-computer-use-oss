@@ -2299,7 +2299,7 @@ $script:StFamilyFragments = @{
 $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive delete is gated and bounded', 'the outward docs must not teach a send into a real conversation')
 $script:StFamilyCounts = @{
   'split-machine' = 'banners=23,lines=1323'
-  'repo-contract' = 'banners=5,lines=283'
+  'repo-contract' = 'banners=5,lines=322'
   'gate-meta' = 'banners=30,lines=2765'
   'flags-grammar' = 'banners=16,lines=882'
   'capture-ocr' = 'banners=8,lines=683'
@@ -2361,7 +2361,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
   'Invoke-SelftestFamily-ClipboardInput=21',
-  'Invoke-SelftestFamily-RepoContract=23',
+  'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
   'Invoke-SelftestFamily-AuditOutput=79',
@@ -14493,14 +14493,33 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   $mds = @(Get-ChildItem -LiteralPath $script:ToolRootPath -Filter '*.md' | Where-Object {
     (@($authSet.Kept) -contains $_.Name) -and ((Get-Content -LiteralPath $_.FullName -TotalCount 1 -Encoding UTF8) -match 'desktop\.ps1')
   })
-  ST-Check 'version: exactly two content-marked authority docs (first line mentions desktop.ps1)' ($mds.Count -eq 2)
+  # v4.5.5 (OSS-03): the public open-source layout deliberately ships neither authority doc.
+  # The public skip below is keyed on POSITIVE public markers (src/ source entry + OSS README
+  # H1 + both named docs absent) - never on mere absence - so deleting an authority doc inside
+  # the internal checkout still fails these checks exactly as before.
+  $ovName = "$([char]0x9879)$([char]0x76EE)$([char]0x603B)$([char]0x89C8).md"
+  $ilogName = "$([char]0x8FED)$([char]0x4EE3)$([char]0x65E5)$([char]0x5FD7).md"
+  $pubReadmeH1 = ''
+  if (Test-Path -LiteralPath $readmePath) { $pubReadmeH1 = [string](Get-Content -LiteralPath $readmePath -TotalCount 1) }
+  $isPublicLayout = ((Test-Path -LiteralPath (Join-Path $script:ToolRootPath 'src/desktop.ps1')) -and
+    ($pubReadmeH1 -match 'Open Source Edition') -and
+    (-not (Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ovName))) -and
+    (-not (Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ilogName))))
+  $skipPublicAuth = 'public open-source layout: the internal authority docs (overview + iteration log) are deliberately not shipped - their version pins are carried by the README H1s and the CHANGELOG top entry in this layout'
+  if ($isPublicLayout) {
+    ST-Skip 'version: exactly two content-marked authority docs (first line mentions desktop.ps1)' $skipPublicAuth
+  } else {
+    ST-Check 'version: exactly two content-marked authority docs (first line mentions desktop.ps1)' ($mds.Count -eq 2)
+  }
   # Positive named guard (v1.5.0 residual): a content-only enumeration still
   # passes if a doc is RENAMED to another .md that keeps the marker on line 1.
   # Pin the two expected names; code points keep this file pure ASCII.
-  $ovName = "$([char]0x9879)$([char]0x76EE)$([char]0x603B)$([char]0x89C8).md"
-  $ilogName = "$([char]0x8FED)$([char]0x4EE3)$([char]0x65E5)$([char]0x5FD7).md"
-  ST-Check 'version: named authority docs exist (overview + iteration log)' (
-    (Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ovName)) -and (Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ilogName)))
+  if ($isPublicLayout) {
+    ST-Skip 'version: named authority docs exist (overview + iteration log)' $skipPublicAuth
+  } else {
+    ST-Check 'version: named authority docs exist (overview + iteration log)' (
+      (Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ovName)) -and (Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ilogName)))
+  }
   $mdOk = ($mds.Count -eq 2)
   foreach ($m in $mds) {
     $head = (Get-Content -LiteralPath $m.FullName -TotalCount 12 -Encoding UTF8) -join "`n"
@@ -14508,7 +14527,11 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
     if ($head -match 'v([0-9.]+)') { $v = $Matches[1] }
     if ($v -ne $vMain) { $mdOk = $false }
   }
-  ST-Check 'version: overview header + iteration log latest entry == desktop.ps1 header' $mdOk
+  if ($isPublicLayout) {
+    ST-Skip 'version: overview header + iteration log latest entry == desktop.ps1 header' $skipPublicAuth
+  } else {
+    ST-Check 'version: overview header + iteration log latest entry == desktop.ps1 header' $mdOk
+  }
   } else {
     ST-Skip 'version: README H1 == desktop.ps1 header' $skipNoRepo
     ST-Skip 'version: exactly two content-marked authority docs (first line mentions desktop.ps1)' $skipNoRepo
@@ -14629,9 +14652,25 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   # wrong count. Pinned: the overview must carry tracked=<N> and N must equal git ls-files.
   if ($isRepoRoot) {
   $tfDoc = -1
-  foreach ($m in $mds) {
-    foreach ($l in @(Get-Content -LiteralPath $m.FullName -Encoding UTF8)) {
-      if ("$l" -match 'tracked=(\d+)') { $tfDoc = [int]$Matches[1]; break }
+  if ($isPublicLayout) {
+    # v4.5.5 (OSS-03): in the public layout the tracked= line lives in both README editions
+    # (there is no overview doc), and the assertion stays real: each edition must carry the
+    # number and both must equal git ls-files ($tfDoc=-2 marks a disagreement between editions).
+    foreach ($rn in @('README.md', 'README.zh-CN.md')) {
+      foreach ($l in @(Get-Content -LiteralPath (Join-Path $script:ToolRootPath $rn) -Encoding UTF8)) {
+        if ("$l" -match 'tracked=(\d+)') {
+          $rn2 = [int]$Matches[1]
+          if ($tfDoc -eq -1) { $tfDoc = $rn2 } elseif ($tfDoc -ne $rn2) { $tfDoc = -2 }
+          break
+        }
+      }
+    }
+    Write-Output ('      tracked-file inventory: public layout - tracked= is read from both README editions')
+  } else {
+    foreach ($m in $mds) {
+      foreach ($l in @(Get-Content -LiteralPath $m.FullName -Encoding UTF8)) {
+        if ("$l" -match 'tracked=(\d+)') { $tfDoc = [int]$Matches[1]; break }
+      }
     }
   }
   $tfReal = 0
