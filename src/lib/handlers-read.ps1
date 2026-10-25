@@ -127,6 +127,20 @@ function Invoke-Handler-cursor([string]$Cmd, [string[]]$Rest) {
       "cursor=($($p.X),$($p.Y))"
 }
 
+# v4.5.5 (OSS-05): dpi - restored verbatim from the published v4.1.4 tree. The source-line
+# migration had dropped the Per-Monitor V2 block and this command while the docs still
+# promised both. Reports the awareness mode actually obtained at startup plus every
+# monitor's bounds in physical pixels, so a mismatch between screenshot size and click
+# coordinates can be diagnosed in one call.
+function Invoke-Handler-dpi([string]$Cmd, [string[]]$Rest) {
+      $o = [System.Windows.Forms.SystemInformation]::VirtualScreen
+      "dpi-mode=$script:DpiMode  virtual-screen=($($o.X),$($o.Y)) $($o.Width)x$($o.Height)"
+      foreach ($s in [System.Windows.Forms.Screen]::AllScreens) {
+        $b = $s.Bounds
+        "$($s.DeviceName) primary=$($s.Primary) bounds=($($b.X),$($b.Y)) $($b.Width)x$($b.Height)"
+      }
+}
+
 # v4.4.0 (A-15): status-summary - the case body, verbatim
 function Invoke-Handler-status-summary([string]$Cmd, [string[]]$Rest) {
       $s = Get-WorkspaceSummary

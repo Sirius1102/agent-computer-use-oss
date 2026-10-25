@@ -269,7 +269,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07LtCount = @($a07LtSplit).Count
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 99) -and (@($script:StLoadTimeNames).Count -eq 79) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 102) -and (@($script:StLoadTimeNames).Count -eq 80) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -867,11 +867,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (26/21/21/8 = all 76)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (26/21/21/8 = all 76)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +

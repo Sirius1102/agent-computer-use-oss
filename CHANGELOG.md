@@ -46,6 +46,11 @@ checks. User-visible changes since v4.1.4:
   use self-built fixture windows, and the red line is stated in both languages.
 - **The Quick start ships with the skill.** `skill/agent-computer-use/快速上手指南.md` installs together
   with the skill files, so a newcomer's first link resolves after installation.
+- **Restored: the `dpi` command and the Per-Monitor V2 opt-in.** v4.1.4 shipped both; the
+  source-line migration had dropped them while the README still promised them. Startup now
+  tries Per-Monitor V2 first (falling back to System-aware on older builds) and records the
+  mode actually obtained; `dpi` reports that mode plus every monitor's bounds in physical
+  pixels.
 
 ## v4.1.4 - 2026-10-09
 

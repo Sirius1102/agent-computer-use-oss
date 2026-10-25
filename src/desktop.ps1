@@ -1035,7 +1035,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 76) { $notes += ('names-total=' + $total + '-want76') }
+  if ($total -ne 77) { $notes += ('names-total=' + $total + '-want77') }
   return ($notes -join ';')
 }
 
@@ -2345,7 +2345,7 @@ $script:StHandlerUnwrapped = 0
 #    half alone (a file with no entry-side removal, or a removal with no declared file). The design fixes
 #    the sizes and the category labels, not the name list, so the assignment is written down here rather
 #    than re-derived differently by the next hand.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'type', 'type-in', 'keys', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'type', 'type-in', 'keys', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2467,6 +2467,7 @@ $script:StLoadTimeNames = @(
   'ActionLog=1',
   'ErrorActionPreference=1',
   'exitReleaseReceipt=1',
+  'script:DpiMode=3',
   'MOUSE_LDOWN=1',
   'MOUSE_LUP=1',
   'MOUSE_RDOWN=1',
@@ -2617,6 +2618,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 public class DT {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
@@ -2752,8 +2754,22 @@ public class DT {
 "@
 
 # Must run before any coordinate is read, otherwise Windows virtualizes every
-# value by the monitor scale factor (150% here) and clicks land in the wrong place.
-[void][DT]::SetProcessDPIAware()
+# value by the monitor scale factor and clicks land in the wrong place.
+# Preferred mode is Per-Monitor V2 (Windows 10 1703+, user32 context value -4):
+# with several monitors at DIFFERENT scale factors, the legacy System-aware
+# mode below is still virtualized on secondary monitors, so screenshots and
+# clicks there can be offset. Older builds throw EntryPointNotFoundException
+# and we fall back to SetProcessDPIAware() (System aware).
+# $DpiMode is reported by the `dpi` command for troubleshooting.
+$script:DpiMode = 'unaware'
+try {
+  if ([DT]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $script:DpiMode = 'per-monitor-v2' }
+} catch { }
+if ($script:DpiMode -eq 'unaware') {
+  try {
+    if ([DT]::SetProcessDPIAware()) { $script:DpiMode = 'system' }
+  } catch { }
+}
 
 $MOUSE_LDOWN = 0x0002
 $MOUSE_LUP = 0x0004
@@ -9122,6 +9138,7 @@ desktop.ps1 v4.5.5 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     rects / pick
     rect-of <sel>                   print "x y w h" of <sel> only
     cursor                          print current cursor position
+    dpi                             print DPI awareness mode + per-monitor bounds
     color-at <x> <y>                pixel colour as #RRGGBB (link-up LEDs etc.)
     find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]
                                     first match in region (cap 500) or ERROR
@@ -9883,6 +9900,10 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 
     'cursor' {
       Invoke-Handler-cursor 'cursor' $Rest
+    }
+
+    'dpi' {
+      Invoke-Handler-dpi 'dpi' $Rest
     }
 
     'ime' {

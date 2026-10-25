@@ -1035,7 +1035,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 76) { $notes += ('names-total=' + $total + '-want76') }
+  if ($total -ne 77) { $notes += ('names-total=' + $total + '-want77') }
   return ($notes -join ';')
 }
 
@@ -2345,7 +2345,7 @@ $script:StHandlerUnwrapped = 0
 #    half alone (a file with no entry-side removal, or a removal with no declared file). The design fixes
 #    the sizes and the category labels, not the name list, so the assignment is written down here rather
 #    than re-derived differently by the next hand.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'type', 'type-in', 'keys', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'type', 'type-in', 'keys', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2467,6 +2467,7 @@ $script:StLoadTimeNames = @(
   'ActionLog=1',
   'ErrorActionPreference=1',
   'exitReleaseReceipt=1',
+  'script:DpiMode=3',
   'MOUSE_LDOWN=1',
   'MOUSE_LUP=1',
   'MOUSE_RDOWN=1',
@@ -2617,6 +2618,7 @@ using System.Text;
 using System.Runtime.InteropServices;
 public class DT {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
@@ -2752,8 +2754,22 @@ public class DT {
 "@
 
 # Must run before any coordinate is read, otherwise Windows virtualizes every
-# value by the monitor scale factor (150% here) and clicks land in the wrong place.
-[void][DT]::SetProcessDPIAware()
+# value by the monitor scale factor and clicks land in the wrong place.
+# Preferred mode is Per-Monitor V2 (Windows 10 1703+, user32 context value -4):
+# with several monitors at DIFFERENT scale factors, the legacy System-aware
+# mode below is still virtualized on secondary monitors, so screenshots and
+# clicks there can be offset. Older builds throw EntryPointNotFoundException
+# and we fall back to SetProcessDPIAware() (System aware).
+# $DpiMode is reported by the `dpi` command for troubleshooting.
+$script:DpiMode = 'unaware'
+try {
+  if ([DT]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $script:DpiMode = 'per-monitor-v2' }
+} catch { }
+if ($script:DpiMode -eq 'unaware') {
+  try {
+    if ([DT]::SetProcessDPIAware()) { $script:DpiMode = 'system' }
+  } catch { }
+}
 
 $MOUSE_LDOWN = 0x0002
 $MOUSE_LUP = 0x0004
@@ -9170,6 +9186,20 @@ function Invoke-Handler-cursor([string]$Cmd, [string[]]$Rest) {
       "cursor=($($p.X),$($p.Y))"
 }
 
+# v4.5.5 (OSS-05): dpi - restored verbatim from the published v4.1.4 tree. The source-line
+# migration had dropped the Per-Monitor V2 block and this command while the docs still
+# promised both. Reports the awareness mode actually obtained at startup plus every
+# monitor's bounds in physical pixels, so a mismatch between screenshot size and click
+# coordinates can be diagnosed in one call.
+function Invoke-Handler-dpi([string]$Cmd, [string[]]$Rest) {
+      $o = [System.Windows.Forms.SystemInformation]::VirtualScreen
+      "dpi-mode=$script:DpiMode  virtual-screen=($($o.X),$($o.Y)) $($o.Width)x$($o.Height)"
+      foreach ($s in [System.Windows.Forms.Screen]::AllScreens) {
+        $b = $s.Bounds
+        "$($s.DeviceName) primary=$($s.Primary) bounds=($($b.X),$($b.Y)) $($b.Width)x$($b.Height)"
+      }
+}
+
 # v4.4.0 (A-15): status-summary - the case body, verbatim
 function Invoke-Handler-status-summary([string]$Cmd, [string[]]$Rest) {
       $s = Get-WorkspaceSummary
@@ -13646,7 +13676,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07LtCount = @($a07LtSplit).Count
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 99) -and (@($script:StLoadTimeNames).Count -eq 79) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 102) -and (@($script:StLoadTimeNames).Count -eq 80) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -14244,11 +14274,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (26/21/21/8 = all 76)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (26/21/21/8 = all 76)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +
@@ -16469,12 +16499,12 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
   # begin on a line that is neither. The unscoped file-wide count of the same regex is 90 - 14 more
   # lines live in OTHER switches - which is why this gate (and the three older scans) must be scoped
   # to the dispatcher, and why the difference is asserted rather than a number being trusted.
-  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 76 79
+  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 77 80
   $a15Unscoped = 0
   foreach ($a15l in $srcLines) { if ([regex]::IsMatch([string]$a15l, '^    ''[a-z0-9-]+'' \{$')) { $a15Unscoped = $a15Unscoped + 1 } }
-  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 76 and 79, and the unscoped count is larger, so the scope is what is being measured' (
-    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 76) -and ($hCaseStarts.Count -eq 76) -and
-    ($gaCasesCount -eq 79) -and ($a15Unscoped -gt 76))
+  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 77 and 80, and the unscoped count is larger, so the scope is what is being measured' (
+    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 77) -and ($hCaseStarts.Count -eq 77) -and
+    ($gaCasesCount -eq 80) -and ($a15Unscoped -gt 77))
   Write-Output ('      A-15 case shape: gap=[' + $a15Gap + '] flag-scan=' + $d1CaseStarts.Count + ' help-index=' + $hCaseStarts.Count +
     ' f-00-a=' + $gaCasesCount + ' unscoped-file-wide=' + $a15Unscoped)
   # the teeth: every note this predicate can emit is planted, on text - not on the tree. The clean
@@ -26892,6 +26922,7 @@ desktop.ps1 v4.5.5 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     rects / pick
     rect-of <sel>                   print "x y w h" of <sel> only
     cursor                          print current cursor position
+    dpi                             print DPI awareness mode + per-monitor bounds
     color-at <x> <y>                pixel colour as #RRGGBB (link-up LEDs etc.)
     find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]
                                     first match in region (cap 500) or ERROR
@@ -28461,6 +28492,10 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 
     'cursor' {
       Invoke-Handler-cursor 'cursor' $Rest
+    }
+
+    'dpi' {
+      Invoke-Handler-dpi 'dpi' $Rest
     }
 
     'ime' {

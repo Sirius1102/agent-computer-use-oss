@@ -45,11 +45,11 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 
 ## Why this design
 
-- **Stateless by choice.** Each call spawns a fresh PowerShell process (~0.3–0.6 s). Slower than a resident host, but there is no background process to leak, crash, or debug. When something goes wrong, the failure is fully contained in one command's stdout and exit code.
+- **Stateless by choice.** Each call spawns a fresh PowerShell process (~1.7–2.0 s, measured on Windows 11 / PowerShell 5.1, 2026-10). Slower than a resident host, but there is no background process to leak, crash, or debug. When something goes wrong, the failure is fully contained in one command's stdout and exit code.
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. The foreground is re-checked *after* sending, so a mid-flight focus steal is a loud failure too. (`--force` opts out, legacy behavior.)
 - **It says how it knows what it knows.** This is the design rule the whole feature set grew around: a number or a "not found" is worthless unless the command also prints the measurement it came from. So `find` reports `source=uia|ocr`; a miss names what *both* roads measured; `hit-window:` prints the window your click actually landed on; capture echoes print the image→screen mapping they used; `--expect` verdicts name the patience and polling interval that were really applied; `paste` names which receipt leg accepted a folded payload. **Zero is never evidence of absence**, and a check that can only pass is not a check.
 - **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives, and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
-- **Self-testing.** `selftest` runs the offline gate (currently ~590 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
+- **Self-testing.** `selftest` runs the offline gate (currently 1020 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
 - **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
@@ -87,9 +87,13 @@ another product's internals are not public, no claim is made about them.
 **What this tool gives up** (the cost side of those differences): no VLM means no
 open-ended semantic understanding of arbitrary screens — it finds text it can OCR and
 controls that expose names, not "the thing that looks like a login box". Every call pays
-a fresh-process startup (~0.3–0.6 s). Windows only. And the guards sometimes refuse a
+a fresh-process startup (~1.7–2.0 s measured on Windows 11 / PowerShell 5.1, 2026-10). Windows only. And the guards sometimes refuse a
 *legitimate* action when the desktop is in an unexpected state — refusals are loud by
 design, but they are still refusals.
+
+One boundary the table cannot draw by itself: this tool is a deterministic local CLI. It executes
+locally whether a human or an AI calls it - but it does not make the *calling* AI local: when an agent
+drives it, that agent's inference runs wherever that agent runs.
 
 ## Requirements
 
@@ -152,6 +156,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 - `zoom` — capture a small region enlarged
 - `wins` — list visible windows (`pid proc class popup owner main rect size title`)
 - `info` — one window's pid/handle/class/rects and why it was picked
+- `dpi` — DPI awareness mode obtained at startup + every monitor's bounds in physical pixels
 - `rect-of` — print a window's `x y w h` only
 - `cursor` — print the cursor position
 - `color-at` — pixel colour as `#RRGGBB`
@@ -253,6 +258,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `info <sel>` | pid / handle / proc / class / owner / main / rects / `pick=` (why this window was chosen) |
 | `rect-of <sel>` | print `x y w h` only — handy for relative math |
 | `cursor` | current cursor position |
+| `dpi` | DPI awareness mode obtained at startup + every monitor's bounds in physical pixels |
 | `dpi` | DPI awareness mode obtained at startup + every monitor's bounds in physical pixels |
 | `color-at <x> <y>` | pixel colour as `#RRGGBB` (status LEDs, spinners that have no text) |
 | `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]` | first (or all, capped at 500) matching pixels in a region |
@@ -477,7 +483,9 @@ The tracked-file inventory of this repository is 41 files (`tracked=41`, asserte
 `powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`.
 The stitch is deterministic - identical sources always yield a byte-identical artifact - and it refuses to
 write any output when a declared source file is missing (it exits with a named error instead).
-`install.ps1 -TargetDir <dir>` installs the loadable skill layout and smoke-tests the installed copy;
+`uninstall.ps1` removes the skill again; its recursive delete sits behind a confirmation gate and refuses
+repository roots, worktrees, volume roots and reparse points by shape. `install.ps1 -TargetDir <dir>`
+installs the loadable skill layout and smoke-tests the installed copy;
 `-RepoRoot` resolves `src/` automatically when `src/desktop.ps1` exists and falls back to the
 pre-v4.5.5 single-file layout.
 

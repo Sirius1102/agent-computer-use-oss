@@ -672,12 +672,12 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
   # begin on a line that is neither. The unscoped file-wide count of the same regex is 90 - 14 more
   # lines live in OTHER switches - which is why this gate (and the three older scans) must be scoped
   # to the dispatcher, and why the difference is asserted rather than a number being trusted.
-  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 76 79
+  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 77 80
   $a15Unscoped = 0
   foreach ($a15l in $srcLines) { if ([regex]::IsMatch([string]$a15l, '^    ''[a-z0-9-]+'' \{$')) { $a15Unscoped = $a15Unscoped + 1 } }
-  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 76 and 79, and the unscoped count is larger, so the scope is what is being measured' (
-    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 76) -and ($hCaseStarts.Count -eq 76) -and
-    ($gaCasesCount -eq 79) -and ($a15Unscoped -gt 76))
+  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 77 and 80, and the unscoped count is larger, so the scope is what is being measured' (
+    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 77) -and ($hCaseStarts.Count -eq 77) -and
+    ($gaCasesCount -eq 80) -and ($a15Unscoped -gt 77))
   Write-Output ('      A-15 case shape: gap=[' + $a15Gap + '] flag-scan=' + $d1CaseStarts.Count + ' help-index=' + $hCaseStarts.Count +
     ' f-00-a=' + $gaCasesCount + ' unscoped-file-wide=' + $a15Unscoped)
   # the teeth: every note this predicate can emit is planted, on text - not on the tree. The clean
