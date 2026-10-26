@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.5.6 - 2026-10-26 (local candidate; not published)
+
+- **Selftest summary and failure diagnostics.** Under PowerShell 5.1 StrictMode, auto-trim MANIFEST
+  SHA rows are read into arrays before counting, so zero or one SHA row does not interrupt the final
+  selftest summary. If move counters, destination files, and MANIFEST rows disagree, selftest reports
+  the result type and properties, movement counters, destination filenames, failures, and MANIFEST
+  rows while leaving the assertions active.
+- **Scope.** This changes the selftest measurement path and adds diagnostics. Production
+  Move/Quarantine behavior is unchanged; the two historical v4.5.5 Move failures remain undiagnosed.
+
 ## v4.5.5 - 2026-10-25
 
 The open-source edition catches up with the maintained line. The tool keeps its runtime shape - one

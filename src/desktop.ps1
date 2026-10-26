@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.5.5  (version sync list lives in the project overview doc)
+# version: 4.5.6  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.5.5'
+$script:ToolVersion = '4.5.6'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -2300,7 +2300,7 @@ $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive de
 $script:StFamilyCounts = @{
   'split-machine' = 'banners=23,lines=1323'
   'repo-contract' = 'banners=5,lines=322'
-  'gate-meta' = 'banners=30,lines=2765'
+  'gate-meta' = 'banners=30,lines=2793'
   'flags-grammar' = 'banners=16,lines=882'
   'capture-ocr' = 'banners=8,lines=683'
   'popup-occlusion' = 'banners=7,lines=348'
@@ -9080,7 +9080,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.5.5 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.5.6 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.5.5  (version sync list lives in the project overview doc)
+# version: 4.5.6  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.5.5'
+$script:ToolVersion = '4.5.6'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -2300,7 +2300,7 @@ $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive de
 $script:StFamilyCounts = @{
   'split-machine' = 'banners=23,lines=1323'
   'repo-contract' = 'banners=5,lines=322'
-  'gate-meta' = 'banners=30,lines=2765'
+  'gate-meta' = 'banners=30,lines=2793'
   'flags-grammar' = 'banners=16,lines=882'
   'capture-ocr' = 'banners=8,lines=683'
   'popup-occlusion' = 'banners=7,lines=348'
@@ -25188,9 +25188,37 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     $atRun2 = Trim-ShotDir -Dir $atShots -why 'selftest' -Keep 1 -QuarOverride $atQuar -CmdName 'selftest'
     $script:NoAutoTrim = $true
     $atManifest = Join-Path $atQuar 'MANIFEST.md'
-    $atDest = @($atRun1.Dest)
+    $atDest = @()
+    if ($atRun1 -is [System.Collections.IDictionary] -and $atRun1.Contains('Dest')) { $atDest = @($atRun1['Dest']) }
     $atMovedFiles = @()
-    if ($atRun1) { $atMovedFiles = @(Get-ChildItem -LiteralPath $atRun1.Dest -File | ForEach-Object { $_.Name }) }
+    if (@($atDest).Count -gt 0 -and (Test-Path -LiteralPath $atDest[0])) { $atMovedFiles = @(Get-ChildItem -LiteralPath $atDest[0] -File | ForEach-Object { $_.Name }) }
+    # X-02 (Set-StrictMode): a one-row or zero-row pipeline is unwrapped in PS 5.1,
+    # so read the manifest once into arrays before inspecting Count or reporting evidence.
+    $atManifestText = ''; $atManifestLines = @(); $atManifestShaRows = @(); $atManifestReadError = ''
+    try {
+      if (Test-Path -LiteralPath $atManifest) {
+        $atManifestText = Get-Content -Raw -Encoding UTF8 -LiteralPath $atManifest
+        $atManifestLines = @($atManifestText -split "`n")
+        $atManifestShaRows = @($atManifestLines | Where-Object { $_ -match '^\- ' -and $_ -match 'sha256: ' })
+      }
+    } catch { $atManifestReadError = $_.Exception.Message }
+    $atRun1Type = 'null'; $atRun1Properties = @(); $atRun1MovedText = 'n/a'; $atRun1FailedText = 'n/a'; $atRun1UnrecordedN = 0; $atRun1Failures = @()
+    if ($atRun1 -is [System.Collections.IDictionary]) {
+      $atRun1Type = $atRun1.GetType().FullName
+      $atRun1Properties = @($atRun1.Keys | ForEach-Object { [string]$_ } | Sort-Object)
+      if ($atRun1.Contains('Moved')) { $atRun1MovedText = [string]$atRun1['Moved'] }
+      if ($atRun1.Contains('Failed')) { $atRun1FailedText = [string]$atRun1['Failed'] }
+      if ($atRun1.Contains('Unrecorded')) { $atRun1UnrecordedN = @($atRun1['Unrecorded']).Count }
+      if ($atRun1.Contains('Failures')) { $atRun1Failures = @($atRun1['Failures']) }
+    } elseif ($null -ne $atRun1) {
+      $atRun1Type = $atRun1.GetType().FullName
+      $atRun1Properties = @($atRun1.PSObject.Properties | ForEach-Object { $_.Name })
+    }
+    $atDiagnosticMismatch = ($null -eq $atRun1) -or ($atRun1MovedText -ne '4') -or ($atRun1FailedText -ne '0') -or (@($atMovedFiles).Count -ne 4) -or ($atManifestShaRows.Count -ne 4) -or ($atRun1UnrecordedN -gt 0)
+    if ($atDiagnosticMismatch) {
+      Write-Output ('      auto-trim observed: atRun1.type={0} properties=[{1}] moved={2} failed={3} unrecorded={4} dest-files=[{5}] manifest-sha256-rows={6} failures=[{7}] manifest-read-error=[{8}]' -f $atRun1Type, ($atRun1Properties -join ','), $atRun1MovedText, $atRun1FailedText, $atRun1UnrecordedN, ($atMovedFiles -join ','), $atManifestShaRows.Count, (@($atRun1Failures | ForEach-Object { [string]$_ }) -join ' || '), $atManifestReadError)
+      foreach ($atManifestLine in @($atManifestLines | Where-Object { $_ -like '- *' })) { Write-Output ('        MANIFEST ' + $atManifestLine) }
+    }
     ST-Check 'unit: auto-trim refuses while the selftest guard flag is set (live fixtures stay put)' ($null -eq $atBlocked)
     ST-Check 'e2e: auto-trim moves the over-bound images WITH their sidecars and keeps the newest' (
       ($null -ne $atRun1) -and ($atRun1.Moved -eq 4) -and ($atRun1.Failed -eq 0) -and (Test-Path -LiteralPath (Join-Path $atShots 'a3.png')) -and (-not (Test-Path -LiteralPath (Join-Path $atShots 'a1.png'))) -and (-not (Test-Path -LiteralPath (Join-Path $atShots 'a2.png.map.txt'))))
@@ -25198,7 +25226,7 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     ST-Check 'e2e: auto-trim lands the files in the quarantine folder, nothing is deleted' (
       (@($atMovedFiles | Where-Object { $_ -in @('a1.png', 'a1.png.map.txt', 'a2.png', 'a2.png.map.txt') }).Count -eq 4) -and ($atRun1.Moved -eq $atMovedFiles.Count))
     ST-Check 'e2e: auto-trim writes a MANIFEST section naming every original path with its SHA256' (
-      (Test-Path -LiteralPath $atManifest) -and ((Get-Content -Raw -LiteralPath $atManifest) -match 'auto-trim v2\.6\.0') -and (((Get-Content -Raw -LiteralPath $atManifest) -split "`n" | Where-Object { $_ -match '^\- ' -and $_ -match 'sha256: ' }).Count -eq 4))
+      (Test-Path -LiteralPath $atManifest) -and ($atManifestText -match 'auto-trim v2\.6\.0') -and ($atManifestShaRows.Count -eq 4))
     ST-Check 'e2e: auto-trim is a no-op once the folder is under the bound (it does not churn)' ($null -eq $atRun2)
     ST-Check 'e2e: auto-trim states its own bound and the no-deletion promise in the note' (
       ("$($atRun1.Note)" -match 'keep newest 1') -and ("$($atRun1.Note)" -match 'nothing was deleted'))
@@ -26864,7 +26892,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.5.5 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.5.6 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
