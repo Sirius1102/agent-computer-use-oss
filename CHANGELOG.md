@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.5.7 - 2026-10-26
+
+- **OCR language refusal no longer crashes.** When the requested `--ocr-lang` had no installed
+  recognizer, the empty match was indexed with `[0]` and the call died with "Cannot index into a
+  null array" instead of the intended message. It now takes the first match without indexing, so the
+  existing refusal runs and lists the installed packs. Selection with an installed pack is unchanged.
+- **A raw-rect `find-text` no longer implies occlusion.** With `x y w h` there is no target window,
+  so the miss note used to say the sampled pixels "belong to other windows" - an inference, and one
+  that read as an occlusion verdict. It now states that the owner/share is pixel OWNERSHIP, and
+  points at `<sel>` for a real occlusion comparison. Window-targeted behaviour is unchanged.
+- **Scope.** Two refusal/diagnostic paths; no command syntax, exit-code contract, or guard changed.
+
 ## v4.5.6 - 2026-10-26
 
 - **Selftest summary and failure diagnostics.** Under PowerShell 5.1 StrictMode, auto-trim MANIFEST

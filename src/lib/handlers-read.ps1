@@ -719,7 +719,10 @@ function Invoke-Handler-find-text([string]$Cmd, [string[]]$Rest) {
         if ($null -ne $gate -and $gate.Mismatch -gt 0 -and @($gate.Covering).Count -gt 0) {
           $occNote = "; TARGET OCCLUDED: $([int][math]::Round($gate.Pct))% covered by pid=$($gate.Covering[0].Pid) proc=$($gate.Covering[0].Proc) - a not-found here is NOT evidence the text is absent (raise/focus the window, or pass --occlude off)"
         } elseif ($null -ne $owners -and $owners.Ran -and @($owners.Owners).Count -gt 0) {
-          $occNote = '; sampled pixels belong to other windows - see premises below'
+          # CU-FINAL-ROUND2: a raw rect has NO target, so "other windows" was an unwarranted
+          # inference - the owner shown can be the very window the caller meant, and the
+          # share next to it is pixel OWNERSHIP, not an occlusion rate. Say only the fact.
+          $occNote = '; raw rect (no target window): the owner/share above is pixel OWNERSHIP, not an occlusion verdict - pass <sel> instead of x y w h to compare against a window'
         }
         # v1.5.9 (P-4): a large near-empty read on a MISS usually means an in-window
         # scrim - say so before the not-found line is taken as fact.
