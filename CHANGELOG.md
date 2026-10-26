@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## v4.5.6 - 2026-10-26 (local candidate; not published)
+## v4.5.6 - 2026-10-26
 
 - **Selftest summary and failure diagnostics.** Under PowerShell 5.1 StrictMode, auto-trim MANIFEST
   SHA rows are read into arrays before counting, so zero or one SHA row does not interrupt the final
