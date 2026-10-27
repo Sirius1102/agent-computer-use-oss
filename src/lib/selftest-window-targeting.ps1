@@ -692,8 +692,13 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
       $_.Contains('if ($ecb) { Invoke-ExpectChangeCheck $p $ecb ''wheel'' }')
   }).Count
   ST-Check 'lint: wheel initializes no pixel expectation, acquires one only when requested, and checks only a present baseline' ($c44WheelEmptyGuard -eq 3)
-  $c44WheelLiveCall = @($codeLines | Where-Object { $_ -match '\$outWheel = & powershell .* wheel -3 --at ''DTX-ExpectProbe''' }).Count
-  ST-Check 'lint: live wheel proof executes exactly one real DTX-ExpectProbe call' ($c44WheelLiveCall -eq 1)
+  # R-06: after CU-REL-03 a wheel call cannot take '--at' without an explicit x/y scroll point, so
+  # the live proof carries two numeric words between the amount and the selector. The bare-'--at'
+  # line left above it is the deliberate refusal control (no input sent) and must not be counted
+  # as the proof; both are pinned so neither halves can silently drift.
+  $c44WheelLiveCall = @($codeLines | Where-Object { $_ -match '\$outWheel = & powershell .* wheel -3 \$cpx \$cpy --at ''DTX-ExpectProbe''' }).Count
+  $c44WheelLiveRefusal = @($codeLines | Where-Object { $_ -match '\$outWheelNoXY = & powershell .* wheel -3 --at ''DTX-ExpectProbe''' }).Count
+  ST-Check 'lint: live wheel proof executes exactly one coordinate-bearing DTX-ExpectProbe call plus one no-coordinate refusal control' ($c44WheelLiveCall -eq 1 -and $c44WheelLiveRefusal -eq 1)
   $c44ClickPidAudit = @($codeLines | Where-Object { $_ -ceq '      if ($null -ne $tgt) { $clickLogArgs = @($clickLogArgs) + @("pid=$($tgt.Pid)") }' }).Count
   ST-Check 'lint: click audit appends the resolved target pid for an independent act witness' ($c44ClickPidAudit -eq 1)
   Write-Output ("      selector ambiguity + wheel parser: ambiguous=$($c44Amb.Count) wheel-sites=$c44WheelSites private-sites=$c44WheelPrivateSites")

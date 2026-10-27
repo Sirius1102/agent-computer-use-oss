@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.3 - 2026-10-27
+
+- **Keyboard ownership is a state machine, not a hope.** `key` / `key-release` distinguish
+  prepared / confirmed-DOWN / confirmed-UP / unknown. A modifier or base whose DOWN did not
+  return 0 is never registered as held, so this call never invents an UP for a key it did not
+  press, and a key somebody else pressed later is not released on its behalf. The ledger is
+  read-modify-written under a bounded lock, records the owner PID together with the process
+  creation identity, and reports absent / valid-empty / corrupt / unreadable / unknown-version
+  as five different things instead of collapsing them into an empty array.
+- **Foreground waits bind a window, not a process.** The foreground condition compares the
+  structured foreground HWND against the target's own identity; another top-level window that
+  happens to belong to the same PID no longer satisfies it.
+- **Blocking reads are bounded.** UIA and text reads run inside a disposable worker boundary
+  that the wait budget can abandon, and timeout / unsupported / unmet / read-failure are
+  reported separately.
+- **A refused process is not a missing process.** `Get-ProcSnapshot` now separates
+  access-denied / unknown from not-exist, so "no process with that id" is only printed when it
+  is true.
+- **capabilities speaks the real gate.** The JSON-capability column is derived from the same
+  source the dispatcher uses, which removes the 17 false negatives; help / capabilities /
+  dispatcher are cross-checked in both directions with planted-counterexample controls.
+- **Image carrier for `copy-file` / `paste-file`.** `--image` writes and verifies a real bitmap
+  carrier and refuses unsupported extensions, zero-size files and non-images before the
+  clipboard is touched; the restored clipboard is verified by re-digesting the pixels.
+- **Test teeth.** A note no longer counts as a test; the fold-budget case must prove a numeric
+  time and one of two named legal branches; the live wheel case passes explicit coordinates;
+  the self-clean fixture saves and restores `DTX_SHOT_AUTOTRIM` instead of switching the real
+  output-directory cleanup on to make a run green.
+
 ## v4.6.1 - 2026-10-27
 
 - **Clipboard preservation tells the truth.** `clip-info` now reads the FORMAT LIST only: it no

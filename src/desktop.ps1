@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.1  (version sync list lives in the project overview doc)
+# version: 4.6.3  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.1'
+$script:ToolVersion = '4.6.3'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -445,7 +445,12 @@ Set-StrictMode -Version Latest
 # v4.6.1: +5 for package G's format-list branch, the named-extra gate, the restore-outcome map and
 # the clip-info metadata-only body lint (1038 -> 1043). Measured again on the 13:41 clean-host run:
 # the offline run emits 1044 checks, so the declaration is the measured total (1043 -> 1044).
-$script:DeclaredCheckTotal = 1044
+# v4.6.2 (R-05): +4 for the page/registry both-direction coverage and the capabilities-json
+# gate equality, each with a planted-copy control (1044 -> 1048).
+# v4.6.3 (R-06): the run measures 1050. The source tree already carried 2 emitters the shipped
+# root artifact never contained, so 1044 + 4 was 2 short; this is the MEASURED number, not a
+# loosened bound (the contract row still requires the run to equal it exactly).
+$script:DeclaredCheckTotal = 1050
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2301,26 +2306,26 @@ $script:StFamilyFragments = @{
   'challenge-workflow' = @('verification-challenge workflow', 'the process-entry environment normalizer')
   'drag-press' = @('the drag mid-state gate', 'the pairing id is HANDED OVER', 'drag''s landing guard')
   'clipboard-input' = @('clipboard kind branch', 'confusable fold is a marked SECOND pass', 'strict UTF-8 gate for sent files', 'a parked pick says parked')
-  'docs-contract' = @('the usage PAGE itself is well-formed', 'advertises a ladder must walk the same one', 'document-consistency sweep', 'the skill loader''s command list is an outward', 'the quick-start guide is an outward contract', 'the skill loader scripts carry the project guards', 'help <command> - the page gets an index', 'TB-5: the uninstaller', 'TB-4: the outward docs', 'TB-6: the newcomer document', 'TB-6 (repository face)')
+  'docs-contract' = @('the usage PAGE itself is well-formed', 'advertises a ladder must walk the same one', 'document-consistency sweep', 'the skill loader''s command list is an outward', 'the quick-start guide is an outward contract', 'the skill loader scripts carry the project guards', 'help <command> - the page gets an index', 'TB-5: the uninstaller', 'TB-4: the outward docs', 'TB-6: the newcomer document', 'TB-6 (repository face)', 'the page and the registry are checked in BOTH directions')
   'gate-meta' = @('every STATIC regex literal in the file must COMPILE', 'forbidden @()/$() wrapper', 'pure helpers', 'the exact return-shape semantics', 'call arity: a dead argument', 'every Test-* guard is called WITH the arguments', 'nothing in production is a PowerShell automatic variable', 'one owner per constant', 'the two copied BLOCKS', 'v4.2.4: --timing', 'no @(array).Count inside a for-condition', 'two preventive lints from the six-trap ledger', '--index / --only contracts', 'step assembly purity', 'the small-fix bundle', 'tab manifest reconciliation', 'replay flag parsing + redaction refusal', 'JSON array unwrapping', 'window model', 'shot cleanup plan', 'quarantine resolution', 'the automatic capture-folder trim', 'same @() trap, pipeline form', 'F-00-A: a guard promise', 'the live suite must not fail on its environment', 'workshop self-report', 'the line/occurrence', 'v4.5.0 (CU-CALL offline runtime)', 'v4.5.1 (CU-REL-02)', 'v4.5.2 (CU-REL-03)', 'v4.5.3 (CU-REL-04)', 'v4.5.4 (CU-REL-05)', 'TB-3: the MANIFEST row')
 }
 $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive delete is gated and bounded', 'the outward docs must not teach a send into a real conversation')
 $script:StFamilyCounts = @{
-  'split-machine' = 'banners=23,lines=1323'
+  'split-machine' = 'banners=23,lines=1327'
   'repo-contract' = 'banners=5,lines=322'
-  'gate-meta' = 'banners=30,lines=2793'
+  'gate-meta' = 'banners=30,lines=2808'
   'flags-grammar' = 'banners=16,lines=882'
   'capture-ocr' = 'banners=8,lines=757'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=1081'
+  'window-targeting' = 'banners=11,lines=1086'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=181'
-  'docs-contract' = 'banners=11,lines=524'
+  'docs-contract' = 'banners=12,lines=586'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
-  'live-suite' = 'banners=20,lines=3215'
+  'live-suite' = 'banners=20,lines=3228'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2379,7 +2384,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelftestFamily-CaptureOcr=101',
   'Invoke-SelftestFamily-FlagsGrammar=91',
   'Invoke-SelftestFamily-WindowTargeting=151',
-  'Invoke-SelftestFamily-DocsContract=51',
+  'Invoke-SelftestFamily-DocsContract=57',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
   'Invoke-SelftestFamily-ClipboardInput=30',
@@ -2521,6 +2526,9 @@ $script:StLoadTimeNames = @(
   # CU-OPS package G (v4.6.1): the pure-format allowlist that decides whether a clipboard
   # can be put back. Load-time state, so it is registered here by name in the same write.
   'script:ClipboardPureFormats=1',
+  # CU-OPS package G (R-06 follow-up): the extensions the image carrier writes. Load-time state,
+  # registered by name in the same write, like the allowlist above.
+  'script:ClipboardImageExtensions=1',
   'script:DeclaredCheckTotal=1',
   'script:DumpPath=2',
   'script:EnvDedupError=2',
@@ -6632,11 +6640,19 @@ function Activate-Win($win) {
 
 # Keystrokes go to whatever is focused, so every text-sending command reports the
 # target it actually used. Never send text blind: pass <sel> or run `focus` first.
-function Get-ForegroundInfo {
+# CU-OPS-FINAL-REVIEW-20261027-01 / R-02: the STRUCTURED identity is the source - a pid is
+# not a window (one process can own several top-level windows), and only the hwnd answer can
+# tell "the window I picked" from "another window of the same process".
+function Get-ForegroundIdentity {
   $h = [DT]::GetForegroundWindow()
   $procId = 0
   [void][DT]::GetWindowThreadProcessId($h, [ref]$procId)
-  return "pid=$procId title='$([DT]::Text($h))'"
+  return @{ Hwnd = [int64]$h; Pid = [int]$procId; Title = [string][DT]::Text($h) }
+}
+
+function Get-ForegroundInfo {
+  $fg = Get-ForegroundIdentity
+  return "pid=$($fg.Pid) hwnd=0x$($fg.Hwnd.ToString('X')) title='$($fg.Title)'"
 }
 
 # --- IME observability ---------------------------------------------------
@@ -7002,6 +7018,70 @@ function Set-ClipboardFileDrop([string]$path) {
     $lst = [System.Windows.Forms.Clipboard]::GetFileDropList()
     return (@($lst | Where-Object { $_ -eq $path }).Count -gt 0)
   } catch { return $false }
+}
+
+# CU-OPS package G (v4.6.4): the IMAGE carrier. The plan asks for explicit text / file /
+# image carriers; before this, the only image code was the RESTORE branch, so "copy an image"
+# did not exist and an image could only travel as a FileDrop path - which is a file, not
+# pixels, in the receiving application.
+# Two halves on purpose:
+#   Get-ImageCarrier                 file-side ONLY: validate the format and digest the pixels.
+#                                    It never touches the clipboard, so every refusal (wrong
+#                                    extension, unreadable file, zero size) happens with the
+#                                    user's clipboard untouched.
+#   Set-ClipboardImageCarrier        write, READ BACK, compare the RGB digest. A write that
+#                                    only returned $true could not tell a carried image from
+#                                    a lost one.
+# Supported formats are named, not implied: PNG and BMP. Other extensions are refused by name -
+# "the decoder happened to work" is not the contract, and the restore side can only put back a
+# PNG it saved itself.
+$script:ClipboardImageExtensions = @('.png', '.bmp')
+function Get-ImageCarrier([string]$path) {
+  if ([string]::IsNullOrWhiteSpace($path)) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'no-path'; Detail = 'the path is empty'; W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'not-found'; Detail = ('no file at: ' + $path); W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  }
+  $ext = [System.IO.Path]::GetExtension($path).ToLowerInvariant()
+  if ($script:ClipboardImageExtensions -notcontains $ext) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'unsupported-extension'; Detail = ('extension ' + $ext + ' is not a carrier this tool writes; supported: ' + ($script:ClipboardImageExtensions -join ', ')); W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  }
+  $bmp = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap($path)
+    if ([int]$bmp.Width -le 0 -or [int]$bmp.Height -le 0) {
+      return [pscustomobject]@{ Ok = $false; Reason = 'zero-size'; Detail = 'the decoded image has no pixels'; W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+    }
+    $dig = Get-BitmapRgbHash $bmp
+    return [pscustomobject]@{ Ok = $true; Reason = ''; Detail = ''; W = [int]$dig.W; H = [int]$dig.H; Hash = [string]$dig.Hash; Path = $path; Name = [System.IO.Path]::GetFileName($path) }
+  } catch {
+    return [pscustomobject]@{ Ok = $false; Reason = 'not-an-image'; Detail = ('the file did not decode as an image: ' + $_.Exception.Message); W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  } finally {
+    if ($null -ne $bmp) { try { $bmp.Dispose() } catch { } }
+  }
+}
+
+function Set-ClipboardImageCarrier($carrier) {
+  if ($null -eq $carrier -or -not [bool]$carrier.Ok) { return $false }
+  $bmp = $null
+  $got = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap([string]$carrier.Path)
+    [System.Windows.Forms.Clipboard]::SetImage($bmp)
+    Start-Sleep -Milliseconds 300
+    if (-not [System.Windows.Forms.Clipboard]::ContainsImage()) { return $false }
+    $got = [System.Windows.Forms.Clipboard]::GetImage()
+    if ($null -eq $got) { return $false }
+    $dig = Get-BitmapRgbHash $got
+    if ([int]$dig.W -ne [int]$carrier.W -or [int]$dig.H -ne [int]$carrier.H) { return $false }
+    return ([string]$dig.Hash -ceq [string]$carrier.Hash)
+  } catch {
+    return $false
+  } finally {
+    if ($null -ne $got) { try { $got.Dispose() } catch { } }
+    if ($null -ne $bmp) { try { $bmp.Dispose() } catch { } }
+  }
 }
 
 # v3.0.0 (B-2): "I want the window I just looked at, not whatever this selector now
@@ -9707,7 +9787,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.3 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -10326,11 +10406,21 @@ desktop.ps1 v4.6.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     read a coverer's text and call it context
 
   clipboard
-    copy-file <path>                put a local file on the clipboard as FileDrop,
-                                    self-verified; deliberately keeps it there
-    paste-file [--to <sel>] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--replace-clipboard] [--force]
+    copy-file [--image] [--replace-clipboard] <path>
+                                    put a local file on the clipboard as FileDrop
+                                    (default) or as PIXELS (--image: PNG/BMP only),
+                                    self-verified; deliberately keeps it there.
+                                    CU-OPS G: a clipboard holding formats this tool
+                                    cannot restore is refused BEFORE the write
+                                    unless --replace-clipboard says losing it is
+                                    intended (this command never restores, so the
+                                    flag is the only way to accept the loss)
+    paste-file [--to <sel>] [--image] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--replace-clipboard] [--force]
                                     copy-file + foreground guard + content guard
                                     + Ctrl+V, then restore the previous clipboard;
+                                    --image pastes PNG/BMP pixels instead of a
+                                    FileDrop path (the window is NOT read back for
+                                    an image - the digest proves the payload only);
                                     CU-OPS G: unknown clipboard formats are refused
                                     before the write unless --replace-clipboard is
                                     given; v1.5.9: default-on readback like paste (it

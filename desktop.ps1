@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.1  (version sync list lives in the project overview doc)
+# version: 4.6.3  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.1'
+$script:ToolVersion = '4.6.3'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -445,7 +445,12 @@ Set-StrictMode -Version Latest
 # v4.6.1: +5 for package G's format-list branch, the named-extra gate, the restore-outcome map and
 # the clip-info metadata-only body lint (1038 -> 1043). Measured again on the 13:41 clean-host run:
 # the offline run emits 1044 checks, so the declaration is the measured total (1043 -> 1044).
-$script:DeclaredCheckTotal = 1044
+# v4.6.2 (R-05): +4 for the page/registry both-direction coverage and the capabilities-json
+# gate equality, each with a planted-copy control (1044 -> 1048).
+# v4.6.3 (R-06): the run measures 1050. The source tree already carried 2 emitters the shipped
+# root artifact never contained, so 1044 + 4 was 2 short; this is the MEASURED number, not a
+# loosened bound (the contract row still requires the run to equal it exactly).
+$script:DeclaredCheckTotal = 1050
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2301,26 +2306,26 @@ $script:StFamilyFragments = @{
   'challenge-workflow' = @('verification-challenge workflow', 'the process-entry environment normalizer')
   'drag-press' = @('the drag mid-state gate', 'the pairing id is HANDED OVER', 'drag''s landing guard')
   'clipboard-input' = @('clipboard kind branch', 'confusable fold is a marked SECOND pass', 'strict UTF-8 gate for sent files', 'a parked pick says parked')
-  'docs-contract' = @('the usage PAGE itself is well-formed', 'advertises a ladder must walk the same one', 'document-consistency sweep', 'the skill loader''s command list is an outward', 'the quick-start guide is an outward contract', 'the skill loader scripts carry the project guards', 'help <command> - the page gets an index', 'TB-5: the uninstaller', 'TB-4: the outward docs', 'TB-6: the newcomer document', 'TB-6 (repository face)')
+  'docs-contract' = @('the usage PAGE itself is well-formed', 'advertises a ladder must walk the same one', 'document-consistency sweep', 'the skill loader''s command list is an outward', 'the quick-start guide is an outward contract', 'the skill loader scripts carry the project guards', 'help <command> - the page gets an index', 'TB-5: the uninstaller', 'TB-4: the outward docs', 'TB-6: the newcomer document', 'TB-6 (repository face)', 'the page and the registry are checked in BOTH directions')
   'gate-meta' = @('every STATIC regex literal in the file must COMPILE', 'forbidden @()/$() wrapper', 'pure helpers', 'the exact return-shape semantics', 'call arity: a dead argument', 'every Test-* guard is called WITH the arguments', 'nothing in production is a PowerShell automatic variable', 'one owner per constant', 'the two copied BLOCKS', 'v4.2.4: --timing', 'no @(array).Count inside a for-condition', 'two preventive lints from the six-trap ledger', '--index / --only contracts', 'step assembly purity', 'the small-fix bundle', 'tab manifest reconciliation', 'replay flag parsing + redaction refusal', 'JSON array unwrapping', 'window model', 'shot cleanup plan', 'quarantine resolution', 'the automatic capture-folder trim', 'same @() trap, pipeline form', 'F-00-A: a guard promise', 'the live suite must not fail on its environment', 'workshop self-report', 'the line/occurrence', 'v4.5.0 (CU-CALL offline runtime)', 'v4.5.1 (CU-REL-02)', 'v4.5.2 (CU-REL-03)', 'v4.5.3 (CU-REL-04)', 'v4.5.4 (CU-REL-05)', 'TB-3: the MANIFEST row')
 }
 $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive delete is gated and bounded', 'the outward docs must not teach a send into a real conversation')
 $script:StFamilyCounts = @{
-  'split-machine' = 'banners=23,lines=1323'
+  'split-machine' = 'banners=23,lines=1327'
   'repo-contract' = 'banners=5,lines=322'
-  'gate-meta' = 'banners=30,lines=2793'
+  'gate-meta' = 'banners=30,lines=2808'
   'flags-grammar' = 'banners=16,lines=882'
   'capture-ocr' = 'banners=8,lines=757'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=1081'
+  'window-targeting' = 'banners=11,lines=1086'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=181'
-  'docs-contract' = 'banners=11,lines=524'
+  'docs-contract' = 'banners=12,lines=586'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
-  'live-suite' = 'banners=20,lines=3215'
+  'live-suite' = 'banners=20,lines=3228'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2379,7 +2384,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelftestFamily-CaptureOcr=101',
   'Invoke-SelftestFamily-FlagsGrammar=91',
   'Invoke-SelftestFamily-WindowTargeting=151',
-  'Invoke-SelftestFamily-DocsContract=51',
+  'Invoke-SelftestFamily-DocsContract=57',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
   'Invoke-SelftestFamily-ClipboardInput=30',
@@ -2521,6 +2526,9 @@ $script:StLoadTimeNames = @(
   # CU-OPS package G (v4.6.1): the pure-format allowlist that decides whether a clipboard
   # can be put back. Load-time state, so it is registered here by name in the same write.
   'script:ClipboardPureFormats=1',
+  # CU-OPS package G (R-06 follow-up): the extensions the image carrier writes. Load-time state,
+  # registered by name in the same write, like the allowlist above.
+  'script:ClipboardImageExtensions=1',
   'script:DeclaredCheckTotal=1',
   'script:DumpPath=2',
   'script:EnvDedupError=2',
@@ -6632,11 +6640,19 @@ function Activate-Win($win) {
 
 # Keystrokes go to whatever is focused, so every text-sending command reports the
 # target it actually used. Never send text blind: pass <sel> or run `focus` first.
-function Get-ForegroundInfo {
+# CU-OPS-FINAL-REVIEW-20261027-01 / R-02: the STRUCTURED identity is the source - a pid is
+# not a window (one process can own several top-level windows), and only the hwnd answer can
+# tell "the window I picked" from "another window of the same process".
+function Get-ForegroundIdentity {
   $h = [DT]::GetForegroundWindow()
   $procId = 0
   [void][DT]::GetWindowThreadProcessId($h, [ref]$procId)
-  return "pid=$procId title='$([DT]::Text($h))'"
+  return @{ Hwnd = [int64]$h; Pid = [int]$procId; Title = [string][DT]::Text($h) }
+}
+
+function Get-ForegroundInfo {
+  $fg = Get-ForegroundIdentity
+  return "pid=$($fg.Pid) hwnd=0x$($fg.Hwnd.ToString('X')) title='$($fg.Title)'"
 }
 
 # --- IME observability ---------------------------------------------------
@@ -7002,6 +7018,70 @@ function Set-ClipboardFileDrop([string]$path) {
     $lst = [System.Windows.Forms.Clipboard]::GetFileDropList()
     return (@($lst | Where-Object { $_ -eq $path }).Count -gt 0)
   } catch { return $false }
+}
+
+# CU-OPS package G (v4.6.4): the IMAGE carrier. The plan asks for explicit text / file /
+# image carriers; before this, the only image code was the RESTORE branch, so "copy an image"
+# did not exist and an image could only travel as a FileDrop path - which is a file, not
+# pixels, in the receiving application.
+# Two halves on purpose:
+#   Get-ImageCarrier                 file-side ONLY: validate the format and digest the pixels.
+#                                    It never touches the clipboard, so every refusal (wrong
+#                                    extension, unreadable file, zero size) happens with the
+#                                    user's clipboard untouched.
+#   Set-ClipboardImageCarrier        write, READ BACK, compare the RGB digest. A write that
+#                                    only returned $true could not tell a carried image from
+#                                    a lost one.
+# Supported formats are named, not implied: PNG and BMP. Other extensions are refused by name -
+# "the decoder happened to work" is not the contract, and the restore side can only put back a
+# PNG it saved itself.
+$script:ClipboardImageExtensions = @('.png', '.bmp')
+function Get-ImageCarrier([string]$path) {
+  if ([string]::IsNullOrWhiteSpace($path)) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'no-path'; Detail = 'the path is empty'; W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'not-found'; Detail = ('no file at: ' + $path); W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  }
+  $ext = [System.IO.Path]::GetExtension($path).ToLowerInvariant()
+  if ($script:ClipboardImageExtensions -notcontains $ext) {
+    return [pscustomobject]@{ Ok = $false; Reason = 'unsupported-extension'; Detail = ('extension ' + $ext + ' is not a carrier this tool writes; supported: ' + ($script:ClipboardImageExtensions -join ', ')); W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  }
+  $bmp = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap($path)
+    if ([int]$bmp.Width -le 0 -or [int]$bmp.Height -le 0) {
+      return [pscustomobject]@{ Ok = $false; Reason = 'zero-size'; Detail = 'the decoded image has no pixels'; W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+    }
+    $dig = Get-BitmapRgbHash $bmp
+    return [pscustomobject]@{ Ok = $true; Reason = ''; Detail = ''; W = [int]$dig.W; H = [int]$dig.H; Hash = [string]$dig.Hash; Path = $path; Name = [System.IO.Path]::GetFileName($path) }
+  } catch {
+    return [pscustomobject]@{ Ok = $false; Reason = 'not-an-image'; Detail = ('the file did not decode as an image: ' + $_.Exception.Message); W = 0; H = 0; Hash = ''; Path = $path; Name = '' }
+  } finally {
+    if ($null -ne $bmp) { try { $bmp.Dispose() } catch { } }
+  }
+}
+
+function Set-ClipboardImageCarrier($carrier) {
+  if ($null -eq $carrier -or -not [bool]$carrier.Ok) { return $false }
+  $bmp = $null
+  $got = $null
+  try {
+    $bmp = New-Object System.Drawing.Bitmap([string]$carrier.Path)
+    [System.Windows.Forms.Clipboard]::SetImage($bmp)
+    Start-Sleep -Milliseconds 300
+    if (-not [System.Windows.Forms.Clipboard]::ContainsImage()) { return $false }
+    $got = [System.Windows.Forms.Clipboard]::GetImage()
+    if ($null -eq $got) { return $false }
+    $dig = Get-BitmapRgbHash $got
+    if ([int]$dig.W -ne [int]$carrier.W -or [int]$dig.H -ne [int]$carrier.H) { return $false }
+    return ([string]$dig.Hash -ceq [string]$carrier.Hash)
+  } catch {
+    return $false
+  } finally {
+    if ($null -ne $got) { try { $got.Dispose() } catch { } }
+    if ($null -ne $bmp) { try { $bmp.Dispose() } catch { } }
+  }
 }
 
 # v3.0.0 (B-2): "I want the window I just looked at, not whatever this selector now
@@ -10738,16 +10818,41 @@ $script:ProcSystemNames = @('system', 'idle', 'registry', 'memory compression', 
 
 # One process -> the fields every proc command reports. Each field is read under its own
 # try/catch so a single protected property cannot erase the rest of the identity.
+# R-04: a failed LOOKUP is classified before it is reported. "Cannot find a process" is the
+# only answer that may print exists=false; a permission or unknown failure means existence
+# could not be determined, and saying "no process with that id" there tells the operator the
+# opposite of the truth (a protected process was reported as absent).
+function Get-ProcLookupFailureKind($ex) {
+  $e = $ex
+  while ($null -ne $e) {
+    $tn = "$($e.GetType().FullName)"
+    if ($e -is [System.UnauthorizedAccessException]) { return 'denied' }
+    if ($tn -match 'SecurityException') { return 'denied' }
+    if ($tn -match 'ItemNotFoundException|ObjectNotFoundException|ProcessNotFoundException') { return 'not-found' }
+    $e = $e.InnerException
+  }
+  if ("$($ex.Message)" -match 'Cannot find a process with (the )?(process )?(identifier|id)') { return 'not-found' }
+  if ("$($ex.Message)" -match 'Access is denied|denied') { return 'denied' }
+  return 'lookup-failed'
+}
+
 function Get-ProcSnapshot([int]$procId) {
   $snap = [ordered]@{
     pid = $procId; name = 'unknown'; path = 'unknown'; start = 'unknown'
     responding = 'unknown'; hwnd = 'unknown'; title = 'unknown'
     session = 'unknown'; threads = 'unknown'; ws_mb = 'unknown'; handles = 'unknown'
-    exists = $false; protected = $false
+    exists = 'unknown'; exists_why = 'lookup did not run'; protected = $false
   }
   $pr = $null
-  try { $pr = Get-Process -Id $procId -ErrorAction Stop } catch { return $snap }
+  try { $pr = Get-Process -Id $procId -ErrorAction Stop }
+  catch {
+    $kind = Get-ProcLookupFailureKind $_.Exception
+    if ($kind -eq 'not-found') { $snap.exists = $false; $snap.exists_why = 'the process is not running' }
+    else { $snap.exists = 'unknown'; $snap.exists_why = "$kind - $($_.Exception.Message)" }
+    return $snap
+  }
   $snap.exists = $true
+  $snap.exists_why = ''
   try { $snap.name = [string]$pr.ProcessName } catch { $snap.name = 'denied' }
   if ($script:ProcSystemNames -contains $snap.name.ToLowerInvariant()) { $snap.protected = $true }
   if ($procId -eq 0 -or $procId -eq 4) { $snap.protected = $true }
@@ -10765,7 +10870,8 @@ function Get-ProcSnapshot([int]$procId) {
 }
 
 function Format-ProcSnapshot($s) {
-  if (-not $s.exists) { return "pid=$($s.pid) exists=false (no process with that id right now)" }
+  if ($s.exists -eq $false) { return "pid=$($s.pid) exists=false (no process with that id right now)" }
+  if ($s.exists -ne $true) { return "pid=$($s.pid) exists=unknown (existence could not be determined: $($s.exists_why))" }
   $hw = if ($s.hwnd -eq 'unknown' -or $s.hwnd -eq 'denied') { $s.hwnd } else { '0x' + ([int64]$s.hwnd).ToString('X') }
   return ("pid=$($s.pid) name=$($s.name) start=$($s.start) path=$($s.path) responding=$($s.responding) hwnd=$hw title='$($s.title)' session=$($s.session) threads=$($s.threads) ws=$($s.ws_mb)MB handles=$($s.handles)" + $(if ($s.protected) { ' protected=yes' } else { '' }))
 }
@@ -10777,7 +10883,10 @@ function Format-ProcSnapshot($s) {
 # is no read jitter for a tolerance to absorb.
 function Test-ProcIdentity([int]$procId, [string]$createdIso) {
   $s = Get-ProcSnapshot $procId
-  if (-not $s.exists) { return @{ Ok = $false; Why = 'process-not-running'; Snap = $s } }
+  if ($s.exists -ne $true) {
+    $why = $(if ($s.exists -eq $false) { 'process-not-running' } else { "process-existence-unknown: $($s.exists_why)" })
+    return @{ Ok = $false; Why = $why; Snap = $s }
+  }
   if ($createdIso -eq '' -or $null -eq $createdIso) { return @{ Ok = $true; Why = 'no-created-pin'; Snap = $s } }
   if ($s.start -eq 'denied' -or $s.start -eq 'unknown') { return @{ Ok = $false; Why = "creation time unreadable ($($s.start)) so the identity cannot be confirmed"; Snap = $s } }
   $want = [datetime]::MinValue
@@ -10808,7 +10917,7 @@ function Invoke-Handler-proc-list([string]$Cmd, [string[]]$Rest) {
     if ($filter -and ($name -notlike "*$filter*")) { continue }
     $s = Get-ProcSnapshot ([int]$pr.Id)
     $line = Format-ProcSnapshot $s
-    if ($s.exists -and ($s.hwnd -eq 0)) { $line = $line + ' nowindow=yes' }
+    if ($s.exists -eq $true -and ($s.hwnd -eq 0)) { $line = $line + ' nowindow=yes' }
     $line
     $n++
   }
@@ -10824,7 +10933,7 @@ function Invoke-Handler-proc-info([string]$Cmd, [string[]]$Rest) {
   if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-info: '$($words[0])' is not a pid" }
   $s = Get-ProcSnapshot $pidNum
   Format-ProcSnapshot $s
-  if ($s.exists) {
+  if ($s.exists -eq $true) {
     $wins = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum })
     if (@($wins).Count -eq 0) { 'windows: none visible to this desktop (a background process legitimately has no window)' }
     else {
@@ -11153,21 +11262,139 @@ function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
 # matched, timed out, and COULD NOT READ (a read that throws is never reported as
 # "the condition did not happen"). Read-only; it never activates or clicks.
 # ---------------------------------------------------------------------------
-function Get-WaitUiaState([string]$wSel, [string]$nameSub, [Hashtable]$found) {
-  $w = Resolve-Window $wSel
-  if (-not $w) { return 'gone' }
-  $rr = Uia-Roots $w
-  if ($rr.Roots.Count -lt 1) { return 'no-uia-root' }
-  $el = Uia-Find $rr.Roots $nameSub ''
-  if (-not $el) { return 'not-found' }
-  $st = ''
-  $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
-  if ($null -ne $tp) { return ('toggle:' + [string]$tp.Current.ToggleState) }
-  $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
-  if ($null -ne $si) { return ('selected:' + ([bool]$si.Current.IsSelected).ToString()) }
-  $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
-  if ($null -ne $ec) { return ('expand:' + [string]$ec.Current.ExpandCollapseState) }
-  return 'no-state-pattern'
+# ---------------------------------------------------------------------------
+# R-03 (CU-OPS-FINAL-REVIEW-20261027-01): a UIA read is a CROSS-PROCESS call to the
+# target's own provider. When that provider does not answer, the call blocks inside the
+# COM boundary and no Stopwatch in this process can interrupt it - the old wait-cond loop
+# measured 1837ms for a 1000ms budget and, if the provider never answered at all, had no
+# exit at all. The read therefore runs in a SELF-BUILT probe process with the REMAINDER of
+# the declared budget; on expiry that process is terminated. The target application is
+# never touched or killed: only this tool's own worker is.
+# ---------------------------------------------------------------------------
+function Get-UiaProbeScriptSource {
+  return @'
+param([string]$ArgsFile, [string]$OutFile)
+$ErrorActionPreference = 'Stop'
+function Write-Result($o) {
+  $j = $o | ConvertTo-Json -Depth 6 -Compress
+  [System.IO.File]::WriteAllText($OutFile, $j, (New-Object System.Text.UTF8Encoding($false)))
+}
+try {
+  $a = [System.IO.File]::ReadAllText($ArgsFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $hwnd = [IntPtr]([int64]$a.hwnd)
+  $want = [string]$a.name
+  $el = $null
+  try { $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) } catch { $el = $null }
+  if ($null -eq $el) { Write-Result @{ status = 'no-uia-root'; value = ''; detail = 'FromHandle returned null'; scanned = 0 }; exit 0 }
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $q = New-Object System.Collections.Queue
+  $q.Enqueue($el)
+  $found = $null
+  $n = 0
+  while ($q.Count -gt 0 -and $n -lt 6000) {
+    $cur = $q.Dequeue()
+    $n++
+    $nm = ''
+    try { $nm = [string]$cur.Current.Name } catch { $nm = '' }
+    if ($nm -ne '' -and $nm.ToLowerInvariant().Contains($want.ToLowerInvariant())) { $found = $cur; break }
+    try {
+      $ch = $walker.GetFirstChild($cur)
+      while ($null -ne $ch) { $q.Enqueue($ch); $ch = $walker.GetNextSibling($ch) }
+    } catch { }
+  }
+  if ($null -eq $found) { Write-Result @{ status = 'not-found'; value = ''; detail = ''; scanned = $n }; exit 0 }
+  $val = ''
+  $tp = $null
+  try { $tp = $found.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) } catch { $tp = $null }
+  if ($null -ne $tp) {
+    $val = 'toggle:' + [string]$tp.Current.ToggleState
+  } else {
+    $si = $null
+    try { $si = $found.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern) } catch { $si = $null }
+    if ($null -ne $si) {
+      $val = 'selected:' + ([bool]$si.Current.IsSelected).ToString()
+    } else {
+      $ec = $null
+      try { $ec = $found.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern) } catch { $ec = $null }
+      if ($null -ne $ec) { $val = 'expand:' + [string]$ec.Current.ExpandCollapseState } else { $val = 'no-state-pattern' }
+    }
+  }
+  Write-Result @{ status = 'ok'; value = $val; detail = ''; scanned = $n }
+  exit 0
+} catch {
+  Write-Result @{ status = 'error'; value = ''; detail = ($_.Exception.Message); scanned = 0 }
+  exit 0
+}
+'@
+}
+
+function Get-UiaProbeTempDir {
+  $d = Join-Path $env:TEMP 'agent-computer-use-uiaprobe'
+  if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+  return $d
+}
+
+# Runs ONE probe with a hard wall-clock bound. Every exit path returns the same shape, and
+# every self-built resource is disposed or deleted here - no probe script, args file or
+# result file survives the call, and a timed-out worker is waited for after Kill.
+function Invoke-BoundedUiaProbe([int64]$hwnd, [string]$nameSub, [int]$budgetMs, [string]$ScriptText = '') {
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $out = @{ Status = 'error'; Value = ''; Detail = 'probe did not run'; Scanned = 0; ElapsedMs = 0; BudgetMs = [int]$budgetMs; ChildPid = 0; Killed = $false }
+  $dir = Get-UiaProbeTempDir
+  $tag = [guid]::NewGuid().ToString('N')
+  $af = Join-Path $dir "args-$tag.json"
+  $of = Join-Path $dir "out-$tag.json"
+  $sf = Join-Path $dir "probe-$tag.ps1"
+  $proc = $null
+  try {
+    if ($ScriptText -eq '') { $ScriptText = Get-UiaProbeScriptSource }
+    $argJson = ConvertTo-Json -InputObject @{ hwnd = [int64]$hwnd; name = [string]$nameSub } -Compress
+    [System.IO.File]::WriteAllText($af, $argJson, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($sf, $ScriptText, (New-Object System.Text.UTF8Encoding($false)))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell.exe'
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sf`" -ArgsFile `"$af`" -OutFile `"$of`""
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.EnvironmentVariables['DTX_SHOT_AUTOTRIM'] = '0'
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $out.ChildPid = [int]$proc.Id
+    $left = [int]([math]::Max(1, $budgetMs))
+    $exited = $proc.WaitForExit($left)
+    $out.ElapsedMs = [int]$sw.ElapsedMilliseconds
+    if (-not $exited) {
+      $out.Killed = $true
+      try { $proc.Kill() } catch { }
+      try { [void]$proc.WaitForExit(2000) } catch { }
+      $out.Status = 'timeout'
+      $out.Detail = "no answer within ${left}ms; this tool's own probe process was terminated (the target application and its provider were not touched)"
+      return $out
+    }
+    if (-not (Test-Path -LiteralPath $of)) {
+      $out.Status = 'error'
+      $out.Detail = "the probe exited with code $($proc.ExitCode) without a result file"
+      return $out
+    }
+    $res = $null
+    try { $res = [System.IO.File]::ReadAllText($of, [System.Text.Encoding]::UTF8) | ConvertFrom-Json } catch { $res = $null }
+    if ($null -eq $res) { $out.Status = 'error'; $out.Detail = 'the probe result file was not valid JSON'; return $out }
+    if ($res.PSObject.Properties['status']) { $out.Status = [string]$res.status }
+    if ($res.PSObject.Properties['value']) { $out.Value = [string]$res.value }
+    if ($res.PSObject.Properties['detail']) { $out.Detail = [string]$res.detail }
+    if ($res.PSObject.Properties['scanned']) { $out.Scanned = [int]$res.scanned }
+    if ($out.Status -eq '') { $out.Status = 'error'; $out.Detail = 'the probe returned no status' }
+    return $out
+  } catch {
+    $out.Status = 'error'
+    $out.Detail = $_.Exception.Message
+    $out.ElapsedMs = [int]$sw.ElapsedMilliseconds
+    return $out
+  } finally {
+    foreach ($f in @($af, $of, $sf)) { try { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force } } catch { } }
+    if ($null -ne $proc) { try { $proc.Dispose() } catch { } }
+  }
 }
 
 function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
@@ -11201,9 +11428,13 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
             if ($wantWin) { $ok = ($null -ne $w); $lastRead = $(if ($w) { "hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'no window' }) }
             elseif ($wantGone) { $ok = ($null -eq $w); $lastRead = $(if ($w) { "still hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'gone' }) }
             else {
-              $fg = Get-ForegroundInfo
-              $ok = ("$fg".Contains("pid=$($w.Pid)")) -and ($null -ne $w)
-              $lastRead = "foreground=$fg"
+              # R-02: compare the FOREGROUND HWND with the resolved window's own handle.
+              # A pid string only proves "some window of that process" is in front - a second
+              # top-level window of the same process, a reused pid or a stale handle would all
+              # read as met. The title is reported, never used as the identity.
+              $fg = Get-ForegroundIdentity
+              $ok = ($null -ne $w) -and ([int64]$fg.Hwnd -eq [int64]$w.Handle) -and ([int64]$w.Handle -ne 0)
+              $lastRead = "foreground hwnd=0x$($fg.Hwnd.ToString('X')) pid=$($fg.Pid) title='$($fg.Title)' target hwnd=$(if ($null -ne $w) { '0x' + ([int64]$w.Handle).ToString('X') } else { 'none' }) pid=$(if ($null -ne $w) { $w.Pid } else { 'none' })"
             }
           } elseif ($needle -ne '') {
             $w = Resolve-Window $sel
@@ -11214,12 +11445,34 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
             $ok = (@($f.Hits).Count -gt 0)
             $lastRead = "ocr hits=$(@($f.Hits).Count)"
           } else {
-            $got = Get-WaitUiaState $sel $uiaName $null
-            $lastRead = $got
-            if ($wantState -eq '') { $ok = ($got -ne 'gone' -and $got -ne 'no-uia-root' -and $got -ne 'not-found' -and $got -ne 'no-state-pattern') }
-            elseif ($wantState -in @('On', 'Off')) { $ok = ($got -ceq ('toggle:' + $wantState)) }
-            elseif ($wantState -in @('Expanded', 'Collapsed')) { $ok = ($got -ceq ('expand:' + $wantState)) }
-            else { $ok = ($got -ceq ('selected:' + $(if ($wantState -eq 'Selected') { 'True' } else { 'False' }))) }
+            # R-03: the UIA read gets only what is LEFT of the declared timeout, and it runs
+            # in a killable probe process, so a blocking provider cannot outlive the budget.
+            $w = Resolve-Window $sel
+            if ($null -eq $w) {
+              $got = 'gone'
+              $lastRead = 'gone (the target window is not there)'
+              $ok = $false
+            } else {
+              $remaining = [int][math]::Floor(($timeout - $sw.Elapsed.TotalSeconds) * 1000)
+              if ($remaining -lt 1) { $remaining = 1 }
+              $probe = Invoke-BoundedUiaProbe ([int64]$w.Handle) $uiaName $remaining
+              if ($probe.Status -eq 'timeout') {
+                $readErrors++
+                $lastRead = "uia read timed out: no answer within $($probe.ElapsedMs)ms of a ${remaining}ms budget; this tool's own probe process was terminated and the target provider was not touched"
+                $ok = $false
+              } elseif ($probe.Status -eq 'error') {
+                $readErrors++
+                $lastRead = "read error: $($probe.Detail)"
+                $ok = $false
+              } else {
+                $got = $(if ($probe.Status -eq 'ok') { [string]$probe.Value } else { [string]$probe.Status })
+                $lastRead = "$got (probe $($probe.ElapsedMs)ms, scanned $($probe.Scanned) node(s))"
+                if ($wantState -eq '') { $ok = ($got -ne 'gone' -and $got -ne 'no-uia-root' -and $got -ne 'not-found' -and $got -ne 'no-state-pattern') }
+                elseif ($wantState -in @('On', 'Off')) { $ok = ($got -ceq ('toggle:' + $wantState)) }
+                elseif ($wantState -in @('Expanded', 'Collapsed')) { $ok = ($got -ceq ('expand:' + $wantState)) }
+                else { $ok = ($got -ceq ('selected:' + $(if ($wantState -eq 'Selected') { 'True' } else { 'False' }))) }
+              }
+            }
           }
         } catch {
           $readErrors++
@@ -11266,7 +11519,11 @@ function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
           ownFlags = $ownF
           sharedFlags = $sharedF
           flags = $allF
-          json = (@(Get-ActionJsonCommandSet) -contains $r.Name)
+          # R-05: the JSON gate in the dispatcher accepts the READ family as well as the
+          # action family (Test-JsonCapableCommand is the single gate). Advertising only the
+          # action table marked 17 readable commands json=false while they really answer
+          # --json - the capability list must come from the SAME source the gate uses.
+          json = [bool](Test-JsonCapableCommand $r.Name)
         })
       }
       $entryPath = [string]$script:ToolEntryPath
@@ -12624,7 +12881,9 @@ function Invoke-Handler-proc-kill([string]$Cmd, [string[]]$Rest) {
   $pidNum = 0
   if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-kill: '$($words[0])' is not a pid" }
   $snap = Get-ProcSnapshot $pidNum
-  if (-not $snap.exists) { throw "proc-kill: pid=$pidNum is not running right now - nothing to kill (a PID alone is not an identity, and a reused PID will not be chased)" }
+  if ($snap.exists -ne $true) {
+    throw "proc-kill: pid=$pidNum is not CONFIRMED running (exists=$($snap.exists)$(if ($snap.exists_why) { ': ' + $snap.exists_why } else { '' })) - nothing to kill (a PID alone is not an identity, and a reused PID will not be chased)"
+  }
   if ($snap.protected) { throw "proc-kill: pid=$pidNum name=$($snap.name) is a protected system/session process - refused, nothing was terminated" }
   if ($pidNum -eq $PID) { throw "proc-kill: pid=$pidNum is this tool's own process - refused, nothing was terminated" }
   $anc = Get-ProcAncestors ([int]$PID)
@@ -13690,9 +13949,49 @@ function Get-InputStateLine {
 # modifier (ctrl/shift/alt/win) can be written and read back without going through
 # Resolve-KeyName (which only knows base keys), and so clearing one released key cannot
 # erase another key's recovery record. Legacy name-list entries are still read.
+#
+# CU-OPS-FINAL-REVIEW-20261027-01 / R-01 (v4.6.2): the record now separates three states -
+# 'prepared' (intent written, DOWN NOT confirmed), 'down' (SendInput confirmed the DOWN) and
+# 'unknown' (a UP was attempted and failed). Only 'down' is ownership. Recording the intent
+# as if the key were held was how a key that was never pressed became releasable, and a
+# later physically-held Shift could then be sent an UP by key-release. Every read-modify-
+# write now runs inside ONE named mutex with a bounded wait and replaces the file atomically,
+# and a corrupt/denied/unreadable ledger is REPORTED instead of being re-read as empty and
+# overwritten (the old path silently erased recovery records).
 function Get-KeyLedgerPath {
   $dir = Join-Path $env:TEMP 'agent-computer-use'
   return (Join-Path $dir 'key-held.json')
+}
+
+# Per-machine mutex: two different tool processes contend on the same object. A session-local
+# fallback is kept for hosts that refuse a Global name; it still serializes this session.
+function Get-KeyLedgerMutex {
+  try { return (New-Object System.Threading.Mutex($false, 'Global\AgentComputerUse-KeyLedger-v2')) } catch { }
+  return (New-Object System.Threading.Mutex($false, 'Local\AgentComputerUse-KeyLedger-v2'))
+}
+
+# One bounded critical section around the whole read-modify-write. Lock expiry is an ERROR,
+# never a silent skip: a write that did not happen must not be reported as one that did.
+function Invoke-KeyLedgerLocked([scriptblock]$Body, [int]$TimeoutMs = 5000) {
+  $m = Get-KeyLedgerMutex
+  $held = $false
+  try {
+    try { $held = $m.WaitOne($TimeoutMs, $false) } catch [System.Threading.AbandonedMutexException] { $held = $true }
+    if (-not $held) { throw "key ledger: another call held the ownership ledger for ${TimeoutMs}ms - this call wrote nothing" }
+    return (& $Body)
+  } finally {
+    if ($held) { try { [void]$m.ReleaseMutex() } catch { } }
+    try { $m.Dispose() } catch { }
+  }
+}
+
+# The identity of THIS process: pid AND creation time. A pid alone is reused by the OS, so a
+# recovered record whose recorded creation time differs from the live process belongs to an
+# owner that has EXITED - it is not the same writer coming back.
+function Get-KeyLedgerOwnerIdentity {
+  $st = 'unknown'
+  try { $st = [System.Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o') } catch { $st = 'unknown' }
+  return @{ pid = [int]$PID; started_at = $st }
 }
 
 # Modifier names resolve here; everything else is a base key.
@@ -13708,60 +14007,144 @@ function Resolve-LedgerKey([string]$name) {
   return (Resolve-KeyName $name)
 }
 
-# Normalized: always @{ pid; name; vk; ext; state; combo; at }, legacy entries expanded.
-function Read-KeyLedger {
+# Normalized entry: @{ pid; name; vk; ext; state; owner_started; combo; at }. Legacy name-list
+# entries are expanded to one record per key with state 'down' and no creation stamp.
+function Read-KeyLedgerState {
   $p = Get-KeyLedgerPath
-  if (-not (Test-Path -LiteralPath $p)) { return @() }
-  try {
-    $raw = Get-Content -LiteralPath $p -Raw -ErrorAction Stop
-    $obj = $raw | ConvertFrom-Json
-    $out = @()
-    foreach ($e in @($obj.entries)) {
-      if ($null -eq $e) { continue }
-      $nm = ''
-      if ($e.PSObject.Properties['name']) { $nm = [string]$e.name }
-      if ($nm -ne '') {
-        $out += @{ pid = [int]$e.pid; name = $nm; vk = [int]$e.vk; ext = [bool]$e.ext; state = [string]$e.state; combo = [string]$e.combo; at = [string]$e.at }
-        continue
+  if (-not (Test-Path -LiteralPath $p)) { return @{ Status = 'absent'; Entries = @(); Error = ''; Path = $p } }
+  $raw = ''
+  try { $raw = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8) }
+  catch { return @{ Status = 'denied'; Entries = @(); Error = $_.Exception.Message; Path = $p } }
+  if ("$raw".Trim() -eq '') { return @{ Status = 'corrupt'; Entries = @(); Error = 'the file holds 0 bytes of JSON'; Path = $p } }
+  $obj = $null
+  try { $obj = $raw | ConvertFrom-Json -ErrorAction Stop } catch { return @{ Status = 'corrupt'; Entries = @(); Error = $_.Exception.Message; Path = $p } }
+  if ($null -eq $obj) { return @{ Status = 'corrupt'; Entries = @(); Error = 'the JSON parsed to $null'; Path = $p } }
+  $ver = 1
+  if ($obj.PSObject.Properties['schema']) { try { $ver = [int]$obj.schema } catch { $ver = -1 } }
+  if ($ver -ne 1) { return @{ Status = 'unknown-version'; Entries = @(); Error = "schema=$ver, this tool reads schema 1 (and legacy records with no schema field)"; Path = $p } }
+  $rawEntries = @()
+  if ($obj.PSObject.Properties['entries']) { $rawEntries = @($obj.entries) }
+  $out = @()
+  foreach ($e in $rawEntries) {
+    if ($null -eq $e) { continue }
+    $nm = ''
+    if ($e.PSObject.Properties['name']) { $nm = [string]$e.name }
+    if ($nm -ne '') {
+      $stv = 'down'
+      if ($e.PSObject.Properties['state'] -and "$($e.state)" -ne '') { $stv = [string]$e.state }
+      $ost = ''
+      if ($e.PSObject.Properties['owner_started']) { $ost = [string]$e.owner_started }
+      $out += @{
+        pid = [int]$e.pid; name = $nm; vk = [int]$e.vk
+        ext = $(if ($e.PSObject.Properties['ext']) { [bool]$e.ext } else { $false })
+        state = $stv; owner_started = $ost
+        combo = $(if ($e.PSObject.Properties['combo']) { [string]$e.combo } else { '' })
+        at = $(if ($e.PSObject.Properties['at']) { [string]$e.at } else { '' })
       }
-      if ($e.PSObject.Properties['keys']) {
-        foreach ($k in @($e.keys)) {
-          $info = $null
-          try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
-          $out += @{
-            pid = [int]$e.pid; name = [string]$k
-            vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
-            state = 'down'; combo = [string]$e.combo; at = [string]$e.at
-          }
+      continue
+    }
+    if ($e.PSObject.Properties['keys']) {
+      foreach ($k in @($e.keys)) {
+        $info = $null
+        try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
+        $out += @{
+          pid = [int]$e.pid; name = [string]$k
+          vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
+          state = 'down'; owner_started = ''; combo = [string]$e.combo; at = [string]$e.at
         }
       }
     }
-    return $out
-  } catch { return @() }
+  }
+  return @{ Status = 'ok'; Entries = $out; Error = ''; Path = $p }
 }
 
-function Write-KeyLedger($entries) {
+# The old contract for callers that only want the entries. A record that cannot be read is
+# an ERROR now, not an empty list - "cannot see it" must never be reported as "nothing held".
+function Read-KeyLedger {
+  $st = Read-KeyLedgerState
+  if ($st.Status -eq 'absent') { return @() }
+  if ($st.Status -ne 'ok') {
+    throw "key ledger: $($st.Status) at $($st.Path) ($($st.Error)) - this tool cannot tell which keys it owns and will not treat that as 'nothing held'. Inspect or remove that file deliberately."
+  }
+  return @($st.Entries)
+}
+
+# Same-directory temp file + atomic replace, so a reader never sees half a JSON document.
+function Write-KeyLedgerAtomic($entries) {
   $p = Get-KeyLedgerPath
   $dir = Split-Path -Parent $p
   if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
-  $obj = @{ written_at = (Get-Date).ToString('o'); pid = $PID; entries = @($entries) }
-  Set-Content -LiteralPath $p -Value ($obj | ConvertTo-Json -Depth 5 -Compress) -Encoding UTF8
-}
-
-function Add-KeyLedger($entries) {
-  Write-KeyLedger (@(Read-KeyLedger) + @($entries))
-}
-
-# Remove ONLY the records for one key owned by one pid; other keys/owners survive.
-function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid) {
-  $all = @(Read-KeyLedger)
-  $keep = @($all | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $ownerPid)) })
-  if ($keep.Count -eq 0) { Clear-KeyLedger } else { Write-KeyLedger $keep }
+  $owner = Get-KeyLedgerOwnerIdentity
+  $rec = [ordered]@{ schema = 1; written_at = (Get-Date).ToString('o'); pid = $owner.pid; owner_started = $owner.started_at; entries = @($entries) }
+  $json = ConvertTo-Json -InputObject $rec -Depth 6 -Compress
+  $tmp = "$p.tmp-$PID"
+  [System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
+  if (Test-Path -LiteralPath $p) {
+    try { [System.IO.File]::Replace($tmp, $p, $null) } catch { Move-Item -LiteralPath $tmp -Destination $p -Force }
+  } else { Move-Item -LiteralPath $tmp -Destination $p -Force }
 }
 
 function Clear-KeyLedger {
   $p = Get-KeyLedgerPath
   if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+}
+
+# Upsert ONE key's record for this owner. Bounded lock, atomic replace, and a corrupt or
+# unreadable ledger is refused instead of being overwritten. Throws on any write failure, so
+# a caller can never mistake a failed registration for a successful one.
+function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state, [string]$combo) {
+  $owner = Get-KeyLedgerOwnerIdentity
+  Invoke-KeyLedgerLocked {
+    $st = Read-KeyLedgerState
+    if ($st.Status -notin @('absent', 'ok')) { throw "key ledger: cannot record '$name' - the ledger is $($st.Status) at $($st.Path) ($($st.Error)); no record was written" }
+    $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $owner.pid) -and ([string]$_.owner_started -eq $owner.started_at)) })
+    $keep += @{ pid = $owner.pid; name = $name; vk = $vk; ext = $ext; state = $state; owner_started = $owner.started_at; combo = $combo; at = (Get-Date).ToString('o') }
+    Write-KeyLedgerAtomic $keep
+  } | Out-Null
+}
+
+# Remove ONLY the records for one key owned by one writer (pid + creation time); other keys
+# and other owners survive - a recovery must never erase another call's record.
+function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid = 0, [string]$ownerStarted = '') {
+  $owner = Get-KeyLedgerOwnerIdentity
+  $usePid = $(if ($ownerPid -gt 0) { $ownerPid } else { $owner.pid })
+  $useStart = $(if ($ownerStarted -ne '') { $ownerStarted } else { $owner.started_at })
+  Invoke-KeyLedgerLocked {
+    $st = Read-KeyLedgerState
+    if ($st.Status -eq 'absent') { return }
+    if ($st.Status -ne 'ok') { throw "key ledger: cannot clear '$name' - the ledger is $($st.Status) at $($st.Path) ($($st.Error)); nothing was changed" }
+    $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $usePid) -and ([string]$_.owner_started -eq $useStart)) })
+    if ($keep.Count -eq 0) { Clear-KeyLedger } else { Write-KeyLedgerAtomic $keep }
+  } | Out-Null
+}
+
+# Who wrote this record, judged from the pid AND the creation time it recorded. 'owner-dead'
+# covers both "not running" and "the pid was reused"; 'unknown-owner' means liveness could
+# not be read (or the record predates the creation stamp) and ownership cannot be proven.
+function Get-KeyLedgerOwnerVerdict($e) {
+  $opid = [int]$e.pid
+  $rec = [string]$e.owner_started
+  if ($opid -le 0) { return @{ Kind = 'unknown-owner'; Detail = 'no pid recorded' } }
+  # A record naming THIS pid is only 'self-live' when its recorded creation time is the one
+  # this process actually has. The OS reuses pids, so a record left by a killed predecessor
+  # that happened to carry the same number must not be adopted as this call's own key.
+  if ($opid -eq $PID) {
+    $self = Get-KeyLedgerOwnerIdentity
+    if ($rec -eq '' -or $rec -eq 'unknown' -or $self.started_at -eq 'unknown') {
+      return @{ Kind = 'unknown-owner'; Detail = "record names this pid but holds no comparable creation time (record '$rec', now '$($self.started_at)')" }
+    }
+    if ($rec -eq $self.started_at) { return @{ Kind = 'self-live'; Detail = 'this process' } }
+    return @{ Kind = 'owner-dead'; Detail = "pid=$opid was reused: recorded $rec, this process started $($self.started_at)" }
+  }
+  $pr = $null
+  try { $pr = [System.Diagnostics.Process]::GetProcessById($opid) }
+  catch [System.ArgumentException] { return @{ Kind = 'owner-dead'; Detail = "pid=$opid is not running" } }
+  catch { return @{ Kind = 'unknown-owner'; Detail = "pid=$opid liveness unreadable ($($_.Exception.Message))" } }
+  $nowStart = ''
+  try { $nowStart = $pr.StartTime.ToUniversalTime().ToString('o') } catch { return @{ Kind = 'unknown-owner'; Detail = "pid=$opid creation time unreadable" } }
+  if ($rec -eq '' -or $rec -eq 'unknown') { return @{ Kind = 'unknown-owner'; Detail = "record has no creation time; pid=$opid now started $nowStart, so it cannot be shown to be the writer" } }
+  if ($rec -eq $nowStart) { return @{ Kind = 'other-live'; Detail = "pid=$opid is running with the recorded creation time - a live call still owns it" } }
+  return @{ Kind = 'owner-dead'; Detail = "pid=$opid was reused: recorded $rec, now $nowStart" }
 }
 
 # The case body of `key`. Runs parse -> refuse -> one owned gesture -> receipt.
@@ -13794,30 +14177,47 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
   $inserted = 0
   $fail = ''
   $releaseFail = @()
-  $intent = @()
-  foreach ($v in $vks) {
-    $intent += @{ pid = $PID; name = $v.Name; vk = [int]$v.Vk; ext = [bool]$v.Ext; state = 'down'; combo = $combo.Spec; at = (Get-Date).ToString('o') }
-  }
-  $intent += @{ pid = $PID; name = $combo.Key; vk = [int]$combo.Base.Vk; ext = [bool]$combo.Base.Ext; state = 'down'; combo = $combo.Spec; at = (Get-Date).ToString('o') }
-  Add-KeyLedger $intent
+  # R-01 phase 1: PREPARE. The intent is on record before any input exists, so a crash
+  # between SendInput and its acknowledgement still leaves a trace - but as 'prepared',
+  # which is a CLUE, not ownership. key-release reports it and refuses to release it.
+  foreach ($v in $vks) { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'prepared' $combo.Spec }
+  Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'prepared' $combo.Spec
   try {
     foreach ($v in $vks) {
       $n = [uint32][DT]::SendKeyInput([int]$v.Vk, $false, [bool]$v.Ext)
-      if ($n -ne 1) { throw "key: modifier '$($v.Name)' DOWN: SendInput inserted $n of 1; the gesture did not run" }
+      if ($n -ne 1) {
+        # DOWN did not happen: drop the clue and never add this key to the releasable set.
+        try { Remove-KeyLedgerRecords $v.Name } catch { }
+        throw "key: modifier '$($v.Name)' DOWN: SendInput inserted $n of 1; the gesture did not run"
+      }
+      # R-01 phase 2: CONFIRMED DOWN. Only this acknowledgement makes the key ours.
       $pressed += $v
       $inserted++
+      try { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'down' $combo.Spec }
+      catch { throw "key: modifier '$($v.Name)' DOWN succeeded but its ownership record could not be written ($($_.Exception.Message)); releasing it now" }
       Start-Sleep -Milliseconds 30
     }
     for ($r = 1; $r -le $repeat; $r++) {
       $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $false, [bool]$combo.Base.Ext)
-      if ($n -ne 1) { throw "key: '$($combo.Key)' DOWN (repeat $r of $repeat): SendInput inserted $n of 1" }
+      if ($n -ne 1) {
+        try { Remove-KeyLedgerRecords $combo.Key } catch { }
+        throw "key: '$($combo.Key)' DOWN (repeat $r of $repeat): SendInput inserted $n of 1"
+      }
       $baseDown = $true
       $inserted++
+      try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'down' $combo.Spec }
+      catch { throw "key: '$($combo.Key)' DOWN succeeded but its ownership record could not be written ($($_.Exception.Message)); the key is still down" }
       Start-Sleep -Milliseconds $hold
       $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
-      if ($n -ne 1) { throw "key: '$($combo.Key)' UP (repeat $r of $repeat): SendInput inserted $n of 1 - the key may still be down; its ledger record is kept, run 'key-release'" }
+      if ($n -ne 1) {
+        # The UP was attempted and failed: the physical state is now unknown. The record is
+        # kept and stamped 'unknown' so recovery can report it instead of guessing.
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'unknown' $combo.Spec } catch { }
+        throw "key: '$($combo.Key)' UP (repeat $r of $repeat): SendInput inserted $n of 1 - the key may still be down; its ledger record is kept, run 'key-release'"
+      }
       $baseDown = $false
       $inserted++
+      try { Remove-KeyLedgerRecords $combo.Key } catch { }
       if ($r -lt $repeat -and $interval -gt 0) { Start-Sleep -Milliseconds $interval }
     }
   } catch {
@@ -13834,12 +14234,17 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
         $n = [uint32][DT]::SendKeyInput([int]$v.Vk, $true, [bool]$v.Ext)
         if ($n -eq 1) { $upOk = $true; $inserted++ } else { $releaseFail += "$($v.Name)(inserted $n/1)" }
       } catch { $releaseFail += "$($v.Name)($($_.Exception.Message))" }
-      if ($upOk) { $rel += $v.Name; Remove-KeyLedgerRecords $v.Name $PID }
+      if ($upOk) {
+        $rel += $v.Name
+        try { Remove-KeyLedgerRecords $v.Name } catch { }
+      } else {
+        try { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'unknown' $combo.Spec } catch { }
+      }
       $pos--
     }
     # The base key's record is only owed while it is actually down; a failed base UP keeps
     # it so key-release can still recover it (CU-OPS-ADJ-04).
-    if (-not $baseDown) { Remove-KeyLedgerRecords $combo.Key $PID }
+    if (-not $baseDown) { try { Remove-KeyLedgerRecords $combo.Key } catch { } }
     Start-Sleep -Milliseconds 40
     $script:LastKeyReceipt = ("combo=" + $combo.Spec + " mods=" + $(if ($combo.Mods.Count) { $combo.Mods -join '+' } else { 'none' }) + " repeat=$repeat hold=${hold}ms interval=${interval}ms SendInput-inserted=$inserted released=" + $(if ($rel.Count) { $rel -join '+' } else { 'none' }))
   }
@@ -13858,19 +14263,31 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
 
 # Read-only: what is down right now, and what (if anything) this tool has on record.
 function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
-  $ledger = @(Read-KeyLedger)
+  $st = Read-KeyLedgerState
+  $ledger = @()
+  if ($st.Status -eq 'ok') { $ledger = @($st.Entries) }
   $owned = @()
+  $clues = @()
   foreach ($e in $ledger) {
     # vk comes from the record itself: modifiers are ledger keys too, and Resolve-KeyName
     # would reject ctrl/shift/alt/win (CU-OPS-ADJ-05).
     $vk = [int]$e.vk
-    if ($vk -ne 0 -and ([DT]::IsVkDown($vk) -ne 0)) { $owned += "$($e.name)(pid=$($e.pid))" }
+    $isDown = ($vk -ne 0) -and ([DT]::IsVkDown($vk) -ne 0)
+    if ([string]$e.state -ne 'down') { $clues += "$($e.name)=$($e.state)$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
+    if ($isDown) { $owned += "$($e.name)(pid=$($e.pid))" }
   }
-  "key-state: $(Get-InputStateLine)  owned-held=$(if ($owned.Count) { $owned -join ',' } else { 'none' })  ledger=$(if ($ledger.Count) { $ledger.Count.ToString() + ' entr(y/ies)' } else { 'absent' })"
-  "note: every key this tool presses is released inside the same call; an entry here can only outlive a killed process. 'key-release' touches only keys named in the ledger."
+  $ledgerNote = switch ($st.Status) {
+    'absent' { 'absent' }
+    'ok' { "$(@($ledger).Count) entr(y/ies)" }
+    default { "$($st.Status): $($st.Error)" }
+  }
+  "key-state: $(Get-InputStateLine)  owned-held=$(if ($owned.Count) { $owned -join ',' } else { 'none' })  ledger=$ledgerNote"
+  if ($clues.Count) { "  unconfirmed records (state is not 'down' - reported, never released on): $($clues -join ', ')" }
+  "note: every key this tool presses is released inside the same call; a 'down' entry can only outlive a killed process. 'key-release' touches only keys the ledger proves this tool pressed."
 }
 
-# Releases only keys the ledger names AND that are still down. Everything else is reported.
+# Releases only keys the ledger proves this tool pressed AND that are still down. Everything
+# else is reported, not touched.
 function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
   # The ledger records keys THIS tool pressed and has not released yet. Only those - and only
   # if they are still physically down - are released; anything else is reported, not touched.
@@ -13879,32 +14296,60 @@ function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
   $own = Strip-OwnFlags $Rest 'key-release'
   if (@($own.Rest).Count -gt 0) { throw "key-release: unexpected argument '$($own.Rest[0])' - it takes no operand, only --go" }
   $go = [bool]$own.Values['--go']
-  $ledger = @(Read-KeyLedger)
-  if ($ledger.Count -eq 0) {
+  $st = Read-KeyLedgerState
+  if ($st.Status -eq 'absent') {
     "key-release: no ownership ledger exists - this tool has no key on record as held, so there is nothing it may release. Observed: $(Get-InputStateLine)"
     return
   }
-  $acts = @()
+  if ($st.Status -ne 'ok') {
+    # R-01: an unreadable record is NOT "nothing held". Releasing on it would be a guess and
+    # overwriting it would destroy the only recovery clue, so nothing is sent or written.
+    throw "key-release: the ownership ledger is $($st.Status) at $($st.Path) ($($st.Error)) - this tool cannot tell which keys it owns, so it released nothing and left the file untouched. Inspect or remove that file deliberately."
+  }
+  $ledger = @($st.Entries)
+  if ($ledger.Count -eq 0) {
+    "key-release: the ownership ledger exists and is valid but holds no records - nothing it may release. Observed: $(Get-InputStateLine)"
+    return
+  }
+  $plan = @()
   foreach ($e in $ledger) {
     $vk = [int]$e.vk
-    if ($vk -eq 0) { $acts += "$($e.name) = unreadable record (skipped, recorded pid=$($e.pid))"; continue }
-    if (([DT]::IsVkDown($vk)) -ne 0) { $acts += "$($e.name) = still down (recorded pid=$($e.pid))" } else { $acts += "$($e.name) = already up" }
+    $downNow = ($vk -ne 0) -and (([DT]::IsVkDown($vk)) -ne 0)
+    $ov = Get-KeyLedgerOwnerVerdict $e
+    $state = [string]$e.state
+    $action = ''
+    if ($vk -eq 0) { $action = 'REFUSED: unreadable record (no usable vk)' }
+    elseif ($state -ne 'down') { $action = "REFUSED: record state '$state' - this tool never confirmed the DOWN, so it will not release it" }
+    elseif ($ov.Kind -eq 'other-live') { $action = "REFUSED: $($ov.Detail)" }
+    elseif ($ov.Kind -eq 'unknown-owner') { $action = "REFUSED: ownership unprovable - $($ov.Detail)" }
+    elseif (-not $downNow) { $action = 'CLEANUP: already up - record removed, no input sent' }
+    else { $action = 'WILL RELEASE' }
+    $plan += [pscustomobject]@{ Entry = $e; Vk = $vk; Ext = [bool]$e.ext; Action = $action; Owner = $ov.Kind }
   }
   "key-release" + $(if ($go) { '' } else { ' (DRY-RUN: add --go to release; nothing was sent)' }) + ":"
-  $acts | ForEach-Object { "  $_" }
+  foreach ($p in $plan) {
+    "  $($p.Entry.name) = state=$($p.Entry.state) owner=$($p.Owner)(pid=$($p.Entry.pid)) physical=$(if ($p.Vk -ne 0 -and ([DT]::IsVkDown($p.Vk)) -ne 0) { 'down' } else { 'up' }) -> $($p.Action)"
+  }
   if (-not $go) { return }
   $released = @()
   $failed = @()
-  foreach ($e in $ledger) {
-    $vk = [int]$e.vk; $ext = [bool]$e.ext
-    if ($vk -eq 0) { continue }
-    if (([DT]::IsVkDown($vk)) -eq 0) { Remove-KeyLedgerRecords ([string]$e.name) ([int]$e.pid); continue }
+  $refused = 0
+  foreach ($p in $plan) {
+    if ($p.Action -like 'REFUSED*') { $refused++; continue }
+    if ($p.Action -like 'CLEANUP*') {
+      try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { }
+      continue
+    }
     try {
-      $n = [uint32][DT]::SendKeyInput($vk, $true, $ext)
-      if ($n -eq 1) { $released += [string]$e.name; Remove-KeyLedgerRecords ([string]$e.name) ([int]$e.pid) } else { $failed += "$($e.name)(inserted $n/1)" }
-    } catch { $failed += "$($e.name)($($_.Exception.Message))" }
+      $n = [uint32][DT]::SendKeyInput($p.Vk, $true, $p.Ext)
+      if ($n -eq 1) {
+        $released += [string]$p.Entry.name
+        try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { }
+      } else { $failed += "$($p.Entry.name)(inserted $n/1)" }
+    } catch { $failed += "$($p.Entry.name)($($_.Exception.Message))" }
   }
-  "  released=" + $(if ($released.Count) { $released -join '+' } else { 'none' }) + " failed=" + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + "  observed-after=$(Get-InputStateLine)"
+  "  released=" + $(if ($released.Count) { $released -join '+' } else { 'none' }) + " failed=" + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + " refused=$refused  observed-after=$(Get-InputStateLine)"
+  if ($refused -gt 0) { Write-Output "NOTICE: $refused record(s) were reported but not released - ownership could not be proven. They stay in the ledger for a human decision." }
   if ($failed.Count) { throw "key-release: $($failed.Count) key(s) could not be released: $($failed -join ', ')" }
 }
 
@@ -13983,37 +14428,69 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): paste-file - the case body, verbatim
 function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
-      # paste-file [--to <sel>] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--force]
+      # paste-file [--to <sel>] [--image] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--force]
       # = copy-file + foreground guard + content guard + Ctrl+V, previous
       # clipboard restored. --guard-text/--guard-region are the "am I really
       # talking to the right conversation" check: the file goes out only if the
       # needle is visible in the target window (probed incident: a guard-green
       # window whose active chat had silently switched to a private friend).
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 1) { throw 'usage: paste-file [--to <sel>] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--replace-clipboard] [--force]' }
-      if (-not (Test-Path -LiteralPath $p.Words[0] -PathType Leaf)) { throw "file not found: $($p.Words[0])" }
-      $fi = Get-Item -LiteralPath $p.Words[0]
+      # CU-OPS package G (v4.6.4): --image carries the PNG/BMP PIXELS - the file is decoded
+      # and put on the clipboard as an image, not as a path string. The carrier is validated
+      # BEFORE the clipboard snapshot, so a bad image path changes nothing at all.
+      $useImage = $false
+      $rest2 = New-Object System.Collections.ArrayList
+      foreach ($a in @($Rest)) {
+        if ("$a" -eq '--image') { $useImage = $true } else { [void]$rest2.Add($a) }
+      }
+      $p = Split-Target @($rest2) 'paste-file'
+      if ($p.Words.Count -lt 1) { throw 'usage: paste-file [--to <sel>] [--image] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--replace-clipboard] [--force]' }
+      $srcPath = [string]$p.Words[0]
+      $carrier = $null
+      if ($useImage) {
+        $carrier = Get-ImageCarrier $srcPath
+        if (-not [bool]$carrier.Ok) {
+          throw ('paste-file: ' + $srcPath + ' is not an image carrier this tool can carry (' + $carrier.Reason + ': ' + $carrier.Detail + '); nothing was sent')
+        }
+      } elseif (-not (Test-Path -LiteralPath $srcPath -PathType Leaf)) { throw "file not found: $srcPath" }
+      $fi = Get-Item -LiteralPath $srcPath
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       $clip = Save-ClipboardState
       Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste-file'
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$($fi.FullName)" $Cmd
-      $ok = Set-ClipboardFileDrop $fi.FullName
-      if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+      $carrierName = if ($useImage) { 'image' } else { 'file' }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$($fi.FullName) carrier=$carrierName" $Cmd
+      if ($useImage) {
+        $ok = Set-ClipboardImageCarrier $carrier
+        if (-not $ok) { throw ("paste-file: the image did not come back after the write (size/digest check failed); no paste was sent for: " + $fi.FullName) }
+      } else {
+        $ok = Set-ClipboardFileDrop $fi.FullName
+        if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+      }
       [System.Windows.Forms.SendKeys]::SendWait('^v')
       Start-Sleep -Milliseconds 500
       $restoreNote = Restore-ClipboardState $clip
       $warn = Test-PostSendForeground $target $p.Force
-      "pasted file $($fi.Name) bytes=$($fi.Length), target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
-      Invoke-ActionExpectation $p $target 'pasted file'
+      if ($useImage) {
+        "pasted image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  carrier=image, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
+      } else {
+        "pasted file $($fi.Name) bytes=$($fi.Length), target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
+      }
+      Invoke-ActionExpectation $p $target ($(if ($useImage) { 'pasted image' } else { 'pasted file' }))
       # v1.5.9 (P-1): same default-on readback as paste; the FileDrop's name is the
       # payload handle the target renders, so the needle comes from the file name.
-      $auto = Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)
-      if ($auto.Ran) {
-        Log-Action @("autoexpect=$($auto.NeedleChars)chars") "target pid=$($target.Pid) verified=$(if ($auto.Ok) { 'yes' } else { 'no' })" $Cmd
-        Write-Output $auto.Message
-        Confirm-AutoExpect $auto
+      # CU-OPS package G (v4.6.4): for --image there is nothing textual to read back, and
+      # claiming a window effect from a receipt would be exactly the false-green this package
+      # exists to kill - so the row says the window was NOT read back instead of faking one.
+      if ($useImage) {
+        Write-Output '      readback: carrier=image - this tool cannot read pixels back out of a target window; the clipboard digest above proves the PAYLOAD, not the receiving app'
+      } else {
+        $auto = Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)
+        if ($auto.Ran) {
+          Log-Action @("autoexpect=$($auto.NeedleChars)chars") "target pid=$($target.Pid) verified=$(if ($auto.Ok) { 'yes' } else { 'no' })" $Cmd
+          Write-Output $auto.Message
+          Confirm-AutoExpect $auto
+        }
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
       # CU-OPS package G (v4.6.1): same mechanical check as paste - the file went out,
@@ -14026,17 +14503,52 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): copy-file - the case body, verbatim
 function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
-      # copy-file <path> - put a local file on the clipboard as FileDrop and
-      # verify the drop list really contains it. Deliberately does NOT restore
-      # the previous clipboard: leaving the file there is the point of this
-      # command (paste / paste-file do restore).
-      if ($Rest.Count -lt 1) { throw 'usage: copy-file <path>' }
-      if (-not (Test-Path -LiteralPath $Rest[0] -PathType Leaf)) { throw "file not found: $($Rest[0])" }
-      $fi = Get-Item -LiteralPath $Rest[0]
-      Log-Action $Rest "file=$($fi.FullName) bytes=$($fi.Length)" $Cmd
-      $ok = Set-ClipboardFileDrop $fi.FullName
-      if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
-      "copied $($fi.Name)  bytes=$($fi.Length)  clipboard verified: $($fi.FullName)"
+      # copy-file [--image] [--replace-clipboard] <path>
+      # - put a local file on the clipboard as FileDrop (default) or as the IMAGE carrier
+      #   (--image: PNG/BMP pixels, not a path), and verify what landed. Deliberately does NOT
+      #   restore the previous clipboard: leaving the payload there is the point of this
+      #   command (paste / paste-file do restore).
+      # - CU-OPS package G (v4.6.4): before ANY write the current clipboard is snapshotted and
+      #   the write gate runs. A clipboard holding formats this tool cannot put back is refused
+      #   with their names, unless --replace-clipboard says the loss is intended. This is also
+      #   what makes the flag meaningful for a command that never restores.
+      $useImage = $false
+      $replace = $false
+      $words = New-Object System.Collections.ArrayList
+      foreach ($a in @($Rest)) {
+        $s = "$a"
+        if ($s -eq '--image') { $useImage = $true; continue }
+        if ($s -eq '--replace-clipboard') { $replace = $true; continue }
+        [void]$words.Add($s)
+      }
+      if ($words.Count -lt 1) { throw 'usage: copy-file [--image] [--replace-clipboard] <path> - --image puts the PNG/BMP PIXELS on the clipboard instead of a FileDrop path' }
+      if ($words.Count -gt 1) { throw ('copy-file takes exactly one path; extra arguments: ' + (@($words | Select-Object -Skip 1) -join ' ')) }
+      $srcPath = [string]$words[0]
+      # The payload is validated BEFORE the clipboard is read: a bad image path changes nothing.
+      $carrier = $null
+      if ($useImage) {
+        $carrier = Get-ImageCarrier $srcPath
+        if (-not [bool]$carrier.Ok) {
+          throw ('copy-file: ' + $srcPath + ' is not an image carrier this tool can carry (' + $carrier.Reason + ': ' + $carrier.Detail + '); nothing was written')
+        }
+      } elseif (-not (Test-Path -LiteralPath $srcPath -PathType Leaf)) {
+        throw "file not found: $srcPath"
+      }
+      # G: the write gate runs on the SNAPSHOT, before anything is replaced.
+      $clip = Save-ClipboardState
+      Assert-ClipboardReplaceable $clip $replace 'copy-file'
+      $fi = Get-Item -LiteralPath $srcPath
+      $carrierName = if ($useImage) { 'image' } else { 'file' }
+      Log-Action $Rest "file=$($fi.FullName) bytes=$($fi.Length) carrier=$carrierName" $Cmd
+      if ($useImage) {
+        $ok = Set-ClipboardImageCarrier $carrier
+        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName) }
+        ("copied image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  bytes=$($fi.Length)  carrier=image  clipboard verified (same pixels read back)")
+      } else {
+        $ok = Set-ClipboardFileDrop $fi.FullName
+        if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+        "copied $($fi.Name)  bytes=$($fi.Length)  carrier=file  clipboard verified: $($fi.FullName)"
+      }
 }
 
 
@@ -15801,7 +16313,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07LtCount = @($a07LtSplit).Count
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 108) -and (@($script:StLoadTimeNames).Count -eq 86) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 109) -and (@($script:StLoadTimeNames).Count -eq 87) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -16046,7 +16558,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a14BannerCount = 0
   if ("$a14Records" -ne '') { $a14BannerCount = @("$a14Records" -split "`n").Count }
   ST-Check 'lint (A-14a): every banner in the selftest body is claimed by exactly one declared family, and the measured tallies equal the registered table (a shrunk or empty family is named with its numbers)' (
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 165) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # v4.6.4 (R-06): the docs-contract family gained the R-05 both-directions banner, so the
+    # pinned body banner count is 166, measured - not the old 165. The row stays a pin: the
+    # family agreement table must still be exactly empty, so a drift in any single family is
+    # still named instead of absorbed by the total.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 166) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')
@@ -19693,8 +20209,13 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
       $_.Contains('if ($ecb) { Invoke-ExpectChangeCheck $p $ecb ''wheel'' }')
   }).Count
   ST-Check 'lint: wheel initializes no pixel expectation, acquires one only when requested, and checks only a present baseline' ($c44WheelEmptyGuard -eq 3)
-  $c44WheelLiveCall = @($codeLines | Where-Object { $_ -match '\$outWheel = & powershell .* wheel -3 --at ''DTX-ExpectProbe''' }).Count
-  ST-Check 'lint: live wheel proof executes exactly one real DTX-ExpectProbe call' ($c44WheelLiveCall -eq 1)
+  # R-06: after CU-REL-03 a wheel call cannot take '--at' without an explicit x/y scroll point, so
+  # the live proof carries two numeric words between the amount and the selector. The bare-'--at'
+  # line left above it is the deliberate refusal control (no input sent) and must not be counted
+  # as the proof; both are pinned so neither halves can silently drift.
+  $c44WheelLiveCall = @($codeLines | Where-Object { $_ -match '\$outWheel = & powershell .* wheel -3 \$cpx \$cpy --at ''DTX-ExpectProbe''' }).Count
+  $c44WheelLiveRefusal = @($codeLines | Where-Object { $_ -match '\$outWheelNoXY = & powershell .* wheel -3 --at ''DTX-ExpectProbe''' }).Count
+  ST-Check 'lint: live wheel proof executes exactly one coordinate-bearing DTX-ExpectProbe call plus one no-coordinate refusal control' ($c44WheelLiveCall -eq 1 -and $c44WheelLiveRefusal -eq 1)
   $c44ClickPidAudit = @($codeLines | Where-Object { $_ -ceq '      if ($null -ne $tgt) { $clickLogArgs = @($clickLogArgs) + @("pid=$($tgt.Pid)") }' }).Count
   ST-Check 'lint: click audit appends the resolved target pid for an independent act witness' ($c44ClickPidAudit -eq 1)
   Write-Output ("      selector ambiguity + wheel parser: ambiguous=$($c44Amb.Count) wheel-sites=$c44WheelSites private-sites=$c44WheelPrivateSites")
@@ -20675,6 +21196,68 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
   Write-Output ("      all case keys: " + ((Get-HashKeys $hCaseStarts | Sort-Object) -join ' '))
   # @(hashtable).Count is ALWAYS 1 in PS 5.1 - use .Count / .Keys bare (see the D-1 note).
   Write-Output ("      help index entries=" + @($hNames).Count + " dispatcher cases=" + $hCaseStarts.Count)
+
+  # ---------- R-05: the page and the registry are checked in BOTH directions ----------------
+  # The old coverage lint only asked "does every dispatch case have a page entry". The reverse
+  # was never tested, so a name the page INVENTED was invisible: `    Taking a coordinate off the
+  # screen - ...` is a section heading, but the index read it as a command called 'Taking' and
+  # `help Taking` answered. Both directions are compared here, and the predicate is fed planted
+  # copies first - a comparison whose failure mode is "silently agrees" is not evidence.
+  $capMeta = @('script', 'replay', 'selftest')
+  $capNames = @()
+  foreach ($cg in @(Get-HashKeys $script:StHandlerGroups | Sort-Object)) {
+    foreach ($cn in @($script:StHandlerGroups[$cg])) { $capNames += [string]$cn }
+  }
+  $capPred = {
+    param($advArg, $caseArg)
+    return [pscustomobject]@{
+      Phantom = @(@($advArg) | Where-Object { -not ($caseArg.ContainsKey([string]$_)) -and -not ($capMeta -contains [string]$_) })
+      Missing = @(Get-HashKeys $caseArg | Where-Object { -not (@($advArg) -contains [string]$_) -and -not ($capMeta -contains [string]$_) })
+    }
+  }
+  $hPhantom = @((& $capPred $hNames $hCaseStarts).Phantom)
+  ST-Check 'lint (R-05): every help entry is a real dispatch case (the page cannot invent a command)' (
+    (@($hNames).Count -ge 55) -and (@($hPhantom).Count -eq 0))
+  if (@($hPhantom).Count -gt 0) { Write-Output ("      page entries with no dispatch case: " + (@($hPhantom) -join ', ')) }
+  $hPhantomPlanted = @((& $capPred (@($hNames) + @('ghost-command', 'Taking')) $hCaseStarts).Phantom)
+  ST-Check 'lint (R-05 teeth): the page-phantom predicate flags a planted fake name and the exact heading that used to leak' (
+    (@($hPhantomPlanted).Count -eq 2) -and (@($hPhantomPlanted) -contains 'ghost-command') -and (@($hPhantomPlanted) -contains 'Taking'))
+  $capReal = & $capPred $capNames $hCaseStarts
+  ST-Check 'lint (R-05): capabilities advertises exactly the dispatcher (no ghost command, no blind spot)' (
+    (@($capNames).Count -ge 85) -and (@($capReal.Phantom).Count -eq 0) -and (@($capReal.Missing).Count -eq 0))
+  if (@($capReal.Phantom).Count -gt 0 -or @($capReal.Missing).Count -gt 0) {
+    Write-Output ("      advertised-not-dispatched: [" + (@($capReal.Phantom) -join ',') + "] dispatched-not-advertised: [" + (@($capReal.Missing) -join ',') + "]")
+  }
+  $capPlanted = & $capPred (@($capNames) + @('ghost-command')) $hCaseStarts
+  $capDropped = & $capPred (@($capNames) | Where-Object { $_ -ne 'wins' }) $hCaseStarts
+  ST-Check 'lint (R-05 teeth): the capabilities predicate flags a planted ghost name and a dropped real one' (
+    (@($capPlanted.Phantom).Count -eq 1) -and (@($capDropped.Missing).Count -eq 1))
+  # The --json column must equal the ONE gate the dispatcher refuses on. It used to be filled
+  # from the action table alone, which marked 17 readable commands json=false although they do
+  # answer --json. Read the table the command really prints, not the source that builds it.
+  $capJsonErr = ''
+  $capJsonRows = @()
+  try {
+    $capSavedJson = [bool]$script:Json
+    $script:Json = $true
+    try { $capJsonRows = @((((Invoke-Handler-capabilities 'capabilities' @()) -join "`n") | ConvertFrom-Json).commands) }
+    finally { $script:Json = $capSavedJson }
+  } catch { $capJsonErr = $_.Exception.Message; $capJsonRows = @() }
+  $capJsonPred = {
+    param($rowArg)
+    return @(@($rowArg) | Where-Object { [bool]$_.json -ne [bool](Test-JsonCapableCommand ([string]$_.name)) } | ForEach-Object { [string]$_.name })
+  }
+  $capJsonWrong = @(& $capJsonPred $capJsonRows)
+  ST-Check 'lint (R-05): every advertised json flag equals the --json gate result (read family included)' (
+    ($capJsonErr -eq '') -and (@($capJsonRows).Count -ge 85) -and (@($capJsonWrong).Count -eq 0))
+  if ($capJsonErr -ne '') { Write-Output ("      capabilities --json could not be read: " + $capJsonErr) }
+  if (@($capJsonWrong).Count -gt 0) { Write-Output ("      json flag disagrees with the gate: " + (@($capJsonWrong) -join ', ')) }
+  $capJsonFlip = @($capJsonRows)
+  if (@($capJsonFlip).Count -gt 0) {
+    $capJsonFlip = @($capJsonFlip | ForEach-Object { if ([string]$_.name -eq 'info') { [pscustomobject]@{ name = $_.name; json = (-not [bool]$_.json) } } else { $_ } })
+  }
+  ST-Check 'lint (R-05 teeth): the json-flag predicate flags a planted flipped row' (
+    (@(& $capJsonPred $capJsonFlip).Count -eq 1) -and (@(& $capJsonPred $capJsonFlip) -contains 'info'))
 
   # ---------- lint: v1.7.0 document-consistency sweep (traversal, no hand-maintained list) ----------
   # The owner named this version for exactly one disease: stale references and checklists
@@ -23744,13 +24327,26 @@ $f.Controls.Add($lbl)
           (($codeBad -eq 1) -and ($outBad -match 'clicked OK but expectation NOT met')) -and $badPatience)
         Write-Output "      expect probe: unsatisfied-exit=$codeBad patience-named=$badPatience"
         Write-Output ("      unsatisfied-output: " + (($outBad.Trim() -split "`r?`n" | Select-Object -First 4) -join ' | '))
-        $outWheel = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath wheel -3 --at 'DTX-ExpectProbe' 2>&1 | Out-String
+        # R-06: after CU-REL-03 a wheel call needs an explicit x/y scroll point with --at - the old
+        # no-coordinate call is refused before any input. Effect is deliberately NOT claimed here:
+        # this row proves the refusal path AND exactly one delivered event whose receipt names the
+        # scroll point and the window actually under it. Only package B's own fixture reads effect.
+        $outWheelNoXY = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath wheel -3 --at 'DTX-ExpectProbe' 2>&1 | Out-String
+        $codeWheelNoXY = $LASTEXITCODE
+        $wheelGuardOk = ($codeWheelNoXY -ne 0) -and ($outWheelNoXY -match 'requires explicit x y coordinates') -and
+          (-not ($outWheelNoXY -match 'SendInput-inserted=1/1'))
+        $outWheel = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath wheel -3 $cpx $cpy --at 'DTX-ExpectProbe' 2>&1 | Out-String
         $codeWheel = $LASTEXITCODE
-        $wheelSelfReport = ($outWheel -match 'wheel -3') -and ($outWheel -match 'delivered to hwnd=') -and
-          ($outWheel -match 'pid=' + [regex]::Escape("$($pw2.Pid)")) -and ($outWheel -match "title='DTX-ExpectProbe'")
-        ST-Check 'live: wheel executes once on a DTX window and self-reports amount plus hwnd/class/pid/title delivery target' (
-          ($codeWheel -eq 0) -and $wheelSelfReport)
-        Write-Output "      wheel probe: exit=$codeWheel self-report=$wheelSelfReport"
+        $wheelSelfReport = ($outWheel -match 'wheel -3 ') -and ($outWheel -match 'SendInput-inserted=1/1') -and
+          ($outWheel -match ('scroll-point=\(' + $cpx + ',' + $cpy + '\)')) -and
+          ($outWheel -match 'target-check=matched via --at hwnd=') -and
+          ($outWheel -match ('observed-before-injection=pid=' + [regex]::Escape("$($pw2.Pid)"))) -and
+          ($outWheel -match "title='DTX-ExpectProbe'") -and
+          ($outWheel -match 'effect=not-verified') -and (-not ($outWheel -match 'delivered to hwnd='))
+        ST-Check 'live: wheel without coordinates is refused pre-input, then one event lands on the named scroll point and window (effect not verified)' (
+          $wheelGuardOk -and ($codeWheel -eq 0) -and $wheelSelfReport)
+        Write-Output "      wheel probe: guard-refused=$wheelGuardOk exit=$codeWheel self-report=$wheelSelfReport"
+        Write-Output ("      wheel-no-coordinate-output: " + (($outWheelNoXY.Trim() -split "`r?`n" | Select-Object -First 2) -join ' | '))
         Write-Output ("      wheel-output: " + (($outWheel.Trim() -split "`r?`n" | Select-Object -First 2) -join ' | '))
         # v1.7.0 (J-07 A, "do not lose" #2): win-close must REALLY remove the window -
         # close it via the tool, then 'wins' must no longer list that pid.
@@ -27605,6 +28201,14 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     (Get-Item -LiteralPath $p).LastWriteTime = $t; (Get-Item -LiteralPath $s).LastWriteTime = $t
   }
   [System.IO.File]::WriteAllText((Join-Path $atShots 'actions.log'), "audit line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  # R-06: a host may run with DTX_SHOT_AUTOTRIM=0 (the review's fixed source gate does, to protect
+  # real captures). That is a RUNTIME setting, not a verdict on this fixture - leaving it in place
+  # turned these on-disk rows red for an environment reason, which is not a product failure. Save
+  # the caller's value, force the policy ON for this throwaway directory only, restore in finally.
+  $atHadAutoTrim = Test-Path Env:\DTX_SHOT_AUTOTRIM
+  $atSavedAutoTrim = ''
+  if ($atHadAutoTrim) { $atSavedAutoTrim = [string]$env:DTX_SHOT_AUTOTRIM }
+  $env:DTX_SHOT_AUTOTRIM = ''
   try {
     # The guard is ON here because Invoke-SelfTest armed it, so the run below has to
     # disarm it EXPLICITLY - "save and restore" would restore it to ON and the whole
@@ -27657,9 +28261,16 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     ST-Check 'e2e: auto-trim writes a MANIFEST section naming every original path with its SHA256' (
       (Test-Path -LiteralPath $atManifest) -and ($atManifestText -match 'auto-trim v2\.6\.0') -and ($atManifestShaRows.Count -eq 4))
     ST-Check 'e2e: auto-trim is a no-op once the folder is under the bound (it does not churn)' ($null -eq $atRun2)
+    # R-06: reading $atRun1.Note directly dies under Set-StrictMode when the trim fixture did not
+    # run at all ($atRun1 = $null), which aborted the rest of the family instead of failing one row.
+    # The row must go RED, not throw - so the note is read only from a present dictionary.
+    $atRun1Note = ''
+    if ($atRun1 -is [System.Collections.IDictionary] -and $atRun1.Contains('Note')) { $atRun1Note = [string]$atRun1['Note'] }
     ST-Check 'e2e: auto-trim states its own bound and the no-deletion promise in the note' (
-      ("$($atRun1.Note)" -match 'keep newest 1') -and ("$($atRun1.Note)" -match 'nothing was deleted'))
+      ($atRun1Note -match 'keep newest 1') -and ($atRun1Note -match 'nothing was deleted'))
   } finally {
+    if ($atHadAutoTrim) { $env:DTX_SHOT_AUTOTRIM = $atSavedAutoTrim }
+    else { Remove-Item Env:\DTX_SHOT_AUTOTRIM -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $atTmp) { Remove-Item -LiteralPath $atTmp -Recurse -Force }
   }
   # Tokens are assembled at runtime so THIS check's own lines never satisfy the shapes it
@@ -29321,7 +29932,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.3 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -29940,11 +30551,21 @@ desktop.ps1 v4.6.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     read a coverer's text and call it context
 
   clipboard
-    copy-file <path>                put a local file on the clipboard as FileDrop,
-                                    self-verified; deliberately keeps it there
-    paste-file [--to <sel>] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--replace-clipboard] [--force]
+    copy-file [--image] [--replace-clipboard] <path>
+                                    put a local file on the clipboard as FileDrop
+                                    (default) or as PIXELS (--image: PNG/BMP only),
+                                    self-verified; deliberately keeps it there.
+                                    CU-OPS G: a clipboard holding formats this tool
+                                    cannot restore is refused BEFORE the write
+                                    unless --replace-clipboard says losing it is
+                                    intended (this command never restores, so the
+                                    flag is the only way to accept the loss)
+    paste-file [--to <sel>] [--image] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--replace-clipboard] [--force]
                                     copy-file + foreground guard + content guard
                                     + Ctrl+V, then restore the previous clipboard;
+                                    --image pastes PNG/BMP pixels instead of a
+                                    FileDrop path (the window is NOT read back for
+                                    an image - the digest proves the payload only);
                                     CU-OPS G: unknown clipboard formats are refused
                                     before the write unless --replace-clipboard is
                                     given; v1.5.9: default-on readback like paste (it
@@ -30288,16 +30909,20 @@ function Get-UsageLines { return @((Get-UsageText) -split "\r?\n") }
 function Get-HelpEntryNames([string]$line) {
   $l = "$line"
   $out = New-Object System.Collections.ArrayList
-  if ($l -match '^    [a-z][a-z0-9-]*([ \[<]|$)') {
+  # Case-SENSITIVE on purpose: a command name is lowercase by contract, and a section
+  # heading inside the page ("    Taking a coordinate off the screen - ...") used to be read
+  # as a command called 'Taking' because -match ignores case. The page is the authority on
+  # which commands exist, so it must not manufacture one.
+  if ($l -cmatch '^    [a-z][a-z0-9-]*([ \[<]|$)') {
     [void]$out.Add(($l.Trim() -split '[ \[<]')[0])
     foreach ($part in ($l -split '\|')) {
       # a second command on a shared line is always written as "<name> <args>", so the
       # part must be a name followed by its argument shape. Without that requirement the
       # option lists inside a synopsis (--occlude off|warn|strict, --grid [step] | --no-grid)
       # were read as commands called 'warn' and 'strict' by the first version of this scan.
-      if ($part.Trim() -match '^([a-z][a-z0-9-]*)[ ]*[<\[]') { [void]$out.Add($Matches[1]) }
+      if ($part.Trim() -cmatch '^([a-z][a-z0-9-]*)[ ]*[<\[]') { [void]$out.Add($Matches[1]) }
     }
-  } elseif ($l -match '^  ([a-z][a-z0-9-]*)[ ]*(\[|=)') {
+  } elseif ($l -cmatch '^  ([a-z][a-z0-9-]*)[ ]*(\[|=)') {
     # a page-level entry (selftest [--live] = ...). The [ or = is required: group headers
     # like `act (absolute coords)` or `text   (keystrokes ...)` start the same way but name
     # no command, and `help text` returning one of those would be a lie about a command.

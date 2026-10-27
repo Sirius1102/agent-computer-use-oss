@@ -1052,16 +1052,41 @@ $script:ProcSystemNames = @('system', 'idle', 'registry', 'memory compression', 
 
 # One process -> the fields every proc command reports. Each field is read under its own
 # try/catch so a single protected property cannot erase the rest of the identity.
+# R-04: a failed LOOKUP is classified before it is reported. "Cannot find a process" is the
+# only answer that may print exists=false; a permission or unknown failure means existence
+# could not be determined, and saying "no process with that id" there tells the operator the
+# opposite of the truth (a protected process was reported as absent).
+function Get-ProcLookupFailureKind($ex) {
+  $e = $ex
+  while ($null -ne $e) {
+    $tn = "$($e.GetType().FullName)"
+    if ($e -is [System.UnauthorizedAccessException]) { return 'denied' }
+    if ($tn -match 'SecurityException') { return 'denied' }
+    if ($tn -match 'ItemNotFoundException|ObjectNotFoundException|ProcessNotFoundException') { return 'not-found' }
+    $e = $e.InnerException
+  }
+  if ("$($ex.Message)" -match 'Cannot find a process with (the )?(process )?(identifier|id)') { return 'not-found' }
+  if ("$($ex.Message)" -match 'Access is denied|denied') { return 'denied' }
+  return 'lookup-failed'
+}
+
 function Get-ProcSnapshot([int]$procId) {
   $snap = [ordered]@{
     pid = $procId; name = 'unknown'; path = 'unknown'; start = 'unknown'
     responding = 'unknown'; hwnd = 'unknown'; title = 'unknown'
     session = 'unknown'; threads = 'unknown'; ws_mb = 'unknown'; handles = 'unknown'
-    exists = $false; protected = $false
+    exists = 'unknown'; exists_why = 'lookup did not run'; protected = $false
   }
   $pr = $null
-  try { $pr = Get-Process -Id $procId -ErrorAction Stop } catch { return $snap }
+  try { $pr = Get-Process -Id $procId -ErrorAction Stop }
+  catch {
+    $kind = Get-ProcLookupFailureKind $_.Exception
+    if ($kind -eq 'not-found') { $snap.exists = $false; $snap.exists_why = 'the process is not running' }
+    else { $snap.exists = 'unknown'; $snap.exists_why = "$kind - $($_.Exception.Message)" }
+    return $snap
+  }
   $snap.exists = $true
+  $snap.exists_why = ''
   try { $snap.name = [string]$pr.ProcessName } catch { $snap.name = 'denied' }
   if ($script:ProcSystemNames -contains $snap.name.ToLowerInvariant()) { $snap.protected = $true }
   if ($procId -eq 0 -or $procId -eq 4) { $snap.protected = $true }
@@ -1079,7 +1104,8 @@ function Get-ProcSnapshot([int]$procId) {
 }
 
 function Format-ProcSnapshot($s) {
-  if (-not $s.exists) { return "pid=$($s.pid) exists=false (no process with that id right now)" }
+  if ($s.exists -eq $false) { return "pid=$($s.pid) exists=false (no process with that id right now)" }
+  if ($s.exists -ne $true) { return "pid=$($s.pid) exists=unknown (existence could not be determined: $($s.exists_why))" }
   $hw = if ($s.hwnd -eq 'unknown' -or $s.hwnd -eq 'denied') { $s.hwnd } else { '0x' + ([int64]$s.hwnd).ToString('X') }
   return ("pid=$($s.pid) name=$($s.name) start=$($s.start) path=$($s.path) responding=$($s.responding) hwnd=$hw title='$($s.title)' session=$($s.session) threads=$($s.threads) ws=$($s.ws_mb)MB handles=$($s.handles)" + $(if ($s.protected) { ' protected=yes' } else { '' }))
 }
@@ -1091,7 +1117,10 @@ function Format-ProcSnapshot($s) {
 # is no read jitter for a tolerance to absorb.
 function Test-ProcIdentity([int]$procId, [string]$createdIso) {
   $s = Get-ProcSnapshot $procId
-  if (-not $s.exists) { return @{ Ok = $false; Why = 'process-not-running'; Snap = $s } }
+  if ($s.exists -ne $true) {
+    $why = $(if ($s.exists -eq $false) { 'process-not-running' } else { "process-existence-unknown: $($s.exists_why)" })
+    return @{ Ok = $false; Why = $why; Snap = $s }
+  }
   if ($createdIso -eq '' -or $null -eq $createdIso) { return @{ Ok = $true; Why = 'no-created-pin'; Snap = $s } }
   if ($s.start -eq 'denied' -or $s.start -eq 'unknown') { return @{ Ok = $false; Why = "creation time unreadable ($($s.start)) so the identity cannot be confirmed"; Snap = $s } }
   $want = [datetime]::MinValue
@@ -1122,7 +1151,7 @@ function Invoke-Handler-proc-list([string]$Cmd, [string[]]$Rest) {
     if ($filter -and ($name -notlike "*$filter*")) { continue }
     $s = Get-ProcSnapshot ([int]$pr.Id)
     $line = Format-ProcSnapshot $s
-    if ($s.exists -and ($s.hwnd -eq 0)) { $line = $line + ' nowindow=yes' }
+    if ($s.exists -eq $true -and ($s.hwnd -eq 0)) { $line = $line + ' nowindow=yes' }
     $line
     $n++
   }
@@ -1138,7 +1167,7 @@ function Invoke-Handler-proc-info([string]$Cmd, [string[]]$Rest) {
   if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-info: '$($words[0])' is not a pid" }
   $s = Get-ProcSnapshot $pidNum
   Format-ProcSnapshot $s
-  if ($s.exists) {
+  if ($s.exists -eq $true) {
     $wins = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum })
     if (@($wins).Count -eq 0) { 'windows: none visible to this desktop (a background process legitimately has no window)' }
     else {
@@ -1467,21 +1496,139 @@ function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
 # matched, timed out, and COULD NOT READ (a read that throws is never reported as
 # "the condition did not happen"). Read-only; it never activates or clicks.
 # ---------------------------------------------------------------------------
-function Get-WaitUiaState([string]$wSel, [string]$nameSub, [Hashtable]$found) {
-  $w = Resolve-Window $wSel
-  if (-not $w) { return 'gone' }
-  $rr = Uia-Roots $w
-  if ($rr.Roots.Count -lt 1) { return 'no-uia-root' }
-  $el = Uia-Find $rr.Roots $nameSub ''
-  if (-not $el) { return 'not-found' }
-  $st = ''
-  $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
-  if ($null -ne $tp) { return ('toggle:' + [string]$tp.Current.ToggleState) }
-  $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
-  if ($null -ne $si) { return ('selected:' + ([bool]$si.Current.IsSelected).ToString()) }
-  $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
-  if ($null -ne $ec) { return ('expand:' + [string]$ec.Current.ExpandCollapseState) }
-  return 'no-state-pattern'
+# ---------------------------------------------------------------------------
+# R-03 (CU-OPS-FINAL-REVIEW-20261027-01): a UIA read is a CROSS-PROCESS call to the
+# target's own provider. When that provider does not answer, the call blocks inside the
+# COM boundary and no Stopwatch in this process can interrupt it - the old wait-cond loop
+# measured 1837ms for a 1000ms budget and, if the provider never answered at all, had no
+# exit at all. The read therefore runs in a SELF-BUILT probe process with the REMAINDER of
+# the declared budget; on expiry that process is terminated. The target application is
+# never touched or killed: only this tool's own worker is.
+# ---------------------------------------------------------------------------
+function Get-UiaProbeScriptSource {
+  return @'
+param([string]$ArgsFile, [string]$OutFile)
+$ErrorActionPreference = 'Stop'
+function Write-Result($o) {
+  $j = $o | ConvertTo-Json -Depth 6 -Compress
+  [System.IO.File]::WriteAllText($OutFile, $j, (New-Object System.Text.UTF8Encoding($false)))
+}
+try {
+  $a = [System.IO.File]::ReadAllText($ArgsFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $hwnd = [IntPtr]([int64]$a.hwnd)
+  $want = [string]$a.name
+  $el = $null
+  try { $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) } catch { $el = $null }
+  if ($null -eq $el) { Write-Result @{ status = 'no-uia-root'; value = ''; detail = 'FromHandle returned null'; scanned = 0 }; exit 0 }
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $q = New-Object System.Collections.Queue
+  $q.Enqueue($el)
+  $found = $null
+  $n = 0
+  while ($q.Count -gt 0 -and $n -lt 6000) {
+    $cur = $q.Dequeue()
+    $n++
+    $nm = ''
+    try { $nm = [string]$cur.Current.Name } catch { $nm = '' }
+    if ($nm -ne '' -and $nm.ToLowerInvariant().Contains($want.ToLowerInvariant())) { $found = $cur; break }
+    try {
+      $ch = $walker.GetFirstChild($cur)
+      while ($null -ne $ch) { $q.Enqueue($ch); $ch = $walker.GetNextSibling($ch) }
+    } catch { }
+  }
+  if ($null -eq $found) { Write-Result @{ status = 'not-found'; value = ''; detail = ''; scanned = $n }; exit 0 }
+  $val = ''
+  $tp = $null
+  try { $tp = $found.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) } catch { $tp = $null }
+  if ($null -ne $tp) {
+    $val = 'toggle:' + [string]$tp.Current.ToggleState
+  } else {
+    $si = $null
+    try { $si = $found.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern) } catch { $si = $null }
+    if ($null -ne $si) {
+      $val = 'selected:' + ([bool]$si.Current.IsSelected).ToString()
+    } else {
+      $ec = $null
+      try { $ec = $found.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern) } catch { $ec = $null }
+      if ($null -ne $ec) { $val = 'expand:' + [string]$ec.Current.ExpandCollapseState } else { $val = 'no-state-pattern' }
+    }
+  }
+  Write-Result @{ status = 'ok'; value = $val; detail = ''; scanned = $n }
+  exit 0
+} catch {
+  Write-Result @{ status = 'error'; value = ''; detail = ($_.Exception.Message); scanned = 0 }
+  exit 0
+}
+'@
+}
+
+function Get-UiaProbeTempDir {
+  $d = Join-Path $env:TEMP 'agent-computer-use-uiaprobe'
+  if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+  return $d
+}
+
+# Runs ONE probe with a hard wall-clock bound. Every exit path returns the same shape, and
+# every self-built resource is disposed or deleted here - no probe script, args file or
+# result file survives the call, and a timed-out worker is waited for after Kill.
+function Invoke-BoundedUiaProbe([int64]$hwnd, [string]$nameSub, [int]$budgetMs, [string]$ScriptText = '') {
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $out = @{ Status = 'error'; Value = ''; Detail = 'probe did not run'; Scanned = 0; ElapsedMs = 0; BudgetMs = [int]$budgetMs; ChildPid = 0; Killed = $false }
+  $dir = Get-UiaProbeTempDir
+  $tag = [guid]::NewGuid().ToString('N')
+  $af = Join-Path $dir "args-$tag.json"
+  $of = Join-Path $dir "out-$tag.json"
+  $sf = Join-Path $dir "probe-$tag.ps1"
+  $proc = $null
+  try {
+    if ($ScriptText -eq '') { $ScriptText = Get-UiaProbeScriptSource }
+    $argJson = ConvertTo-Json -InputObject @{ hwnd = [int64]$hwnd; name = [string]$nameSub } -Compress
+    [System.IO.File]::WriteAllText($af, $argJson, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($sf, $ScriptText, (New-Object System.Text.UTF8Encoding($false)))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell.exe'
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sf`" -ArgsFile `"$af`" -OutFile `"$of`""
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.EnvironmentVariables['DTX_SHOT_AUTOTRIM'] = '0'
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $out.ChildPid = [int]$proc.Id
+    $left = [int]([math]::Max(1, $budgetMs))
+    $exited = $proc.WaitForExit($left)
+    $out.ElapsedMs = [int]$sw.ElapsedMilliseconds
+    if (-not $exited) {
+      $out.Killed = $true
+      try { $proc.Kill() } catch { }
+      try { [void]$proc.WaitForExit(2000) } catch { }
+      $out.Status = 'timeout'
+      $out.Detail = "no answer within ${left}ms; this tool's own probe process was terminated (the target application and its provider were not touched)"
+      return $out
+    }
+    if (-not (Test-Path -LiteralPath $of)) {
+      $out.Status = 'error'
+      $out.Detail = "the probe exited with code $($proc.ExitCode) without a result file"
+      return $out
+    }
+    $res = $null
+    try { $res = [System.IO.File]::ReadAllText($of, [System.Text.Encoding]::UTF8) | ConvertFrom-Json } catch { $res = $null }
+    if ($null -eq $res) { $out.Status = 'error'; $out.Detail = 'the probe result file was not valid JSON'; return $out }
+    if ($res.PSObject.Properties['status']) { $out.Status = [string]$res.status }
+    if ($res.PSObject.Properties['value']) { $out.Value = [string]$res.value }
+    if ($res.PSObject.Properties['detail']) { $out.Detail = [string]$res.detail }
+    if ($res.PSObject.Properties['scanned']) { $out.Scanned = [int]$res.scanned }
+    if ($out.Status -eq '') { $out.Status = 'error'; $out.Detail = 'the probe returned no status' }
+    return $out
+  } catch {
+    $out.Status = 'error'
+    $out.Detail = $_.Exception.Message
+    $out.ElapsedMs = [int]$sw.ElapsedMilliseconds
+    return $out
+  } finally {
+    foreach ($f in @($af, $of, $sf)) { try { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force } } catch { } }
+    if ($null -ne $proc) { try { $proc.Dispose() } catch { } }
+  }
 }
 
 function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
@@ -1515,9 +1662,13 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
             if ($wantWin) { $ok = ($null -ne $w); $lastRead = $(if ($w) { "hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'no window' }) }
             elseif ($wantGone) { $ok = ($null -eq $w); $lastRead = $(if ($w) { "still hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'gone' }) }
             else {
-              $fg = Get-ForegroundInfo
-              $ok = ("$fg".Contains("pid=$($w.Pid)")) -and ($null -ne $w)
-              $lastRead = "foreground=$fg"
+              # R-02: compare the FOREGROUND HWND with the resolved window's own handle.
+              # A pid string only proves "some window of that process" is in front - a second
+              # top-level window of the same process, a reused pid or a stale handle would all
+              # read as met. The title is reported, never used as the identity.
+              $fg = Get-ForegroundIdentity
+              $ok = ($null -ne $w) -and ([int64]$fg.Hwnd -eq [int64]$w.Handle) -and ([int64]$w.Handle -ne 0)
+              $lastRead = "foreground hwnd=0x$($fg.Hwnd.ToString('X')) pid=$($fg.Pid) title='$($fg.Title)' target hwnd=$(if ($null -ne $w) { '0x' + ([int64]$w.Handle).ToString('X') } else { 'none' }) pid=$(if ($null -ne $w) { $w.Pid } else { 'none' })"
             }
           } elseif ($needle -ne '') {
             $w = Resolve-Window $sel
@@ -1528,12 +1679,34 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
             $ok = (@($f.Hits).Count -gt 0)
             $lastRead = "ocr hits=$(@($f.Hits).Count)"
           } else {
-            $got = Get-WaitUiaState $sel $uiaName $null
-            $lastRead = $got
-            if ($wantState -eq '') { $ok = ($got -ne 'gone' -and $got -ne 'no-uia-root' -and $got -ne 'not-found' -and $got -ne 'no-state-pattern') }
-            elseif ($wantState -in @('On', 'Off')) { $ok = ($got -ceq ('toggle:' + $wantState)) }
-            elseif ($wantState -in @('Expanded', 'Collapsed')) { $ok = ($got -ceq ('expand:' + $wantState)) }
-            else { $ok = ($got -ceq ('selected:' + $(if ($wantState -eq 'Selected') { 'True' } else { 'False' }))) }
+            # R-03: the UIA read gets only what is LEFT of the declared timeout, and it runs
+            # in a killable probe process, so a blocking provider cannot outlive the budget.
+            $w = Resolve-Window $sel
+            if ($null -eq $w) {
+              $got = 'gone'
+              $lastRead = 'gone (the target window is not there)'
+              $ok = $false
+            } else {
+              $remaining = [int][math]::Floor(($timeout - $sw.Elapsed.TotalSeconds) * 1000)
+              if ($remaining -lt 1) { $remaining = 1 }
+              $probe = Invoke-BoundedUiaProbe ([int64]$w.Handle) $uiaName $remaining
+              if ($probe.Status -eq 'timeout') {
+                $readErrors++
+                $lastRead = "uia read timed out: no answer within $($probe.ElapsedMs)ms of a ${remaining}ms budget; this tool's own probe process was terminated and the target provider was not touched"
+                $ok = $false
+              } elseif ($probe.Status -eq 'error') {
+                $readErrors++
+                $lastRead = "read error: $($probe.Detail)"
+                $ok = $false
+              } else {
+                $got = $(if ($probe.Status -eq 'ok') { [string]$probe.Value } else { [string]$probe.Status })
+                $lastRead = "$got (probe $($probe.ElapsedMs)ms, scanned $($probe.Scanned) node(s))"
+                if ($wantState -eq '') { $ok = ($got -ne 'gone' -and $got -ne 'no-uia-root' -and $got -ne 'not-found' -and $got -ne 'no-state-pattern') }
+                elseif ($wantState -in @('On', 'Off')) { $ok = ($got -ceq ('toggle:' + $wantState)) }
+                elseif ($wantState -in @('Expanded', 'Collapsed')) { $ok = ($got -ceq ('expand:' + $wantState)) }
+                else { $ok = ($got -ceq ('selected:' + $(if ($wantState -eq 'Selected') { 'True' } else { 'False' }))) }
+              }
+            }
           }
         } catch {
           $readErrors++
@@ -1580,7 +1753,11 @@ function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
           ownFlags = $ownF
           sharedFlags = $sharedF
           flags = $allF
-          json = (@(Get-ActionJsonCommandSet) -contains $r.Name)
+          # R-05: the JSON gate in the dispatcher accepts the READ family as well as the
+          # action family (Test-JsonCapableCommand is the single gate). Advertising only the
+          # action table marked 17 readable commands json=false while they really answer
+          # --json - the capability list must come from the SAME source the gate uses.
+          json = [bool](Test-JsonCapableCommand $r.Name)
         })
       }
       $entryPath = [string]$script:ToolEntryPath

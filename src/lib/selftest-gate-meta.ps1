@@ -952,6 +952,14 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     (Get-Item -LiteralPath $p).LastWriteTime = $t; (Get-Item -LiteralPath $s).LastWriteTime = $t
   }
   [System.IO.File]::WriteAllText((Join-Path $atShots 'actions.log'), "audit line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  # R-06: a host may run with DTX_SHOT_AUTOTRIM=0 (the review's fixed source gate does, to protect
+  # real captures). That is a RUNTIME setting, not a verdict on this fixture - leaving it in place
+  # turned these on-disk rows red for an environment reason, which is not a product failure. Save
+  # the caller's value, force the policy ON for this throwaway directory only, restore in finally.
+  $atHadAutoTrim = Test-Path Env:\DTX_SHOT_AUTOTRIM
+  $atSavedAutoTrim = ''
+  if ($atHadAutoTrim) { $atSavedAutoTrim = [string]$env:DTX_SHOT_AUTOTRIM }
+  $env:DTX_SHOT_AUTOTRIM = ''
   try {
     # The guard is ON here because Invoke-SelfTest armed it, so the run below has to
     # disarm it EXPLICITLY - "save and restore" would restore it to ON and the whole
@@ -1004,9 +1012,16 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     ST-Check 'e2e: auto-trim writes a MANIFEST section naming every original path with its SHA256' (
       (Test-Path -LiteralPath $atManifest) -and ($atManifestText -match 'auto-trim v2\.6\.0') -and ($atManifestShaRows.Count -eq 4))
     ST-Check 'e2e: auto-trim is a no-op once the folder is under the bound (it does not churn)' ($null -eq $atRun2)
+    # R-06: reading $atRun1.Note directly dies under Set-StrictMode when the trim fixture did not
+    # run at all ($atRun1 = $null), which aborted the rest of the family instead of failing one row.
+    # The row must go RED, not throw - so the note is read only from a present dictionary.
+    $atRun1Note = ''
+    if ($atRun1 -is [System.Collections.IDictionary] -and $atRun1.Contains('Note')) { $atRun1Note = [string]$atRun1['Note'] }
     ST-Check 'e2e: auto-trim states its own bound and the no-deletion promise in the note' (
-      ("$($atRun1.Note)" -match 'keep newest 1') -and ("$($atRun1.Note)" -match 'nothing was deleted'))
+      ($atRun1Note -match 'keep newest 1') -and ($atRun1Note -match 'nothing was deleted'))
   } finally {
+    if ($atHadAutoTrim) { $env:DTX_SHOT_AUTOTRIM = $atSavedAutoTrim }
+    else { Remove-Item Env:\DTX_SHOT_AUTOTRIM -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $atTmp) { Remove-Item -LiteralPath $atTmp -Recurse -Force }
   }
   # Tokens are assembled at runtime so THIS check's own lines never satisfy the shapes it

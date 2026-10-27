@@ -1325,7 +1325,9 @@ function Invoke-Handler-proc-kill([string]$Cmd, [string[]]$Rest) {
   $pidNum = 0
   if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-kill: '$($words[0])' is not a pid" }
   $snap = Get-ProcSnapshot $pidNum
-  if (-not $snap.exists) { throw "proc-kill: pid=$pidNum is not running right now - nothing to kill (a PID alone is not an identity, and a reused PID will not be chased)" }
+  if ($snap.exists -ne $true) {
+    throw "proc-kill: pid=$pidNum is not CONFIRMED running (exists=$($snap.exists)$(if ($snap.exists_why) { ': ' + $snap.exists_why } else { '' })) - nothing to kill (a PID alone is not an identity, and a reused PID will not be chased)"
+  }
   if ($snap.protected) { throw "proc-kill: pid=$pidNum name=$($snap.name) is a protected system/session process - refused, nothing was terminated" }
   if ($pidNum -eq $PID) { throw "proc-kill: pid=$pidNum is this tool's own process - refused, nothing was terminated" }
   $anc = Get-ProcAncestors ([int]$PID)

@@ -84,6 +84,68 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
   # @(hashtable).Count is ALWAYS 1 in PS 5.1 - use .Count / .Keys bare (see the D-1 note).
   Write-Output ("      help index entries=" + @($hNames).Count + " dispatcher cases=" + $hCaseStarts.Count)
 
+  # ---------- R-05: the page and the registry are checked in BOTH directions ----------------
+  # The old coverage lint only asked "does every dispatch case have a page entry". The reverse
+  # was never tested, so a name the page INVENTED was invisible: `    Taking a coordinate off the
+  # screen - ...` is a section heading, but the index read it as a command called 'Taking' and
+  # `help Taking` answered. Both directions are compared here, and the predicate is fed planted
+  # copies first - a comparison whose failure mode is "silently agrees" is not evidence.
+  $capMeta = @('script', 'replay', 'selftest')
+  $capNames = @()
+  foreach ($cg in @(Get-HashKeys $script:StHandlerGroups | Sort-Object)) {
+    foreach ($cn in @($script:StHandlerGroups[$cg])) { $capNames += [string]$cn }
+  }
+  $capPred = {
+    param($advArg, $caseArg)
+    return [pscustomobject]@{
+      Phantom = @(@($advArg) | Where-Object { -not ($caseArg.ContainsKey([string]$_)) -and -not ($capMeta -contains [string]$_) })
+      Missing = @(Get-HashKeys $caseArg | Where-Object { -not (@($advArg) -contains [string]$_) -and -not ($capMeta -contains [string]$_) })
+    }
+  }
+  $hPhantom = @((& $capPred $hNames $hCaseStarts).Phantom)
+  ST-Check 'lint (R-05): every help entry is a real dispatch case (the page cannot invent a command)' (
+    (@($hNames).Count -ge 55) -and (@($hPhantom).Count -eq 0))
+  if (@($hPhantom).Count -gt 0) { Write-Output ("      page entries with no dispatch case: " + (@($hPhantom) -join ', ')) }
+  $hPhantomPlanted = @((& $capPred (@($hNames) + @('ghost-command', 'Taking')) $hCaseStarts).Phantom)
+  ST-Check 'lint (R-05 teeth): the page-phantom predicate flags a planted fake name and the exact heading that used to leak' (
+    (@($hPhantomPlanted).Count -eq 2) -and (@($hPhantomPlanted) -contains 'ghost-command') -and (@($hPhantomPlanted) -contains 'Taking'))
+  $capReal = & $capPred $capNames $hCaseStarts
+  ST-Check 'lint (R-05): capabilities advertises exactly the dispatcher (no ghost command, no blind spot)' (
+    (@($capNames).Count -ge 85) -and (@($capReal.Phantom).Count -eq 0) -and (@($capReal.Missing).Count -eq 0))
+  if (@($capReal.Phantom).Count -gt 0 -or @($capReal.Missing).Count -gt 0) {
+    Write-Output ("      advertised-not-dispatched: [" + (@($capReal.Phantom) -join ',') + "] dispatched-not-advertised: [" + (@($capReal.Missing) -join ',') + "]")
+  }
+  $capPlanted = & $capPred (@($capNames) + @('ghost-command')) $hCaseStarts
+  $capDropped = & $capPred (@($capNames) | Where-Object { $_ -ne 'wins' }) $hCaseStarts
+  ST-Check 'lint (R-05 teeth): the capabilities predicate flags a planted ghost name and a dropped real one' (
+    (@($capPlanted.Phantom).Count -eq 1) -and (@($capDropped.Missing).Count -eq 1))
+  # The --json column must equal the ONE gate the dispatcher refuses on. It used to be filled
+  # from the action table alone, which marked 17 readable commands json=false although they do
+  # answer --json. Read the table the command really prints, not the source that builds it.
+  $capJsonErr = ''
+  $capJsonRows = @()
+  try {
+    $capSavedJson = [bool]$script:Json
+    $script:Json = $true
+    try { $capJsonRows = @((((Invoke-Handler-capabilities 'capabilities' @()) -join "`n") | ConvertFrom-Json).commands) }
+    finally { $script:Json = $capSavedJson }
+  } catch { $capJsonErr = $_.Exception.Message; $capJsonRows = @() }
+  $capJsonPred = {
+    param($rowArg)
+    return @(@($rowArg) | Where-Object { [bool]$_.json -ne [bool](Test-JsonCapableCommand ([string]$_.name)) } | ForEach-Object { [string]$_.name })
+  }
+  $capJsonWrong = @(& $capJsonPred $capJsonRows)
+  ST-Check 'lint (R-05): every advertised json flag equals the --json gate result (read family included)' (
+    ($capJsonErr -eq '') -and (@($capJsonRows).Count -ge 85) -and (@($capJsonWrong).Count -eq 0))
+  if ($capJsonErr -ne '') { Write-Output ("      capabilities --json could not be read: " + $capJsonErr) }
+  if (@($capJsonWrong).Count -gt 0) { Write-Output ("      json flag disagrees with the gate: " + (@($capJsonWrong) -join ', ')) }
+  $capJsonFlip = @($capJsonRows)
+  if (@($capJsonFlip).Count -gt 0) {
+    $capJsonFlip = @($capJsonFlip | ForEach-Object { if ([string]$_.name -eq 'info') { [pscustomobject]@{ name = $_.name; json = (-not [bool]$_.json) } } else { $_ } })
+  }
+  ST-Check 'lint (R-05 teeth): the json-flag predicate flags a planted flipped row' (
+    (@(& $capJsonPred $capJsonFlip).Count -eq 1) -and (@(& $capJsonPred $capJsonFlip) -contains 'info'))
+
   # ---------- lint: v1.7.0 document-consistency sweep (traversal, no hand-maintained list) ----------
   # The owner named this version for exactly one disease: stale references and checklists
   # that quietly lose a file. Both directions are checked by traversal, never a list:

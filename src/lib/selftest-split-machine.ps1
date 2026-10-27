@@ -269,7 +269,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07LtCount = @($a07LtSplit).Count
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 108) -and (@($script:StLoadTimeNames).Count -eq 86) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 109) -and (@($script:StLoadTimeNames).Count -eq 87) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -514,7 +514,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a14BannerCount = 0
   if ("$a14Records" -ne '') { $a14BannerCount = @("$a14Records" -split "`n").Count }
   ST-Check 'lint (A-14a): every banner in the selftest body is claimed by exactly one declared family, and the measured tallies equal the registered table (a shrunk or empty family is named with its numbers)' (
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 165) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # v4.6.4 (R-06): the docs-contract family gained the R-05 both-directions banner, so the
+    # pinned body banner count is 166, measured - not the old 165. The row stays a pin: the
+    # family agreement table must still be exactly empty, so a drift in any single family is
+    # still named instead of absorbed by the total.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 166) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')

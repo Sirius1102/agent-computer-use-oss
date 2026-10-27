@@ -17,16 +17,20 @@ function Get-UsageLines { return @((Get-UsageText) -split "\r?\n") }
 function Get-HelpEntryNames([string]$line) {
   $l = "$line"
   $out = New-Object System.Collections.ArrayList
-  if ($l -match '^    [a-z][a-z0-9-]*([ \[<]|$)') {
+  # Case-SENSITIVE on purpose: a command name is lowercase by contract, and a section
+  # heading inside the page ("    Taking a coordinate off the screen - ...") used to be read
+  # as a command called 'Taking' because -match ignores case. The page is the authority on
+  # which commands exist, so it must not manufacture one.
+  if ($l -cmatch '^    [a-z][a-z0-9-]*([ \[<]|$)') {
     [void]$out.Add(($l.Trim() -split '[ \[<]')[0])
     foreach ($part in ($l -split '\|')) {
       # a second command on a shared line is always written as "<name> <args>", so the
       # part must be a name followed by its argument shape. Without that requirement the
       # option lists inside a synopsis (--occlude off|warn|strict, --grid [step] | --no-grid)
       # were read as commands called 'warn' and 'strict' by the first version of this scan.
-      if ($part.Trim() -match '^([a-z][a-z0-9-]*)[ ]*[<\[]') { [void]$out.Add($Matches[1]) }
+      if ($part.Trim() -cmatch '^([a-z][a-z0-9-]*)[ ]*[<\[]') { [void]$out.Add($Matches[1]) }
     }
-  } elseif ($l -match '^  ([a-z][a-z0-9-]*)[ ]*(\[|=)') {
+  } elseif ($l -cmatch '^  ([a-z][a-z0-9-]*)[ ]*(\[|=)') {
     # a page-level entry (selftest [--live] = ...). The [ or = is required: group headers
     # like `act (absolute coords)` or `text   (keystrokes ...)` start the same way but name
     # no command, and `help text` returning one of those would be a lie about a command.

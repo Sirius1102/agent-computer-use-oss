@@ -340,13 +340,26 @@ $f.Controls.Add($lbl)
           (($codeBad -eq 1) -and ($outBad -match 'clicked OK but expectation NOT met')) -and $badPatience)
         Write-Output "      expect probe: unsatisfied-exit=$codeBad patience-named=$badPatience"
         Write-Output ("      unsatisfied-output: " + (($outBad.Trim() -split "`r?`n" | Select-Object -First 4) -join ' | '))
-        $outWheel = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath wheel -3 --at 'DTX-ExpectProbe' 2>&1 | Out-String
+        # R-06: after CU-REL-03 a wheel call needs an explicit x/y scroll point with --at - the old
+        # no-coordinate call is refused before any input. Effect is deliberately NOT claimed here:
+        # this row proves the refusal path AND exactly one delivered event whose receipt names the
+        # scroll point and the window actually under it. Only package B's own fixture reads effect.
+        $outWheelNoXY = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath wheel -3 --at 'DTX-ExpectProbe' 2>&1 | Out-String
+        $codeWheelNoXY = $LASTEXITCODE
+        $wheelGuardOk = ($codeWheelNoXY -ne 0) -and ($outWheelNoXY -match 'requires explicit x y coordinates') -and
+          (-not ($outWheelNoXY -match 'SendInput-inserted=1/1'))
+        $outWheel = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath wheel -3 $cpx $cpy --at 'DTX-ExpectProbe' 2>&1 | Out-String
         $codeWheel = $LASTEXITCODE
-        $wheelSelfReport = ($outWheel -match 'wheel -3') -and ($outWheel -match 'delivered to hwnd=') -and
-          ($outWheel -match 'pid=' + [regex]::Escape("$($pw2.Pid)")) -and ($outWheel -match "title='DTX-ExpectProbe'")
-        ST-Check 'live: wheel executes once on a DTX window and self-reports amount plus hwnd/class/pid/title delivery target' (
-          ($codeWheel -eq 0) -and $wheelSelfReport)
-        Write-Output "      wheel probe: exit=$codeWheel self-report=$wheelSelfReport"
+        $wheelSelfReport = ($outWheel -match 'wheel -3 ') -and ($outWheel -match 'SendInput-inserted=1/1') -and
+          ($outWheel -match ('scroll-point=\(' + $cpx + ',' + $cpy + '\)')) -and
+          ($outWheel -match 'target-check=matched via --at hwnd=') -and
+          ($outWheel -match ('observed-before-injection=pid=' + [regex]::Escape("$($pw2.Pid)"))) -and
+          ($outWheel -match "title='DTX-ExpectProbe'") -and
+          ($outWheel -match 'effect=not-verified') -and (-not ($outWheel -match 'delivered to hwnd='))
+        ST-Check 'live: wheel without coordinates is refused pre-input, then one event lands on the named scroll point and window (effect not verified)' (
+          $wheelGuardOk -and ($codeWheel -eq 0) -and $wheelSelfReport)
+        Write-Output "      wheel probe: guard-refused=$wheelGuardOk exit=$codeWheel self-report=$wheelSelfReport"
+        Write-Output ("      wheel-no-coordinate-output: " + (($outWheelNoXY.Trim() -split "`r?`n" | Select-Object -First 2) -join ' | '))
         Write-Output ("      wheel-output: " + (($outWheel.Trim() -split "`r?`n" | Select-Object -First 2) -join ' | '))
         # v1.7.0 (J-07 A, "do not lose" #2): win-close must REALLY remove the window -
         # close it via the tool, then 'wins' must no longer list that pid.
