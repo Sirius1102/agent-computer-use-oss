@@ -147,7 +147,11 @@ function Invoke-SelftestFamily-DragPress($Ctx) {
   foreach ($dgRg in @(Get-CommandCodeRanges $codeLines 'drag')) {
     for ($dgi = [int]$dgRg[0]; $dgi -lt [int]$dgRg[1]; $dgi++) {
       if ($codeLines[$dgi] -match '^\s*#') { continue }
-      if (($codeLines[$dgi].Contains('MOUSE_LDOWN')) -and ($dgLdown -lt 0)) { $dgLdown = $dgi }
+      # CU-OPS package B: the press moved behind Invoke-MouseButtonEvent (one owned press/release
+      # for every button), so the boundary is either the raw MOUSE_LDOWN line or a call that
+      # asks that helper for a button DOWN. Both shapes count; the ORDER claim is unchanged.
+      if ((($codeLines[$dgi].Contains('MOUSE_LDOWN')) -or
+          ([regex]::IsMatch([string]$codeLines[$dgi], 'Invoke-MouseButtonEvent\s+\$\w+\s+\$true'))) -and ($dgLdown -lt 0)) { $dgLdown = $dgi }
       if ($codeLines[$dgi].Contains('Invoke-HitWindowCheck')) { $dgHits += $dgi }
     }
   }

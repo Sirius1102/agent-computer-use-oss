@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.5.7  (version sync list lives in the project overview doc)
+# version: 4.6.1  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.5.7'
+$script:ToolVersion = '4.6.1'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -437,7 +437,15 @@ Set-StrictMode -Version Latest
 # family tables above were registered against their own line only; this candidate re-measures everything on the
 # merged tree - the declared value below is provisional until the first gate run prints this-run-would-be, and every
 # registered tally moves to that printed value, not to arithmetic (no 1011+979, no max).
-$script:DeclaredCheckTotal = 1020
+# CU-OPS-COMPLETE-20261026-01: 1020 -> 1022. The four mouse/keyboard handlers gained their
+# modifier and button guards and package A added the five process commands; the two new checks
+# are the private-flag table's raised expectation (13 -> 18 entries) and the action --json table
+# now closing over the three native-keyboard commands. Measured, not computed: this is the value
+# the gate printed for this tree.
+# v4.6.1: +5 for package G's format-list branch, the named-extra gate, the restore-outcome map and
+# the clip-info metadata-only body lint (1038 -> 1043). Measured again on the 13:41 clean-host run:
+# the offline run emits 1044 checks, so the declaration is the measured total (1043 -> 1044).
+$script:DeclaredCheckTotal = 1044
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -1035,7 +1043,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 77) { $notes += ('names-total=' + $total + '-want77') }
+  if ($total -ne 91) { $notes += ('names-total=' + $total + '-want91') }
   return ($notes -join ';')
 }
 
@@ -2302,17 +2310,17 @@ $script:StFamilyCounts = @{
   'repo-contract' = 'banners=5,lines=322'
   'gate-meta' = 'banners=30,lines=2793'
   'flags-grammar' = 'banners=16,lines=882'
-  'capture-ocr' = 'banners=8,lines=683'
+  'capture-ocr' = 'banners=8,lines=757'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=992'
+  'window-targeting' = 'banners=11,lines=1081'
   'expect-family' = 'banners=9,lines=705'
-  'clipboard-input' = 'banners=4,lines=115'
+  'clipboard-input' = 'banners=4,lines=181'
   'docs-contract' = 'banners=11,lines=524'
   'chrome-cdp' = 'banners=6,lines=475'
-  'drag-press' = 'banners=3,lines=195'
+  'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
-  'live-suite' = 'banners=20,lines=3144'
+  'live-suite' = 'banners=20,lines=3215'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2345,7 +2353,21 @@ $script:StHandlerUnwrapped = 0
 #    half alone (a file with no entry-side removal, or a removal with no declared file). The design fixes
 #    the sizes and the category labels, not the name list, so the assignment is written down here rather
 #    than re-derived differently by the next hand.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'type', 'type-in', 'keys', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
+# CU-OPS-COMPLETE-20261026-01 (package C) moved the ui group from 21 to 24: 'key', 'key-state' and
+#    'key-release' are three new native-keyboard cases in the same file, and the gate below now expects
+#    80 names in total (27 read + 21 act + 24 ui + 8 batch).
+# CU-OPS-COMPLETE-20261026-01 (package A) added the five process commands: 'proc-list'/'proc-info'/
+#    'proc-wait' observe (read file) and 'proc-start'/'proc-kill' act (act file) - 30 read + 23 act
+#    + 24 ui + 8 batch = 85 names. proc-kill is preview-by-default and is NOT in the replay whitelist.
+# CU-OPS-COMPLETE-20261026-01 (package E) moved the ui group from 24 to 26: 'uia-state'
+#    (read-only pattern report) and 'uia-do' (semantic action + readback) join the same
+#    file - 30 read + 23 act + 26 ui + 8 batch = 87 names. uia-do logs one audit line;
+#    uia-state is read-only and logs nothing.
+# CU-OPS-COMPLETE-20261026-01 (packages D/F/H) moved read from 30 to 34: 'tpl-find'
+#    (locates, never clicks), 'clip-info' (metadata only), 'wait-cond' (one bounded wait)
+#    and 'capabilities' (surface derived from THIS table) - 34 read + 23 act + 26 ui
+#    + 8 batch = 91 names.
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2354,13 +2376,13 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # card has to update in the same commit says so.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
-  'Invoke-SelftestFamily-CaptureOcr=98',
+  'Invoke-SelftestFamily-CaptureOcr=101',
   'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=141',
+  'Invoke-SelftestFamily-WindowTargeting=151',
   'Invoke-SelftestFamily-DocsContract=51',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
-  'Invoke-SelftestFamily-ClipboardInput=21',
+  'Invoke-SelftestFamily-ClipboardInput=30',
   'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
@@ -2374,14 +2396,16 @@ $script:StFamilyCheckCounts = @(
 # A-23 (criterion-5): every `exit` this tree can execute, named by the owner that holds it. Registered by CASE
 # name, never by line or file: a line number moves with every card and a case name does not, and a
 # stitched artifact has no files to name at all - so the same list has to read the same on both sides of
-# the stitch. The handler cohort is the thirteen the design whitelists (shots-cleanup 5, challenge-probe 3,
-# one each for ime-en / keys / paste / paste-file / type = seven cases); the entry cohort is the eleven
+# the stitch. The handler cohort is the fourteen the design whitelists (shots-cleanup 5, challenge-probe 3,
+# one each for ime-en / key / keys / paste / paste-file / type = eight cases); the entry cohort is the eleven
 # that were never inside a moved body (Invoke-ScriptBatch 5, Invoke-ReplayLog 4, top level 2). A
-# fourteenth handler exit is red, a new owner outside both cohorts is red, and so is any entry here that
+# fifteenth handler exit is red, a new owner outside both cohorts is red, and so is any entry here that
 # has gone stale. Both cohorts were measured from the AST on 2026-10-19 with both engines agreeing, and
 # re-measured on 2026-10-23 when TB-3 gave shots-cleanup its fifth exit (the moved-without-a-record
-# refusal) - key by key, again with both engines agreeing.
-$script:StHandlerExitAllowList = @('challenge-probe=3', 'ime-en=1', 'keys=1', 'paste=1', 'paste-file=1', 'shots-cleanup=5', 'type=1')
+# refusal) - key by key, again with both engines agreeing. CU-OPS package C added 'key=1': the native
+# combination handler reuses the same post-send foreground guard as type/keys, which exits 1 so a script
+# step records FAIL instead of dying.
+$script:StHandlerExitAllowList = @('challenge-probe=3', 'ime-en=1', 'key=1', 'keys=1', 'paste=1', 'paste-file=1', 'shots-cleanup=5', 'type=1')
 $script:StEntryExitAllowList = @('<script>=2', 'fn:Invoke-ReplayLog=4', 'fn:Invoke-ScriptBatch=5')
 
 # '$script:' targets are keyed without the dollar (script:CdpPort), because the AST's left extent
@@ -2403,17 +2427,23 @@ $script:StCommandOwners = @(
   'fn:Invoke-Handler-hover=1',
   'fn:Invoke-Handler-imgclick=1',
   'fn:Invoke-Handler-keys=1',
+  # CU-OPS package C: `key` names the command when it logs its one gesture receipt.
+  'fn:Invoke-Handler-key=1',
   'fn:Invoke-Handler-menu-pick=1',
   'fn:Invoke-Handler-move=1',
   'fn:Invoke-Handler-open-and-pick=2',
   'fn:Invoke-Handler-paste=2',
   'fn:Invoke-Handler-paste-file=2',
   'fn:Invoke-Handler-press-down=2',
+  # CU-OPS package A: proc-start logs its start, proc-kill logs only a real --go termination.
+  'fn:Invoke-Handler-proc-kill=1',
+  'fn:Invoke-Handler-proc-start=1',
   'fn:Invoke-Handler-rclick=1',
   'fn:Invoke-Handler-relclick=1',
   'fn:Invoke-Handler-shots-cleanup=1',
   'fn:Invoke-Handler-type=1',
   'fn:Invoke-Handler-type-in=1',
+  'fn:Invoke-Handler-uia-do=1',
   'fn:Invoke-Handler-wheel=1',
   'fn:Invoke-Handler-win-close=1',
   'fn:Invoke-Handler-win-max=1',
@@ -2488,6 +2518,9 @@ $script:StLoadTimeNames = @(
   'script:AsTaskM=1',
   'script:CallLease=2',
   'script:CdpPort=1',
+  # CU-OPS package G (v4.6.1): the pure-format allowlist that decides whether a clipboard
+  # can be put back. Load-time state, so it is registered here by name in the same write.
+  'script:ClipboardPureFormats=1',
   'script:DeclaredCheckTotal=1',
   'script:DumpPath=2',
   'script:EnvDedupError=2',
@@ -2505,6 +2538,13 @@ $script:StLoadTimeNames = @(
   'script:PressId=1',
   'script:PressSeq=1',
   'script:PressTopLevel=1',
+  # CU-OPS-COMPLETE-20261026-01: load-time tables added by packages A/B/C - the mouse button
+  # and modifier maps plus the receipt slot, the protected-process name list and the key map.
+  'script:KeyVk=1',
+  'script:LastMouseReceipt=1',
+  'script:ModifierVk=1',
+  'script:MouseButtonNames=1',
+  'script:ProcSystemNames=1',
   'script:ProcNameCache=1',
   'script:ResolveNote=1',
   'script:StCommandExclusions=1',
@@ -2547,11 +2587,12 @@ $script:StLoadTimeNames = @(
 )
 
 # '$Cmd' travels by argument now, so the shape of that argument is what has to be accounted for:
-# fifty calls take the name from the dispatcher parameter, four from a formal the helper received,
-# one from the watchdog's lower-case formal. 'ABSENT' has no row here, so a call that still reads
-# caller scope fails the lint by name instead of writing a column that only looks like a command.
+# fifty-three calls take the name from the dispatcher parameter, four from a formal the helper
+# received, one from the watchdog's lower-case formal. 'ABSENT' has no row here, so a call that
+# still reads caller scope fails the lint by name instead of writing a column that only looks
+# like a command.
 $script:StCommandNameArgs = @(
-  '3|$Cmd=50',
+  '3|$Cmd=54',
   '3|$CmdName=4',
   '3|$cmdName=1'
 )
@@ -2584,6 +2625,7 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-hover=1',
   'fn:Invoke-Handler-imgclick=1',
   'fn:Invoke-Handler-keys=1',
+  'fn:Invoke-Handler-key=1',
   'fn:Invoke-Handler-menu-pick=1',
   'fn:Invoke-Handler-move=1',
   'fn:Invoke-Handler-open-and-pick=2',
@@ -2591,11 +2633,14 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-paste-file=2',
   'fn:Invoke-Handler-press-down=5',
   'fn:Invoke-Handler-press-up=2',
+  'fn:Invoke-Handler-proc-kill=1',
+  'fn:Invoke-Handler-proc-start=1',
   'fn:Invoke-Handler-rclick=1',
   'fn:Invoke-Handler-relclick=1',
   'fn:Invoke-Handler-shots-cleanup=1',
   'fn:Invoke-Handler-type=1',
   'fn:Invoke-Handler-type-in=1',
+  'fn:Invoke-Handler-uia-do=1',
   'fn:Invoke-Handler-wheel=1',
   'fn:Invoke-Handler-win-close=1',
   'fn:Invoke-Handler-win-max=1',
@@ -2683,6 +2728,32 @@ public class DT {
   public delegate bool EnumProc(IntPtr h, IntPtr l);
   public struct RECT { public int Left, Top, Right, Bottom; }
   public struct POINT { public int X, Y; }
+  // CU-OPS-COMPLETE-20261026-01: one mouse BUTTON event per call with the exact inserted count
+  // returned. mouse_event() returns void, so a caller cannot tell whether the system took the
+  // event; SendInput returns how many of the requested events it inserted, which is the receipt
+  // the modifiers/buttons work needs. mouseData carries the XBUTTON id (1 = back, 2 = forward).
+  public static uint SendMouseButtonInput(uint flag, uint data) {
+    uint[] allowed = new uint[] { 0x0002u, 0x0004u, 0x0008u, 0x0010u, 0x0020u, 0x0040u, 0x0080u, 0x0100u };
+    bool ok = false;
+    for (int k = 0; k < allowed.Length; k++) { if (allowed[k] == flag) { ok = true; } }
+    if (!ok) { throw new ArgumentOutOfRangeException("flag", "mouse button input accepts the eight button flags only"); }
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 0;
+    inputs[0].u.mi = new MOUSEINPUT { dx = 0, dy = 0, mouseData = data, dwFlags = flag, time = 0, dwExtraInfo = IntPtr.Zero };
+    return SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+  }
+  // CU-OPS: one keyboard event (keydown unless up) with its exact inserted count. SendInput does
+  // NOT reset a key state that was already held, so the caller must check before pressing and
+  // release only what it pressed itself.
+  public static uint SendKeyInput(int vk, bool up, bool extended) {
+    if (vk <= 0 || vk > 0xFF) { throw new ArgumentOutOfRangeException("vk", "virtual key must be 1..255"); }
+    uint flags = (up ? 0x0002u : 0u) | (extended ? 0x0001u : 0u);
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 1;
+    inputs[0].u.ki = new KEYBDINPUT { wVk = (ushort)vk, wScan = 0, dwFlags = flags, time = 0, dwExtraInfo = IntPtr.Zero };
+    return SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+  }
+  public static int IsVkDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000); }
   public static string Text(IntPtr h) { var sb = new StringBuilder(512); GetWindowText(h, sb, 512); return sb.ToString(); }
   // Types text via SendInput with KEYEVENTF_UNICODE: each char arrives as a
   // VK_PACKET keystroke that the system converts straight to WM_CHAR, so the
@@ -2749,6 +2820,57 @@ public class DT {
       }
     } finally { FreeEnvironmentStringsW(p); }
     return names.ToArray();
+  }
+}
+"@
+
+# CU-OPS package F (v4.6.0): the template matcher's inner loop, compiled once.
+# Why compiled: the same comparison written in PowerShell costs ~6ms per position
+# (measured 2026-10-27 on this tree: 3326 positions in 20s), so the 3,000,000-pixel
+# bound the command advertises could never be met. The semantics are deliberately
+# the same in both places: 32bpp BGRA, alpha-0 template pixels are skipped, and the
+# per-channel tolerance is inclusive. It returns flattened (x,y) pairs and reports
+# the positions actually tested, so the caller's numbers stay honest.
+Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+public class TPL {
+  public static long[] Find(byte[] hay, int hs, int hw, int hh, byte[] need, int ns, int nw, int nh, int tol, int maxMs, out long positions, out bool overBudget) {
+    List<long> hits = new List<long>();
+    positions = 0;
+    overBudget = false;
+    Stopwatch sw = Stopwatch.StartNew();
+    int maxX = hw - nw;
+    int maxY = hh - nh;
+    if (maxX < 0 || maxY < 0) { return hits.ToArray(); }
+    for (int y = 0; y <= maxY; y++) {
+      for (int x = 0; x <= maxX; x++) {
+        positions++;
+        if ((positions & 0xFFF) == 0 && sw.ElapsedMilliseconds > maxMs) { overBudget = true; return hits.ToArray(); }
+        bool ok = true;
+        for (int ty = 0; ty < nh && ok; ty++) {
+          int nrow = ty * ns;
+          int hrow = (y + ty) * hs;
+          for (int tx = 0; tx < nw; tx++) {
+            int no = nrow + tx * 4;
+            if (need[no + 3] == 0) { continue; }
+            int ho = hrow + (x + tx) * 4;
+            int db = hay[ho] - need[no];
+            if (db < 0) { db = -db; }
+            if (db > tol) { ok = false; break; }
+            int dg = hay[ho + 1] - need[no + 1];
+            if (dg < 0) { dg = -dg; }
+            if (dg > tol) { ok = false; break; }
+            int dr = hay[ho + 2] - need[no + 2];
+            if (dr < 0) { dr = -dr; }
+            if (dr > tol) { ok = false; break; }
+          }
+        }
+        if (ok) { hits.Add(((long)x << 32) | (long)(uint)y); }
+      }
+    }
+    return hits.ToArray();
   }
 }
 "@
@@ -3359,7 +3481,9 @@ function Get-WinList {
 # selector: a numeric pid, a case-insensitive title substring, "t:<substr>" /
 # "title:<substr>" to force title matching (needed when the substring itself
 # is all digits), "proc:<name>" for an exact process name match (case-insensitive),
-# or "class:<substr>" for a window class substring match. Among matches the
+# "hwnd:<0xhex|decimal>" for one exact top-level window handle (CU-OPS package D:
+# a title can change or be duplicated, a handle cannot - a value that is not a
+# number is refused, never degraded into a title substring), or "class:<substr>" for a window class substring match. Among matches the
 # largest non-minimized window wins (usually the app's main window). Minimized
 # windows stay "visible" to EnumWindows but sit at (-32000,-32000), so they are
 # only used when nothing else matches.
@@ -3398,6 +3522,18 @@ function Select-WindowsBySelector($all, [string]$sel) {
     $sub = $Matches[1]
     if (-not ("$sub".Trim())) { throw 'class selector must not be empty' }
     $selHits = @($all | Where-Object { Test-NameSubstring $_.Class $sub })
+  } elseif ($sel -match '^hwnd:(.*)$') {
+    # CU-OPS package D: the handle IS the identity. A window that was retitled keeps its
+    # handle, and a handle that is gone must NOT be approximated by the closest title -
+    # that is how "the same window" turns into a different window. Accepts 0x-hex or
+    # decimal; anything else is refused here rather than falling through to a title match.
+    $raw = "$($Matches[1])".Trim()
+    $hv = [int64]0
+    $okNum = $false
+    if ($raw -match '^0x[0-9a-fA-F]+$') { $okNum = [int64]::TryParse($raw.Substring(2), [System.Globalization.NumberStyles]::HexNumber, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$hv) }
+    elseif ($raw -match '^\d+$') { $okNum = [int64]::TryParse($raw, [ref]$hv) }
+    if (-not $okNum -or $hv -le 0) { throw "hwnd selector needs a handle like hwnd:0x00120A34 or hwnd:1182260 - got: $raw" }
+    $selHits = @($all | Where-Object { [int64]([IntPtr]$(Get-OptValue $_ 'Handle')).ToInt64() -eq $hv })
   } elseif ([int]::TryParse($sel, [ref]$asPid)) {
     $byPid = $true
     $selHits = @($all | Where-Object { $_.Pid -eq $asPid })
@@ -5034,6 +5170,69 @@ function Get-TargetRect($target) {
   return $null
 }
 
+# ---------------------------------------------------------------------------
+# CU-OPS package D (v4.6.0): explicit coordinate spaces.
+# A bare x,y has always meant SCREEN pixels. `--space window` and `--space client`
+# are the two relative spaces callers actually have on hand: an offset inside the
+# window's visible frame, and an offset inside its client area. What they must NOT
+# become is a stored point: the origin is read at ACTION time, after the target has
+# been resolved and activated, so a move/resize/DPI change between "I looked" and
+# "I clicked" cannot leave an old origin in use. `screen` keeps the legacy path
+# bit-for-bit and needs no window at all.
+# ---------------------------------------------------------------------------
+function Test-PointSpaceArg([string]$space) {
+  $sp = "$space"
+  if ($sp -eq '') { return 'screen' }
+  if ($sp -notin @('screen', 'window', 'client')) { throw "--space must be screen|window|client, got '$sp'; no input was sent" }
+  return $sp
+}
+
+# One origin for one space, measured NOW. Returns the screen-space origin plus the
+# area bounds used to refuse a point that cannot exist in that space (a negative
+# offset or one past the edge is a caller mistake, not a point to clamp).
+function Get-PointSpaceOrigin([string]$space, $target) {
+  $sp = Test-PointSpaceArg $space
+  if ($sp -eq 'screen') { return @{ Space = 'screen'; X = 0; Y = 0; W = 0; H = 0 } }
+  if ($null -eq $target) {
+    throw ("--space $sp needs a resolved window (--to <sel>, or wheel --at <sel>): there is no window origin to convert the coordinates against; no input was sent")
+  }
+  $h = [IntPtr]$target.Handle
+  if ($sp -eq 'window') {
+    $r = Get-TargetRect $target
+    if ($null -eq $r) { throw "--space window: the target's visible rect could not be read now (closed, hidden or minimized?) - refusing to reuse an old origin; no input was sent" }
+    if ([int]$r.W -le 0 -or [int]$r.H -le 0) { throw ('--space window: the target visible rect is ' + $r.W + 'x' + $r.H + ' - no usable origin; no input was sent') }
+    return @{ Space = 'window'; X = [int]$r.X; Y = [int]$r.Y; W = [int]$r.W; H = [int]$r.H }
+  }
+  $cr = New-Object DT+RECT
+  if (-not [DT]::GetClientRect($h, [ref]$cr)) {
+    throw ("--space client: GetClientRect failed for hwnd=$(([int64]$h).ToString('X')) - the window may have closed; no input was sent")
+  }
+  $origin = New-Object DT+POINT
+  $origin.X = 0; $origin.Y = 0
+  if (-not [DT]::ClientToScreen($h, [ref]$origin)) {
+    throw ("--space client: ClientToScreen failed for hwnd=$(([int64]$h).ToString('X')); no input was sent")
+  }
+  $cw = [int]($cr.Right - $cr.Left)
+  $chh = [int]($cr.Bottom - $cr.Top)
+  if ($cw -le 0 -or $chh -le 0) { throw ('--space client: the target client area is ' + $cw + 'x' + $chh + ' - no usable origin; no input was sent') }
+  return @{ Space = 'client'; X = [int]$origin.X; Y = [int]$origin.Y; W = $cw; H = $chh }
+}
+
+function Convert-PointSpace([int]$x, [int]$y, $origin) {
+  if ($origin.Space -eq 'screen') { return @{ X = $x; Y = $y } }
+  if ($x -lt 0 -or $y -lt 0 -or $x -ge $origin.W -or $y -ge $origin.H) {
+    throw ('--space ' + $origin.Space + ': point ' + $x + ',' + $y + ' is outside the target area ' + $origin.W + 'x' + $origin.H + ' (offsets are 0-based inside that area); no input was sent')
+  }
+  return @{ X = ($origin.X + $x); Y = ($origin.Y + $y) }
+}
+
+# Receipt tail for the pointer echoes: empty for the legacy screen space (so every
+# pre-existing caller sees the same line), explicit otherwise.
+function Format-PointSpaceReceipt($origin, [int]$rx, [int]$ry) {
+  if ($origin.Space -eq 'screen') { return '' }
+  return (' space=' + $origin.Space + ' rel=' + $rx + ',' + $ry)
+}
+
 # After-send foreground recheck: the pre-send guard verifies the target BEFORE
 # v1.5.3 (audit R-06): the same-process popup hole.
 # EnumWindows returns top-level windows in Z-ORDER (topmost first), so "is there
@@ -6469,17 +6668,47 @@ function Format-Hkl([IntPtr]$hkl) {
 # Pure branch of Save-ClipboardState: which kind is this clipboard? Extracted
 # because a faithful text+FileDrop clipboard CANNOT be synthesized from PS (see
 # the note on Save-ClipboardState), so the branch itself has to be unit-tested.
-function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles) {
+# CU-OPS package G (v4.6.0): the image carrier joins the branch. The two-argument form is
+# unchanged for every existing caller; hasImage is an OPTIONAL third argument, and the image
+# kinds are named text+image / files+image / text+files+image so a restore can tell which
+# parts it must verify and which part is genuinely missing.
+function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles, [bool]$hasImage = $false) {
+  if ($hasImage) {
+    $parts = @()
+    if ($hasText) { $parts += 'text' }
+    if ($hasFiles) { $parts += 'files' }
+    if ($parts.Count -eq 0) { return 'image' }
+    return (($parts + @('image')) -join '+')
+  }
   if ($hasText -and $hasFiles) { return 'both' }
   if ($hasText) { return 'text' }
   if ($hasFiles) { return 'files' }
   return 'other'
 }
 
+# CU-OPS package G (v4.6.1): the formats a restore branch can faithfully reproduce.
+# Everything outside this set (HTML Format, Rich Text Format, PNG, Preferred DropEffect,
+# any private/app format) is content this tool cannot put back. A clipboard carrying text
+# AND one of those must NOT be written over on the strength of the text coming back:
+# "the text hash matches" is not "every format is preserved".
+$script:ClipboardPureFormats = @('UnicodeText', 'Text', 'Locale', 'OEMText', 'FileDrop', 'Bitmap', 'DIB')
+function Get-ClipboardFormatPlan([string[]]$formats) {
+  $list = @($formats | Where-Object { $_ -ne '' } | Sort-Object -Unique)
+  $extras = @($list | Where-Object { $script:ClipboardPureFormats -notcontains $_ })
+  $hasText = @($list | Where-Object { $_ -in @('UnicodeText', 'Text', 'Locale', 'OEMText') }).Count -gt 0
+  $hasFiles = $list -contains 'FileDrop'
+  $hasImage = @($list | Where-Object { $_ -in @('Bitmap', 'DIB') }).Count -gt 0
+  $kind = if ($list.Count -eq 0) { 'none' } else { Resolve-ClipboardKind $hasText $hasFiles $hasImage }
+  if (@($extras).Count -gt 0) { $kind = 'other' }
+  return [pscustomobject]@{ Kind = $kind; Formats = $list; Extras = $extras; HasText = $hasText; HasFiles = $hasFiles; HasImage = $hasImage }
+}
+
 # Snapshot of the current clipboard so commands that overwrite it can put the
-# old content back afterwards. Supported kinds: text and FileDrop (file list).
-# Anything else (images, custom formats) is reported as unsupported and left
-# alone; an empty clipboard is reported as empty.
+# old content back afterwards. Supported kinds: text, FileDrop (file list) and the
+# image carrier (Bitmap/DIB, saved to a PNG for the restore), plus their combinations.
+# v4.6.1: the FORMAT LIST decides first - any format outside $script:ClipboardPureFormats
+# makes the snapshot kind=other and its content is deliberately NOT read, because this
+# tool cannot put it back; an empty clipboard is reported as 'none'.
 # v1.5.2 WP-4 (audit R-05, code-level): text and FileDrop are NO LONGER
 # exclusive branches - the old `if ContainsText ... elseif ContainsFileDropList`
 # saved only the text, so a clipboard carrying both lost the file list on
@@ -6499,47 +6728,182 @@ function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles) {
 # means the clipboard held a file list when this paste started (e.g. left there
 # on purpose by an earlier copy-file) - restoring it is the correct behaviour.
 function Save-ClipboardState {
-  $st = @{ Kind = 'other'; Text = ''; Files = @() }
+  $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() }
   try {
-    $hasText = [System.Windows.Forms.Clipboard]::ContainsText()
-    $hasFiles = [System.Windows.Forms.Clipboard]::ContainsFileDropList()
+    # The FORMAT LIST decides first. A clipboard with formats outside the pure set is not
+    # restorable as a whole, so its content is deliberately not read either - nothing this
+    # tool could put back is lost by not opening it.
+    $formats = @()
+    try {
+      $do = [System.Windows.Forms.Clipboard]::GetDataObject()
+      if ($null -ne $do) { $formats = @($do.GetFormats()) }
+    } catch { $formats = @() }
+    $plan = Get-ClipboardFormatPlan $formats
+    $st.Formats = @($plan.Formats)
+    $st.Extras = @($plan.Extras)
+    $st.Kind = $plan.Kind
+    if ($plan.Kind -eq 'other' -or $plan.Kind -eq 'none') { return $st }
+    $hasText = [bool]$plan.HasText
+    $hasFiles = [bool]$plan.HasFiles
+    $hasImage = [bool]$plan.HasImage
     $txt = ''
     if ($hasText) { $txt = [System.Windows.Forms.Clipboard]::GetText() }
     $files = @()
     if ($hasFiles) { $files = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
-    $kind = Resolve-ClipboardKind $hasText $hasFiles
-    if ($kind -eq 'other') {
-      # keep the distinct "(empty)" echo: a clipboard with no formats at all is
-      # not the same message as "has formats we cannot restore" (images etc.)
-      $g = [System.Windows.Forms.Clipboard]::GetDataObject()
-      if ($null -eq $g -or @($g.GetFormats()).Count -eq 0) { $kind = 'none' }
+    $imgPath = ''
+    $imgErr = $false
+    if ($hasImage) {
+      # CU-OPS package G: the image is carried as a PNG on disk, because a restore happens
+      # in the same process but the DataObject form does not survive a re-save reliably.
+      # "detected but could not be saved" is its OWN answer (ImageSaveError), never folded
+      # into "no image" - a restore that silently drops it must say so.
+      try {
+        $img = [System.Windows.Forms.Clipboard]::GetImage()
+        if ($null -eq $img) { $imgErr = $true } else {
+          try {
+            $p = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('desktop-clip-' + [guid]::NewGuid().ToString('N') + '.png'))
+            $img.Save($p, [System.Drawing.Imaging.ImageFormat]::Png)
+            if (Test-Path -LiteralPath $p -PathType Leaf) { $imgPath = $p } else { $imgErr = $true }
+          } finally { $img.Dispose() }
+        }
+      } catch { $imgErr = $true }
     }
-    $st = @{ Kind = $kind; Text = $txt; Files = $files }
-  } catch { $st = @{ Kind = 'other'; Text = ''; Files = @() } }
+    $st = @{ Kind = $plan.Kind; Text = $txt; Files = $files; ImagePath = $imgPath; ImageSaveError = $imgErr; Formats = @($plan.Formats); Extras = @($plan.Extras) }
+  } catch { $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() } }
   return $st
 }
 
-# Returns a human readable note for the command echo. Never throws: a failed
-# restore must not flip the command exit code. The 'both' path writes ONE
-# DataObject carrying FileDrop + UnicodeText - two successive Clipboard setters
-# would replace each other, which is exactly how the old code lost the files.
+# CU-OPS package G (v4.6.1): content identity for the image carrier. Width/Height
+# equality is NOT content equality - two different pictures share a size - so a
+# restore that printed "restored" after a size match could put back the wrong
+# picture and still look green. Both sides are normalized to 24bpp RGB and hashed
+# over the raw scan lines; the answer is one digest, not a resemblance heuristic.
+function Get-BitmapRgbHash($bmp) {
+  $clone = $null
+  $locked = $null
+  $gr = $null
+  try {
+    $w = [int]$bmp.Width
+    $h = [int]$bmp.Height
+    $clone = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $gr = [System.Drawing.Graphics]::FromImage($clone)
+    $gr.DrawImage($bmp, 0, 0, $w, $h)
+    $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $h
+    $locked = $clone.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $bytes = New-Object byte[] ([int]$locked.Stride * $h)
+    [System.Runtime.InteropServices.Marshal]::Copy($locked.Scan0, $bytes, 0, $bytes.Length)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $digest = $sha.ComputeHash($bytes) } finally { $sha.Dispose() }
+    $hex = (@($digest | ForEach-Object { $_.ToString('x2') }) -join '')
+    return @{ W = $w; H = $h; Hash = $hex }
+  } finally {
+    if ($null -ne $gr) { try { $gr.Dispose() } catch { } }
+    if ($null -ne $locked -and $null -ne $clone) { try { $clone.UnlockBits($locked) } catch { } }
+    if ($null -ne $clone) { try { $clone.Dispose() } catch { } }
+  }
+}
+
+# CU-OPS package G (v4.6.1): the restore note is the ONLY thing the caller sees, so
+# "did it really come back" has to be readable from it mechanically. paste/paste-file
+# turn partial/failed into a non-zero exit - a restore that lost the user's clipboard
+# must never end with the same code as one that put it back.
+function Get-ClipboardRestoreOutcome([string]$note) {
+  if ($note -like 'clipboard PARTIALLY restored*') { return 'partial' }
+  if ($note -like 'clipboard restore failed*') { return 'failed' }
+  if ($note -like 'skipped clipboard restore*') { return 'skipped' }
+  if ($note -like 'clipboard restored*') { return 'ok' }
+  return 'unknown'
+}
+
+# Returns a human readable note for the command echo. Never throws. The 'both' path
+# writes ONE DataObject carrying FileDrop + UnicodeText - two successive Clipboard
+# setters would replace each other, which is exactly how the old code lost the files.
 # Images and other formats are still NOT restored (verified limitation: they are
 # reported as skipped, never claimed as supported).
+# v4.6.1 (CU-OPS package G): EVERY branch now reads the content back before claiming
+# success - text and FileDrop by exact comparison, the image by RGB digest. A branch
+# that only wrote and returned "restored" could not tell a lost clipboard from a
+# put-back one, which is the same false-green class this command exists to kill.
 function Restore-ClipboardState($st) {
   if ($null -eq $st) { return 'skipped clipboard restore (nothing saved)' }
   $kind = "$($st.Kind)"
+  # CU-OPS package G: an image-bearing clipboard is restored through ONE DataObject so
+  # text/FileDrop/Bitmap travel together, then EVERY requested part is verified by
+  # CONTENT. A part that did not come back makes the answer PARTIALLY, named part by part.
+  if ($kind -like '*image*') {
+    $path = [string]$st.ImagePath
+    if ($path -eq '' -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+      return 'clipboard restore failed (the image was detected but its PNG could not be saved - the missing part is NOT recoverable)'
+    }
+    $bmp = $null
+    try {
+      $bmp = New-Object System.Drawing.Bitmap($path)
+      $wantFiles = @($st.Files)
+      $wantText = [string]$st.Text
+      $sc = New-Object System.Collections.Specialized.StringCollection
+      foreach ($f in $wantFiles) { [void]$sc.Add($f) }
+      $db = New-Object System.Windows.Forms.DataObject
+      if ($wantFiles.Count -gt 0) { [void]$db.SetData([System.Windows.Forms.DataFormats]::FileDrop, $sc) }
+      if ($wantText -ne '') { [void]$db.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $wantText) }
+      [void]$db.SetData([System.Windows.Forms.DataFormats]::Bitmap, $bmp)
+      [System.Windows.Forms.Clipboard]::SetDataObject($db, $true)
+      Start-Sleep -Milliseconds 200
+      $gotT = ''
+      if ([System.Windows.Forms.Clipboard]::ContainsText()) { $gotT = [System.Windows.Forms.Clipboard]::GetText() }
+      $gotF = @()
+      if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) { $gotF = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
+      $gotImg = $null
+      if ([System.Windows.Forms.Clipboard]::ContainsImage()) { $gotImg = [System.Windows.Forms.Clipboard]::GetImage() }
+      $textOk = ($wantText -eq '' -or $gotT -ceq $wantText)
+      $filesOk = ($wantFiles.Count -eq 0 -or ($gotF.Count -eq $wantFiles.Count -and (($gotF -join '|') -ceq ($wantFiles -join '|'))))
+      # v4.6.1: equal Width/Height was never evidence of equal pixels - the digest is.
+      $hWant = Get-BitmapRgbHash $bmp
+      $hGot = $null
+      if ($null -ne $gotImg) { $hGot = Get-BitmapRgbHash $gotImg }
+      $imgOk = ($null -ne $hGot -and ($hWant.Hash -ceq $hGot.Hash))
+      $imgNote = if ($null -ne $hGot) {
+        if ($imgOk) { "rgb-sha256=$($hWant.Hash.Substring(0, 12))" } else { "different pixels (wanted rgb-sha256=$($hWant.Hash.Substring(0, 12)), got $($hGot.Hash.Substring(0, 12)))" }
+      } else { 'no image' }
+      if ($null -ne $gotImg) { $gotImg.Dispose() }
+      if ($textOk -and $filesOk -and $imgOk) {
+        return "clipboard restored (previous content was ${kind}: $($wantText.Length) chars, $(@($wantFiles).Count) file(s), image $($bmp.Width)x$($bmp.Height))"
+      }
+      return "clipboard PARTIALLY restored (kind=$kind; wanted text=$($wantText.Length) chars / FileDrop=$(@($wantFiles).Count) / image $($bmp.Width)x$($bmp.Height); got text=$($gotT.Length) chars / FileDrop=$($gotF.Count) / $imgNote) - the missing part is NOT recoverable by this tool"
+    } catch {
+      return 'clipboard restore failed (' + $kind + ')'
+    } finally {
+      if ($null -ne $bmp) { $bmp.Dispose() }
+      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+  }
   switch ($kind) {
     'text' {
-      try { Set-Clipboard -Value $st.Text; return "clipboard restored (previous content was text, $($st.Text.Length) chars)" }
-      catch { return 'clipboard restore failed' }
+      try {
+        Set-Clipboard -Value $st.Text
+        Start-Sleep -Milliseconds 200
+        $gotT = ''
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) { $gotT = [System.Windows.Forms.Clipboard]::GetText() }
+        if ($gotT -ceq $st.Text) {
+          return "clipboard restored (previous content was text, $($st.Text.Length) chars)"
+        }
+        return "clipboard PARTIALLY restored (wanted text $($st.Text.Length) chars; read back $($gotT.Length) chars that do not match - the text did not come back verbatim)"
+      } catch { return 'clipboard restore failed (text)' }
     }
     'files' {
       try {
+        $wantF = @($st.Files)
         $sc = New-Object System.Collections.Specialized.StringCollection
-        foreach ($f in @($st.Files)) { [void]$sc.Add($f) }
+        foreach ($f in $wantF) { [void]$sc.Add($f) }
         [System.Windows.Forms.Clipboard]::SetFileDropList($sc)
-        return "clipboard restored (previous content was FileDrop, $($st.Files.Count) file(s))"
-      } catch { return 'clipboard restore failed' }
+        Start-Sleep -Milliseconds 200
+        $gotF = @()
+        if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) { $gotF = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
+        $filesOk = ($wantF.Count -gt 0 -and $gotF.Count -eq $wantF.Count -and (($gotF -join '|') -ceq ($wantF -join '|')))
+        if ($filesOk) {
+          return "clipboard restored (previous content was FileDrop, $($wantF.Count) file(s))"
+        }
+        return "clipboard PARTIALLY restored (wanted FileDrop $($wantF.Count) file(s); got $($gotF.Count) from the read-back - the list did not come back verbatim)"
+      } catch { return 'clipboard restore failed (FileDrop)' }
     }
     'both' {
       try {
@@ -6569,6 +6933,60 @@ function Restore-ClipboardState($st) {
     }
     'none' { return 'skipped clipboard restore (empty)' }
     default { return 'skipped clipboard restore (non-text)' }
+  }
+}
+
+# CU-OPS package G (v4.6.1): name the formats that made a clipboard 'other'. A refusal
+# that only says "unknown formats" tells the user nothing they can act on; the names are
+# what make --replace-clipboard an informed choice. Short list, bounded length.
+function Format-ClipboardFormatNames($formats) {
+  $list = @($formats | Where-Object { "$_" -ne '' })
+  if ($list.Count -eq 0) { return '' }
+  $shown = @($list | Select-Object -First 6)
+  $tail = if ($list.Count -gt 6) { ' +' + ($list.Count - 6) + ' more' } else { '' }
+  return (($shown -join ', ') + $tail)
+}
+
+# CU-OPS package G (v4.6.0): ONE verdict, read by both the write gate and clip-info.
+# "Restorable" means this tool has a restore branch that can verify the content back:
+# empty, text, FileDrop, both, and the image kinds (whose PNG was actually saved).
+# Anything else - custom/unknown formats (Kind=other) - is NOT restorable, and writing
+# over it destroys data the tool cannot put back.
+function Get-ClipboardStateExtras($st) {
+  # StrictMode-safe: callers hand in the plan object (has Extras), the Save-ClipboardState
+  # hashtable (has Extras) and unit-test hashtables that may not. A missing key must read as
+  # "no extras", not as a property error that kills the caller (measured 2026-10-27 13:22:
+  # the property error aborted the whole offline selftest at the clipboard family).
+  if ($null -eq $st) { return @() }
+  try { return @($st.Extras | Where-Object { "$_" -ne '' }) } catch { return @() }
+}
+
+function Get-ClipboardRestorableVerdict($st) {
+  if ($null -eq $st) { return 'unknown - nothing was read' }
+  $kind = "$($st.Kind)"
+  if ($kind -eq 'other') {
+    $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
+    if ($names -eq '') { return 'no - unknown formats; a write would need --replace-clipboard' }
+    return ('no - unknown formats (' + $names + '); a write would need --replace-clipboard')
+  }
+  if ($kind -like '*image*' -and [bool]$st.ImageSaveError) { return 'no - an image is present but its PNG could not be saved' }
+  # clip-info never attempts the PNG save (read-only), so it can only say the image is
+  # restorable IF the writing command manages to carry it; the write gate refuses otherwise.
+  if ($kind -like '*image*' -and ([string]$st.ImagePath -eq '')) { return 'yes - if the writing command can save the image carrier (this read did not try; the write gate refuses when that save fails)' }
+  return 'yes'
+}
+
+function Assert-ClipboardReplaceable($st, [bool]$replace, [string]$cmd) {
+  if ($replace) { return }
+  if ($null -eq $st) { return }
+  $kind = "$($st.Kind)"
+  if ($kind -eq 'other') {
+    $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
+    $detail = if ($names -ne '') { ' (' + $names + ')' } else { '' }
+    throw "$cmd : the clipboard holds formats this tool cannot restore$detail; overwriting them would destroy that content. Pass --replace-clipboard to say that is intended"
+  }
+  if ($kind -like '*image*' -and [bool]$st.ImageSaveError) {
+    throw "$cmd : the clipboard holds an image this tool could not save to a PNG, so it could not be put back; nothing was written. Pass --replace-clipboard to accept losing it"
   }
 }
 
@@ -6650,10 +7068,13 @@ function Format-WindowMissMessage([string]$sel) {
   if ([int]::TryParse($sel, [ref]$missingPid)) {
     return "no window matching pid: $missingPid - re-run 'wins' and choose a current PID; numeric selectors match PIDs only and never fall back to title"
   }
+  if ($sel -match '^hwnd:(.*)$') {
+    return "no window with handle '$($Matches[1])' - that exact handle is not on this desktop any more (closed, recreated, or never existed). Re-read 'wins'; an hwnd: selector never falls back to a title match."
+  }
   return "no window matching: $sel"
 }
 
-function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActivate = $false, [string]$expectHandle = '') {
+function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActivate = $false, [string]$expectHandle = '', [string]$created = '') {
   $script:ActivationLine = ''
   $script:ActivationNotice = ''
   if (-not $sel) {
@@ -6665,6 +7086,15 @@ function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActiva
     $pinFg = Test-HandlePin $expectHandle $h
     if (-not $pinFg.Ok) {
       throw ("handle pin: this call may only act on $($pinFg.Expected) but the FOREGROUND window is pid=$procId hwnd=$($pinFg.Actual) '$([DT]::Text($h))' ($(Format-HandlePinReason $pinFg)) - NOTHING was sent. Re-check with 'wins' / 'focus', then pass --to <sel> --expect-handle <hwnd>.")
+    }
+    # CU-OPS package D: --created turns "a window called X" into "the process that owns
+    # it, as observed at this time". PID reuse is what it kills: a new process with the
+    # old number gets a different creation time and is refused before any activation.
+    if ($created) {
+      $ciFg = Test-ProcIdentity ([int]$procId) $created
+      if (-not $ciFg.Ok) {
+        throw ("process identity: --created '$created' does not match the FOREGROUND window's pid=$procId hwnd=$($pinFg.Actual) ($($ciFg.Why)) - NOTHING was sent and nothing was activated. Re-read the process with 'proc-info <pid>' and pass its start= value.")
+      }
     }
     $script:ActivationLine = 'activated=n/a (no --to)'
     # v3.1.0 (P-02): the same pre-send popup baseline the --to path takes further down. Without
@@ -6685,6 +7115,15 @@ function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActiva
   $pin = Test-HandlePin $expectHandle $w.Handle
   if (-not $pin.Ok) {
     throw ("handle pin: this call may only act on $($pin.Expected) but selector '$sel' resolves to pid=$($w.Pid) hwnd=$($pin.Actual) '$($w.Title)' ($(Format-HandlePinReason $pin)) - NOTHING was sent and nothing was activated. A fresh re-resolve can land on a same-named window that appeared since you looked; pass --to <sel> --expect-handle <hwnd> from the same 'wins' reading, or drop the pin to accept the new target.")  }
+  # CU-OPS package D: the creation-time pin sits beside the handle pin, for the same
+  # reason and in the same place - before activation. A reused PID (or a same-title
+  # restart) is refused while the desktop is still untouched.
+  if ($created) {
+    $ci = Test-ProcIdentity ([int]$w.Pid) $created
+    if (-not $ci.Ok) {
+      throw ("process identity: --created '$created' does not match selector '$sel' (pid=$($w.Pid) hwnd=$($w.Handle) '$($w.Title)'): $($ci.Why) - NOTHING was sent and nothing was activated. Re-read with 'proc-info <pid>' and pass that start= value.")
+    }
+  }
   # v1.5.6 (D-2/A-2, J-01 option A). Activate-Win used to run BringWindowToTop +
   # SetForegroundWindow on EVERY --to, even when the window already was the foreground
   # one. Those two calls are not no-ops: they re-raise the main window ABOVE a
@@ -6783,6 +7222,9 @@ function Split-Target([string[]]$words, [string]$cmd = '') {
   $occlude = ''
   $occlGrid = 5
   $allowOccluded = $false
+  # CU-OPS package G: the explicit permission to overwrite clipboard content this tool
+  # cannot restore. Absent = a clipboard holding unknown formats is refused BEFORE writing.
+  $replaceClipboard = $false
   $out = New-Object System.Collections.ArrayList
   $i = 0
   while ($i -lt $words.Count) {
@@ -6802,6 +7244,14 @@ function Split-Target([string[]]$words, [string]$cmd = '') {
       $occlGrid = Resolve-OcclGridArg $words[$i]
     } elseif ($t -eq '--allow-occluded') {
       $allowOccluded = $true
+    } elseif ($t -eq '--replace-clipboard') {
+      # CU-OPS package G: the permission belongs to the two commands that WRITE the
+      # clipboard. Anywhere else it is refused by name rather than accepted and ignored -
+      # a permission that does nothing is worse than no permission.
+      if ($cmd -ne 'paste' -and $cmd -ne 'paste-file') {
+        throw "--replace-clipboard belongs to paste and paste-file, the commands that overwrite the clipboard AND restore it; $cmd never restores, so nothing was changed"
+      }
+      $replaceClipboard = $true
     }
     elseif ($t -eq '--no-expect') { $noExpect = $true; $expect = ''; $expectGone = ''; $expectAny = @(); $expectAnyGone = @(); $expectRegion = '' }
     elseif ($t -eq '--expect') {
@@ -6935,7 +7385,7 @@ function Split-Target([string[]]$words, [string]$cmd = '') {
     $i++
   }
   $words = @($out)
-  return @{ Sel = $sel; Words = $words; Force = $force; Verify = $verify; LogPayload = $logPayload; GuardText = $guardText; GuardRegion = $guardRegion; Scale = $scaleMode; MaxTiles = $maxTiles; NoTile = $noTile; Expect = $expect; ExpectGone = $expectGone; ExpectAny = $expectAny; ExpectAnyGone = $expectAnyGone; ExpectHandle = $expectHandle; ExpectRegion = $expectRegion; NoExpect = $noExpect; TimeoutSec = $timeoutSec; IntervalMs = $intervalMs; MinLineDensity = $minLineDensity; VerifyTimeout = $verifyTimeout; AllowOutside = $allowOutside; AlwaysActivate = $alwaysActivate; ExpectChange = $expectChange; Occlude = $occlude; OcclGrid = $occlGrid; AllowOccluded = $allowOccluded }
+  return @{ Sel = $sel; Words = $words; Force = $force; Verify = $verify; LogPayload = $logPayload; GuardText = $guardText; GuardRegion = $guardRegion; Scale = $scaleMode; MaxTiles = $maxTiles; NoTile = $noTile; Expect = $expect; ExpectGone = $expectGone; ExpectAny = $expectAny; ExpectAnyGone = $expectAnyGone; ExpectHandle = $expectHandle; ExpectRegion = $expectRegion; NoExpect = $noExpect; TimeoutSec = $timeoutSec; IntervalMs = $intervalMs; MinLineDensity = $minLineDensity; VerifyTimeout = $verifyTimeout; AllowOutside = $allowOutside; AlwaysActivate = $alwaysActivate; ExpectChange = $expectChange; Occlude = $occlude; OcclGrid = $occlGrid; AllowOccluded = $allowOccluded; ReplaceClipboard = $replaceClipboard }
 }
 
 # ---------------------------------------------------------------------------
@@ -7938,19 +8388,193 @@ function Restart-ChromeWithFlags([string[]]$flags, [string]$base, [int]$timeoutM
   return $r
 }
 
-function Move-Click([int]$x, [int]$y, [string]$button) {
-  [void][DT]::SetCursorPos($x, $y)
-  Start-Sleep -Milliseconds 150
-  if ($button -eq 'right') {
-    [DT]::mouse_event($MOUSE_RDOWN, 0, 0, 0, [IntPtr]::Zero)
-    Start-Sleep -Milliseconds 60
-    [DT]::mouse_event($MOUSE_RUP, 0, 0, 0, [IntPtr]::Zero)
-  } else {
-    [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-    Start-Sleep -Milliseconds 60
-    [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+# ---------------------------------------------------------------------------
+# CU-OPS-COMPLETE-20261026-01 (package B): modifier-owned mouse gestures.
+#
+# The rules this block exists to enforce, all of them from SendInput's documented
+# behaviour (SendInput returns how many events it INSERTED and does NOT reset a key
+# state that was already down):
+#   * a modifier this call did not press is never released - if the caller (or the
+#     user) already holds Ctrl, the gesture refuses instead of toggling their key;
+#   * press -> act -> release happens inside ONE call, and the release runs in a
+#     finally block, so a refusal or a failed event still cleans up this call's keys;
+#   * every event carries its inserted count; 0 is a failure, never a success;
+#   * a button that this family does not offer is refused BEFORE any input.
+# finally is not a guarantee against a hard process kill: a killed process leaves its
+# keys down like any other writer, which is why the same-call bound is the default and
+# there is no "leave Ctrl down for later" mode.
+$script:MouseButtonNames = @('left', 'right', 'middle', 'back', 'forward')
+$script:ModifierVk = @{ 'ctrl' = 0x11; 'shift' = 0x10; 'alt' = 0x12 }
+$script:LastMouseReceipt = ''
+
+# Pure: 'ctrl+shift' / 'ctrl,shift' -> ordered, de-duplicated list of known names.
+# An empty/absent spec yields an empty list (no modifiers), which is the unchanged
+# pre-CU-OPS path. Unknown names and the Windows key are refused here, before input.
+function Resolve-MouseModifiers([string]$spec) {
+  $list = @()
+  foreach ($raw in @("$spec" -split '[+,]')) {
+    $n = ("$raw").Trim().ToLowerInvariant()
+    if (-not $n) { continue }
+    if ($n -eq 'control') { $n = 'ctrl' }
+    if ($n -eq 'windows' -or $n -eq 'win') {
+      throw "mouse gestures do not drive the Windows key: OS-reserved combinations cannot be verified from a fixture and this tool does not pretend to synthesise them; accepted modifiers are ctrl, shift, alt"
+    }
+    if (-not $script:ModifierVk.ContainsKey($n)) { throw "unknown mouse modifier '$raw' - accepted: ctrl, shift, alt (combine with + or ,)" }
+    if ($list -notcontains $n) { $list += $n }
   }
-  Start-Sleep -Milliseconds 200
+  # Plain output on purpose: returning the array with a leading comma would emit an
+  # EMPTY array as ONE item, so an empty spec would arrive as a one-element list whose
+  # element is '' and the gesture would then look up a modifier that does not exist.
+  return $list
+}
+
+# Pure: button name -> the two input flags plus the XBUTTON id SendInput expects.
+function Get-MouseButtonSpec([string]$name) {
+  switch (("$name").Trim().ToLowerInvariant()) {
+    'left'    { return @{ Name = 'left'; Down = 0x0002; Up = 0x0004; Data = 0 } }
+    'right'   { return @{ Name = 'right'; Down = 0x0008; Up = 0x0010; Data = 0 } }
+    'middle'  { return @{ Name = 'middle'; Down = 0x0020; Up = 0x0040; Data = 0 } }
+    'back'    { return @{ Name = 'back'; Down = 0x0080; Up = 0x0100; Data = 1 } }
+    'x1'      { return @{ Name = 'back'; Down = 0x0080; Up = 0x0100; Data = 1 } }
+    'forward' { return @{ Name = 'forward'; Down = 0x0080; Up = 0x0100; Data = 2 } }
+    'x2'      { return @{ Name = 'forward'; Down = 0x0080; Up = 0x0100; Data = 2 } }
+  }
+  throw "unknown mouse button '$name' - accepted: left, right, middle, back/x1, forward/x2"
+}
+
+# Measured state of a button, so a press/release claim can be checked instead of
+# trusted. GetAsyncKeyState covers every button; the left one keeps the older
+# Control.MouseButtons reading for the existing press-pair contract.
+function Get-MouseButtonDown([string]$name) {
+  if (("$name").Trim().ToLowerInvariant() -eq 'left') { return (Get-LeftButtonDown) }
+  $vk = switch (("$name").Trim().ToLowerInvariant()) {
+    'right'   { 0x02 }
+    'middle'  { 0x04 }
+    'back'    { 0x05 }
+    'x1'      { 0x05 }
+    'forward' { 0x06 }
+    'x2'      { 0x06 }
+    default   { 0 }
+  }
+  if ($vk -eq 0) { throw "unknown mouse button '$name'" }
+  return (([DT]::IsVkDown([int]$vk)) -ne 0)
+}
+
+# One button DOWN or UP with its inserted count checked. $data is the XBUTTON id.
+function Invoke-MouseButtonEvent([string]$button, [bool]$down) {
+  $mb = Get-MouseButtonSpec $button
+  $flag = if ($down) { [uint32]$mb.Down } else { [uint32]$mb.Up }
+  $n = [uint32][DT]::SendMouseButtonInput($flag, [uint32]$mb.Data)
+  if ($n -ne 1) {
+    $win32 = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    throw "mouse button $($mb.Name) $(if ($down) { 'DOWN' } else { 'UP' }): SendInput inserted $n of 1 (win32 error $win32) - the button state is not what the caller asked for"
+  }
+  return $n
+}
+
+# Press the requested modifiers, run the action, and release ONLY the keys this call
+# pressed. Refuses when one of them is already down: that state belongs to someone
+# else, and neither pressing nor releasing it would be this tool's to do.
+function Invoke-ModifierGesture([string[]]$mods, [scriptblock]$action) {
+  $rc = @{ Mods = @($mods); Pressed = @(); Released = @(); Inserted = 0; Error = ''; ReleaseError = '' }
+  if (@($mods).Count -eq 0) { & $action; return $rc }
+  foreach ($m in @($mods)) {
+    $vk = [int]$script:ModifierVk[$m]
+    if (([DT]::IsVkDown($vk)) -ne 0) {
+      throw "modifier '$m' is already held down (not by this call); this tool will not press or release a key it does not own - let go of it first, then retry"
+    }
+  }
+  try {
+    foreach ($m in @($mods)) {
+      $vk = [int]$script:ModifierVk[$m]
+      $n = [uint32][DT]::SendKeyInput($vk, $false, $false)
+      if ($n -ne 1) { throw "modifier '$m' DOWN: SendInput inserted $n of 1; no gesture was performed" }
+      $rc.Inserted = [int]$rc.Inserted + 1
+      $rc.Pressed = @($rc.Pressed) + $m
+      Start-Sleep -Milliseconds 30
+    }
+  } catch {
+    $rc.Error = $_.Exception.Message
+    $rf = @()
+    foreach ($m in @($rc.Pressed)) {
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$script:ModifierVk[$m], $true, $false)
+        if ($n -eq 1) { $rc.Released = @($rc.Released) + $m } else { $rf += "$m(inserted $n/1)" }
+      } catch { $rf += "$m($($_.Exception.Message))" }
+    }
+    if (@($rf).Count) { throw ($rc.Error + ' | modifier UP failed for: ' + ($rf -join ', ') + ' - those keys may still be down; run key-state / key-release') }
+    throw $rc.Error
+  }
+  $actionErr = $null
+  try {
+    & $action
+  } catch {
+    $actionErr = $_
+  } finally {
+    # CU-OPS-ADJ-03: every modifier UP is verified. The old code ignored SendKeyInput's
+    # return and swallowed exceptions, so a failed UP was still receipted as released.
+    $rf = @()
+    foreach ($m in @($rc.Pressed)) {
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$script:ModifierVk[$m], $true, $false)
+        if ($n -eq 1) { $rc.Released = @($rc.Released) + $m } else { $rf += "$m(inserted $n/1)" }
+      } catch { $rf += "$m($($_.Exception.Message))" }
+    }
+    Start-Sleep -Milliseconds 40
+    if (@($rf).Count) { $rc.ReleaseError = 'modifier UP failed for: ' + ($rf -join ', ') + ' - those keys may still be down; run key-state / key-release' }
+  }
+  if ($null -ne $actionErr) {
+    $msg = $actionErr.Exception.Message
+    if ($rc.ReleaseError) { throw ($msg + ' | ' + $rc.ReleaseError) }
+    throw $msg
+  }
+  if ($rc.ReleaseError) { throw $rc.ReleaseError }
+  return $rc
+}
+
+function Format-ModifierReceipt($rc) {
+  if ($null -eq $rc -or @($rc.Mods).Count -eq 0) { return '' }
+  return (" mods=" + (@($rc.Mods) -join '+') + " mods-pressed-inserted=" + $rc.Inserted + "/" + @($rc.Mods).Count + " mods-released=" + (@($rc.Released) -join '+'))
+}
+
+# The one producer of a button click. Left/right without modifiers keep the exact
+# pre-CU-OPS event shape and pace; every other case goes through SendInput with a
+# counted receipt. $mods is a '+'-separated spec ('' = none).
+function Move-Click([int]$x, [int]$y, [string]$button, [string]$mods = '') {
+  $modList = @(Resolve-MouseModifiers $mods)
+  $mb = Get-MouseButtonSpec $button
+  $script:LastMouseReceipt = ''
+  $act = {
+    [void][DT]::SetCursorPos($x, $y)
+    Start-Sleep -Milliseconds 150
+    if ($modList.Count -eq 0 -and $mb.Name -eq 'left') {
+      [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
+      Start-Sleep -Milliseconds 60
+      [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+    } elseif ($modList.Count -eq 0 -and $mb.Name -eq 'right') {
+      [DT]::mouse_event($MOUSE_RDOWN, 0, 0, 0, [IntPtr]::Zero)
+      Start-Sleep -Milliseconds 60
+      [DT]::mouse_event($MOUSE_RUP, 0, 0, 0, [IntPtr]::Zero)
+    } else {
+      # CU-OPS-ADJ-06: a new button (middle/side) is DOWN only for the span of this
+      # block, and the UP runs in a finally - a failure between the two must not leave
+      # the button held down with a receipt that claims a completed click.
+      [void](Invoke-MouseButtonEvent $mb.Name $true)
+      try {
+        Start-Sleep -Milliseconds 60
+      } finally {
+        [void](Invoke-MouseButtonEvent $mb.Name $false)
+      }
+    }
+    Start-Sleep -Milliseconds 200
+  }
+  if ($modList.Count -gt 0) {
+    $rc = Invoke-ModifierGesture $modList $act
+    $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+  } else {
+    & $act
+    $script:LastMouseReceipt = ''
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -9103,7 +9727,7 @@ function Invoke-Handler-win([string]$Cmd, [string[]]$Rest) {
       $pf = Parse-CaptureFlags @($of.Words) $false
       if ($pf.Rest.Count -lt 1) { throw 'usage: win <sel> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--occlude off|warn|strict]' }
       $w = Resolve-Window $pf.Rest[0]
-      if (-not $w) { throw "no window matching: $($pf.Rest[0])" }
+      if (-not $w) { throw (Format-WindowMissMessage $pf.Rest[0]) }
       Emit-ResolveNote
       # A minimized window's rect is the -32000 parking spot: capturing it
       # silently produced a garbage screenshot (audit 2026-09-29b #10). Read
@@ -9128,7 +9752,7 @@ function Invoke-Handler-win([string]$Cmd, [string[]]$Rest) {
 function Invoke-Handler-info([string]$Cmd, [string[]]$Rest) {
       if ($Rest.Count -lt 1) { throw 'usage: info <sel>' }
       $w = Resolve-Window $Rest[0]
-      if (-not $w) { throw "no window matching: $($Rest[0])" }
+      if (-not $w) { throw (Format-WindowMissMessage $Rest[0]) }
       Emit-ResolveNote
       $cr = New-Object DT+RECT
       [void][DT]::GetClientRect($w.Handle, [ref]$cr)
@@ -9173,7 +9797,7 @@ function Invoke-Handler-rect([string]$Cmd, [string[]]$Rest) {
 function Invoke-Handler-rect-of([string]$Cmd, [string[]]$Rest) {
       if ($Rest.Count -lt 1) { throw 'usage: rect-of <sel>' }
       $w = Resolve-Window $Rest[0]
-      if (-not $w) { throw "no window matching: $($Rest[0])" }
+      if (-not $w) { throw (Format-WindowMissMessage $Rest[0]) }
       Emit-ResolveNote
       if ($script:Json) {
         [pscustomobject]@{ x = $w.Left; y = $w.Top; w = $w.W; h = $w.H } | ConvertTo-Json -Compress
@@ -10095,6 +10719,584 @@ function Invoke-Handler-assert-stable([string]$Cmd, [string[]]$Rest) {
 }
 
 
+# ---------------------------------------------------------------------------
+# CU-OPS-COMPLETE-20261026-01 (package A): process observation, launch, wait.
+#
+# The gap this closes: "the app is stuck" had no accurate way out - wins only shows
+# windows, and there was no way to see a process without one, wait for it to exit, or
+# terminate exactly it. These commands are bound to a PID AND its creation time, because
+# a PID alone is reused: an identity that does not match its recorded creation time is
+# refused instead of acted on. Unreadable fields are printed as denied/unknown - never
+# silently dropped, never turned into "does not exist".
+#
+# Termination lives in handlers-act (proc-kill) and is preview-by-default.
+# ---------------------------------------------------------------------------
+
+$script:ProcSystemNames = @('system', 'idle', 'registry', 'memory compression', 'csrss', 'wininit', 'winlogon',
+  'services', 'lsass', 'smss', 'svchost', 'dwm', 'explorer', 'sihost', 'taskhostw', 'fontdrvhost',
+  'spoolsv', 'audiodg', 'securityhealthservice', 'msmpeng', 'searchindexer')
+
+# One process -> the fields every proc command reports. Each field is read under its own
+# try/catch so a single protected property cannot erase the rest of the identity.
+function Get-ProcSnapshot([int]$procId) {
+  $snap = [ordered]@{
+    pid = $procId; name = 'unknown'; path = 'unknown'; start = 'unknown'
+    responding = 'unknown'; hwnd = 'unknown'; title = 'unknown'
+    session = 'unknown'; threads = 'unknown'; ws_mb = 'unknown'; handles = 'unknown'
+    exists = $false; protected = $false
+  }
+  $pr = $null
+  try { $pr = Get-Process -Id $procId -ErrorAction Stop } catch { return $snap }
+  $snap.exists = $true
+  try { $snap.name = [string]$pr.ProcessName } catch { $snap.name = 'denied' }
+  if ($script:ProcSystemNames -contains $snap.name.ToLowerInvariant()) { $snap.protected = $true }
+  if ($procId -eq 0 -or $procId -eq 4) { $snap.protected = $true }
+  try { $snap.path = [string]$pr.Path } catch { $snap.path = 'denied' }
+  if ($snap.path -eq '') { $snap.path = 'denied' }
+  try { $snap.start = $pr.StartTime.ToString('o') } catch { $snap.start = 'denied' }
+  try { $snap.responding = [bool]$pr.Responding } catch { $snap.responding = 'denied' }
+  try { $snap.hwnd = $pr.MainWindowHandle.ToInt64() } catch { $snap.hwnd = 'denied' }
+  try { $snap.title = [string]$pr.MainWindowTitle } catch { $snap.title = 'denied' }
+  try { $snap.session = [int]$pr.SessionId } catch { $snap.session = 'denied' }
+  try { $snap.threads = [int]$pr.Threads.Count } catch { $snap.threads = 'denied' }
+  try { $snap.ws_mb = [int][math]::Round($pr.WorkingSet64 / 1MB) } catch { $snap.ws_mb = 'denied' }
+  try { $snap.handles = [int]$pr.HandleCount } catch { $snap.handles = 'denied' }
+  return $snap
+}
+
+function Format-ProcSnapshot($s) {
+  if (-not $s.exists) { return "pid=$($s.pid) exists=false (no process with that id right now)" }
+  $hw = if ($s.hwnd -eq 'unknown' -or $s.hwnd -eq 'denied') { $s.hwnd } else { '0x' + ([int64]$s.hwnd).ToString('X') }
+  return ("pid=$($s.pid) name=$($s.name) start=$($s.start) path=$($s.path) responding=$($s.responding) hwnd=$hw title='$($s.title)' session=$($s.session) threads=$($s.threads) ws=$($s.ws_mb)MB handles=$($s.handles)" + $(if ($s.protected) { ' protected=yes' } else { '' }))
+}
+
+# Is this PID still the same process that was observed? Creation time is the identity:
+# a reused PID has a different one. CU-OPS-ADJ-01 (v4.6.1): the comparison is EXACT ticks,
+# with no tolerance - a 1s tolerance still let a process created one second after the pin
+# pass as "the same". Both sides come from Process.StartTime (the same FILETIME), so there
+# is no read jitter for a tolerance to absorb.
+function Test-ProcIdentity([int]$procId, [string]$createdIso) {
+  $s = Get-ProcSnapshot $procId
+  if (-not $s.exists) { return @{ Ok = $false; Why = 'process-not-running'; Snap = $s } }
+  if ($createdIso -eq '' -or $null -eq $createdIso) { return @{ Ok = $true; Why = 'no-created-pin'; Snap = $s } }
+  if ($s.start -eq 'denied' -or $s.start -eq 'unknown') { return @{ Ok = $false; Why = "creation time unreadable ($($s.start)) so the identity cannot be confirmed"; Snap = $s } }
+  $want = [datetime]::MinValue
+  if (-not [datetime]::TryParse($createdIso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$want)) {
+    if (-not [datetime]::TryParse($createdIso, [ref]$want)) { return @{ Ok = $false; Why = "unparseable --created '$createdIso'"; Snap = $s } }
+  }
+  $have = [datetime]::Parse($s.start, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+  $diff = ($have.ToUniversalTime() - $want.ToUniversalTime()).TotalSeconds
+  if ($diff -ne 0) { return @{ Ok = $false; Why = "creation time mismatch: recorded $createdIso, now $($s.start) (diff $diff s; the creation time must be exact - any other process, however close, is a different one)"; Snap = $s } }
+  return @{ Ok = $true; Why = 'creation time matches exactly'; Snap = $s }
+}
+
+# proc-list [nameFilter] - every process, window or not. The window columns are blank
+# for a process without one; that is the point (a background app has no `wins` row).
+function Invoke-Handler-proc-list([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-list'
+  $words = @($own.Rest)
+  $filter = ''
+  foreach ($a in $words) {
+    if ($filter) { throw 'usage: proc-list [name-filter]' }
+    $filter = "$a"
+  }
+  $all = @(Get-Process | Sort-Object ProcessName, Id)
+  $n = 0
+  foreach ($pr in $all) {
+    $name = ''
+    try { $name = [string]$pr.ProcessName } catch { $name = 'unknown' }
+    if ($filter -and ($name -notlike "*$filter*")) { continue }
+    $s = Get-ProcSnapshot ([int]$pr.Id)
+    $line = Format-ProcSnapshot $s
+    if ($s.exists -and ($s.hwnd -eq 0)) { $line = $line + ' nowindow=yes' }
+    $line
+    $n++
+  }
+  "proc-list: $n process(es)$(if ($filter) { " matching '$filter'" }) of $(@($all).Count) total  (a process without a visible window is listed too - no nowindow row is an absence of that process, not of its window)"
+}
+
+# proc-info <pid> - one identity, plus every top-level window the PID owns.
+function Invoke-Handler-proc-info([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-info'
+  $words = @($own.Rest)
+  if ($words.Count -lt 1) { throw 'usage: proc-info <pid>' }
+  $pidNum = 0
+  if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-info: '$($words[0])' is not a pid" }
+  $s = Get-ProcSnapshot $pidNum
+  Format-ProcSnapshot $s
+  if ($s.exists) {
+    $wins = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum })
+    if (@($wins).Count -eq 0) { 'windows: none visible to this desktop (a background process legitimately has no window)' }
+    else {
+      "windows: $(@($wins).Count)"
+      foreach ($w in $wins) { "  hwnd=0x$(([int64]$w.Handle).ToString('X')) class=$($w.Class) rect=($($w.Left),$($w.Top))-($($w.Right),$($w.Bottom)) title='$($w.Title)'" }
+    }
+  }
+}
+
+# proc-wait <pid> --exit|--window [--created <iso>] [--timeout s] [--interval ms]
+# Two different predicates, deliberately not one: the process ending and its window
+# disappearing are separate facts, and a caller that needs one must not be told the other.
+function Invoke-Handler-proc-wait([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-wait'
+  $words = @($own.Rest)
+  $waitExit = [bool]$own.Values['--exit']
+  $waitWin = [bool]$own.Values['--window']
+  $created = [string]$own.Values['--created']
+  $timeout = [int]$own.Values['--timeout']
+  $interval = [int]$own.Values['--interval']
+  if ($words.Count -lt 1) { throw 'usage: proc-wait <pid> [--exit|--window] [--created <iso>] [--timeout s] [--interval ms]' }
+  if ($waitExit -eq $waitWin) { throw 'proc-wait: say which predicate to wait for: --exit (process gone) or --window (a top-level window appears) - exactly one' }
+  $mode = if ($waitExit) { 'exit' } else { 'window' }
+  $pidNum = 0
+  if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-wait: '$($words[0])' is not a pid" }
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $lastWhy = ''
+  while ($sw.Elapsed.TotalSeconds -lt $timeout) {
+    $id = Test-ProcIdentity $pidNum $created
+    if (-not $id.Ok) {
+      if ($id.Why -eq 'process-not-running') {
+        if ($mode -eq 'exit') { "proc-wait: pid=$pidNum exited after $([math]::Round($sw.Elapsed.TotalSeconds,1))s (creation pin: $(if ($created) { $created } else { 'none' }))"; return }
+        throw "proc-wait: pid=$pidNum is not running, so --window can never be satisfied (waited $([math]::Round($sw.Elapsed.TotalSeconds,1))s)"
+      }
+      throw "proc-wait: identity refused - $($id.Why)"
+    }
+    if ($mode -eq 'window') {
+      $hasWin = $false
+      try { $hasWin = ($id.Snap.hwnd -ne 0 -and $id.Snap.hwnd -ne 'denied' -and $id.Snap.hwnd -ne 'unknown') } catch { $hasWin = $false }
+      if ($hasWin) { "proc-wait: pid=$pidNum window appeared after $([math]::Round($sw.Elapsed.TotalSeconds,1))s hwnd=0x$(([int64]$id.Snap.hwnd).ToString('X')) title='$($id.Snap.title)'  start=$($id.Snap.start)"; return }
+    } else {
+      # --exit: the process is running, that is all this poll proved
+      $lastWhy = 'still running'
+    }
+    Start-Sleep -Milliseconds $interval
+  }
+  if ($mode -eq 'exit') { throw "proc-wait: timeout after ${timeout}s - pid=$pidNum still running ($lastWhy). A kill request is a separate, explicit command (proc-kill); this wait does not escalate by itself" }
+  throw "proc-wait: timeout after ${timeout}s - pid=$pidNum has no top-level window yet (a background process may never get one)"
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package F (v4.6.0): tpl-find - deterministic template location.
+# Determinism is the whole contract: ONE nearest-neighbour resample per requested
+# scale (no interpolation modes to drift), integer pixel comparison with an explicit
+# per-channel tolerance, a bounded search area and a bounded time budget, and its own
+# numbers printed. Multi-hit is a REFUSAL, not a guess: two matches mean the caller
+# has not said which one it means, and picking the first would be the "roughly this
+# title" mistake moved into pixels. imgclick keeps its own semantics; this command
+# only reports points and never clicks.
+# ---------------------------------------------------------------------------
+function Get-Bitmap32Bytes($bmp) {
+  $rect = New-Object System.Drawing.Rectangle(0, 0, $bmp.Width, $bmp.Height)
+  $bd = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  try {
+    $bytes = New-Object byte[] ($bd.Stride * $bmp.Height)
+    [System.Runtime.InteropServices.Marshal]::Copy($bd.Scan0, $bytes, 0, $bytes.Length)
+  } finally { $bmp.UnlockBits($bd) }
+  return @{ Bytes = $bytes; Stride = $bd.Stride; W = $bmp.Width; H = $bmp.Height }
+}
+
+function ConvertTo-Bitmap32($bmp) {
+  if ($bmp.PixelFormat -eq [System.Drawing.Imaging.PixelFormat]::Format32bppArgb) { return $bmp }
+  $norm = New-Object System.Drawing.Bitmap($bmp.Width, $bmp.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $g = [System.Drawing.Graphics]::FromImage($norm)
+  try { $g.DrawImage($bmp, 0, 0, $bmp.Width, $bmp.Height) } finally { $g.Dispose() }
+  return $norm
+}
+
+function Resize-BitmapNearest($bmp, [double]$scale) {
+  $nw = [int][math]::Round($bmp.Width * $scale)
+  $nh = [int][math]::Round($bmp.Height * $scale)
+  if ($nw -lt 1 -or $nh -lt 1) { throw "tpl-find: scale $scale shrinks the template to ${nw}x${nh} - nothing to match; keep the scales so the template stays at least 1x1" }
+  $dst = New-Object System.Drawing.Bitmap($nw, $nh, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $g = [System.Drawing.Graphics]::FromImage($dst)
+  try {
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+    $g.DrawImage($bmp, 0, 0, $nw, $nh)
+  } finally { $g.Dispose() }
+  return $dst
+}
+
+# One position test used by the self-test only: nine anchors first (cheap rejection),
+# then the full template. The scanner itself runs the compiled [TPL] loop in desktop.ps1
+# (the same comparison); this PowerShell twin exists so a selftest can pin the semantics
+# without a screen.
+function Test-TemplateAt($hay, $need, [int]$ox, [int]$oy, [int]$tol) {
+  $tw = $need.W; $th = $need.H
+  $hb = $hay.Bytes; $nb = $need.Bytes
+  $hs = $hay.Stride; $ns = $need.Stride
+  $twLast = $tw - 1
+  $thLast = $th - 1
+  $xs = @(0, [int]($twLast / 2), $twLast)
+  $ys = @(0, [int]($thLast / 2), $thLast)
+  foreach ($ay in $ys) {
+    foreach ($ax in $xs) {
+      $no = $ay * $ns + $ax * 4
+      if ($nb[$no + 3] -eq 0) { continue }
+      $ho = ($oy + $ay) * $hs + ($ox + $ax) * 4
+      if ([math]::Abs([int]$hb[$ho + 2] - [int]$nb[$no + 2]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho + 1] - [int]$nb[$no + 1]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho] - [int]$nb[$no]) -gt $tol) { return $false }
+    }
+  }
+  for ($y = 0; $y -lt $th; $y++) {
+    $nrow = $y * $ns
+    $hrow = ($oy + $y) * $hs
+    for ($x = 0; $x -lt $tw; $x++) {
+      $no = $nrow + $x * 4
+      if ($nb[$no + 3] -eq 0) { continue }
+      $ho = $hrow + ($ox + $x) * 4
+      if ([math]::Abs([int]$hb[$ho + 2] - [int]$nb[$no + 2]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho + 1] - [int]$nb[$no + 1]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho] - [int]$nb[$no]) -gt $tol) { return $false }
+    }
+  }
+  return $true
+}
+
+function Invoke-Handler-tpl-find([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'tpl-find'
+      $p = Split-Target @($own.Rest) 'tpl-find'
+      if ($p.Words.Count -ne 1) { throw 'usage: tpl-find <templatePath> [--to <sel>] [--region x,y,w,h] [--space screen|window|client] [--tolerance n] [--scales 1,1.25] [--index n] [--max-ms ms]' }
+      $tplPath = [string]$p.Words[0]
+      if (-not (Test-Path -LiteralPath $tplPath -PathType Leaf)) { throw "template not found: $tplPath" }
+      $tol = [int]$own.Values['--tolerance']
+      $maxMs = [int]$own.Values['--max-ms']
+      $indexPassed = [bool]$own.Present['--index']
+      $index = [int]$own.Values['--index']
+      $scaleText = [string]$own.Values['--scales']
+      if ($scaleText -eq '') { $scaleText = '1' }
+      $scales = New-Object System.Collections.ArrayList
+      foreach ($s in @("$scaleText" -split ',')) {
+        $sv = 0.0
+        if (-not [double]::TryParse($s.Trim(), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$sv)) { throw "tpl-find: --scales needs comma-separated numbers, got '$s'; nothing was read" }
+        if ($sv -lt 0.5 -or $sv -gt 2.0) { throw "tpl-find: scale $sv is outside 0.5..2.0 (bounded on purpose - a wide ladder turns a locator into a guess); nothing was read" }
+        [void]$scales.Add($sv)
+      }
+      if ($scales.Count -lt 1 -or $scales.Count -gt 3) { throw "tpl-find: --scales accepts 1..3 values, got $($scales.Count); nothing was read" }
+      $spaceArg = [string]$own.Values['--space']
+      $space = if ($spaceArg) { Test-PointSpaceArg $spaceArg } elseif ($p.Sel) { 'window' } else { 'screen' }
+      $created = [string]$own.Values['--created']
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "tpl-find: --space $space needs --to <sel> (a relative region has no origin without a named window); nothing was read" }
+      $regionText = [string]$own.Values['--region']
+      $tgt = $null
+      if ($p.Sel) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
+        Emit-ResolveNote
+      }
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $rx = 0; $ry = 0; $rw = $origin.W; $rh = $origin.H
+      if ($space -eq 'screen' -and -not $regionText) {
+        # screen space has no window to size the search: the default is the virtual
+        # desktop, and the 3,000,000-pixel bound below decides whether that is allowed.
+        $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+        $rx = [int]$vs.X; $ry = [int]$vs.Y; $rw = [int]$vs.Width; $rh = [int]$vs.Height
+      }
+      if ($regionText) {
+        $rn = @("$regionText" -split ',' | ForEach-Object { $_.Trim() })
+        if ($rn.Count -ne 4) { throw "tpl-find: --region needs x,y,w,h, got: $regionText" }
+        $rx = [int]$rn[0]; $ry = [int]$rn[1]; $rw = [int]$rn[2]; $rh = [int]$rn[3]
+      }
+      if ($rw -le 0 -or $rh -le 0) { throw "tpl-find: the search region is ${rw}x${rh} - nothing to read" }
+      if ($space -ne 'screen') {
+        if ($rx -lt 0 -or $ry -lt 0 -or ($rx + $rw) -gt $origin.W -or ($ry + $rh) -gt $origin.H) {
+          throw ('tpl-find: region ' + $rx + ',' + $ry + ',' + $rw + ',' + $rh + ' is outside the target area ' + $origin.W + 'x' + $origin.H + ' (space=' + $space + '); nothing was read and no clamping was applied')
+        }
+      }
+      $area = [int64]$rw * [int64]$rh
+      if ($area -gt 3000000) { throw "tpl-find: region $($rw)x$($rh) is $area pixels - above the 3,000,000-pixel bound; pass a smaller --region (a locator that scans the whole desktop is a guess) " }
+
+      $tplSrc = New-Object System.Drawing.Bitmap((Get-Item -LiteralPath $tplPath).FullName)
+      $tplNorm = $null
+      $hits = New-Object System.Collections.ArrayList
+      $positions = 0
+      # CU-OPS F: do not race our OWN activation. When this call was the one that raised
+      # the window (activated=yes), the client area can still be mid-repaint for a moment,
+      # and a capture taken inside that window reports "no match" for a pattern that is
+      # plainly there - measured 2026-10-27 on the F fixture: the first call after
+      # activation failed, the identical second call matched. The settle is only paid
+      # when activation actually happened, and it is printed in the receipt.
+      $settleMs = 0
+      if ($null -ne $tgt -and [bool]$tgt.Activated) {
+        $settleMs = 300
+        Start-Sleep -Milliseconds $settleMs
+      }
+      $sw = [System.Diagnostics.Stopwatch]::StartNew()
+      try {
+        $tplNorm = ConvertTo-Bitmap32 $tplSrc
+        $cap = Get-ScreenBitmap ($origin.X + $rx) ($origin.Y + $ry) $rw $rh 1.0
+        try {
+          $hay = Get-Bitmap32Bytes $cap.Bitmap
+          foreach ($s in @($scales)) {
+            $tb = $null
+            $t32 = $null
+            try {
+              $tb = Resize-BitmapNearest $tplNorm $s
+              $t32 = ConvertTo-Bitmap32 $tb
+              $need = Get-Bitmap32Bytes $t32
+              if ($need.W -gt $hay.W -or $need.H -gt $hay.H) { continue }
+              $posOut = [int64]0
+              $overOut = $false
+              $raw = [TPL]::Find($hay.Bytes, $hay.Stride, $hay.W, $hay.H, $need.Bytes, $need.Stride, $need.W, $need.H, $tol, ($maxMs - [int]$sw.ElapsedMilliseconds), [ref]$posOut, [ref]$overOut)
+              $positions = $positions + [int]$posOut
+              if ($overOut) {
+                throw ('tpl-find: the search exceeded its ' + $maxMs + 'ms budget after ' + $positions + ' positions at scale ' + $s + ' - narrow --region or pass fewer --scales; no match list is being invented')
+              }
+              foreach ($pair in @($raw)) {
+                $hx = [int]($pair -shr 32)
+                $hy = [int]($pair -band 0xFFFFFFFFL)
+                [void]$hits.Add([pscustomobject]@{ X = ($origin.X + $rx + $hx); Y = ($origin.Y + $ry + $hy); RelX = ($rx + $hx); RelY = ($ry + $hy); Scale = $s; W = $need.W; H = $need.H })
+              }
+            } finally {
+              if ($null -ne $t32 -and -not [object]::ReferenceEquals($t32, $tb)) { $t32.Dispose() }
+              if ($null -ne $tb) { $tb.Dispose() }
+            }
+          }
+        } finally { $cap.Bitmap.Dispose() }
+      } finally {
+        if ($null -ne $tplNorm -and -not [object]::ReferenceEquals($tplNorm, $tplSrc)) { $tplNorm.Dispose() }
+        $tplSrc.Dispose()
+      }
+      # Non-maximum suppression: matches whose boxes OVERLAP are one object seen twice
+      # (a solid glyph matches at every offset inside itself, and a pattern found at two
+      # scales is still one pattern). Genuinely separate copies do not overlap and are
+      # kept apart - which is exactly what the ambiguity refusal below reports.
+      $uniq = New-Object System.Collections.ArrayList
+      foreach ($h in @($hits | Sort-Object Y, X)) {
+        $dup = $false
+        foreach ($u in $uniq) {
+          $limX = [math]::Max([int]$h.W, [int]$u.W)
+          $limY = [math]::Max([int]$h.H, [int]$u.H)
+          if ([math]::Abs([int]$h.X - [int]$u.X) -lt $limX -and [math]::Abs([int]$h.Y - [int]$u.Y) -lt $limY) { $dup = $true; break }
+        }
+        if (-not $dup) { [void]$uniq.Add($h) }
+      }
+      $elapsed = [int]$sw.ElapsedMilliseconds
+      if ($uniq.Count -eq 0) { throw "tpl-find: no match for '$tplPath' in region ($($origin.X + $rx),$($origin.Y + $ry)) ${rw}x${rh} (tolerance $tol, scales $scaleText, space=$space, positions=$positions ms=$elapsed settle=${settleMs}ms)" }
+      if (-not $indexPassed -and $uniq.Count -gt 1) {
+        $list = (@($uniq | ForEach-Object { "screen=($($_.X),$($_.Y)) rel=($($_.RelX),$($_.RelY))@$($_.Scale)" }) -join ', ')
+        throw "tpl-find: $($uniq.Count) matches for '$tplPath' - ambiguous, nothing was chosen: $list. Pass --index n, or narrow --region, or raise the fidelity (lower --tolerance)."
+      }
+      if ($indexPassed -and $index -ge @($uniq).Count) { throw "tpl-find: --index $index is out of range - only $(@($uniq).Count) match(es) were found" }
+      $chosen = if ($indexPassed) { @($uniq)[$index] } else { @($uniq)[0] }
+      if ($script:Json) {
+        [pscustomobject]@{
+          template = (Split-Path -Leaf $tplPath)
+          tolerance = $tol
+          space = $space
+          region = [pscustomobject]@{ x = ($origin.X + $rx); y = ($origin.Y + $ry); w = $rw; h = $rh }
+          matches = @($uniq | ForEach-Object { [pscustomobject]@{ x = $_.X; y = $_.Y; relx = $_.RelX; rely = $_.RelY; w = $_.W; h = $_.H; scale = $_.Scale } })
+          selected = [pscustomobject]@{ x = $chosen.X; y = $chosen.Y; relx = $chosen.RelX; rely = $chosen.RelY; w = $chosen.W; h = $chosen.H; scale = $chosen.Scale }
+          positions = $positions
+          ms = $elapsed
+          settleMs = $settleMs
+        } | ConvertTo-Json -Compress -Depth 5
+      } else {
+        "tpl-find: template=$(Split-Path -Leaf $tplPath) tolerance=$tol scales=$scaleText space=$space region=($($origin.X + $rx),$($origin.Y + $ry)) ${rw}x${rh} matches=$(@($uniq).Count) positions=$positions ms=$elapsed settle=${settleMs}ms"
+        $k = 0
+        foreach ($u in @($uniq)) { "  match[$k] screen=($($u.X),$($u.Y)) rel=($($u.RelX),$($u.RelY)) size=$($u.W)x$($u.H) scale=$($u.Scale)"; $k++ }
+        "  selected index=$(if ($indexPassed) { $index } else { 0 }) screen=($($chosen.X),$($chosen.Y))  (tpl-find only locates; it never clicks)"
+      }
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package G (v4.6.1): clip-info - READ-ONLY clipboard metadata.
+# It exists so "what is on the clipboard, and can this tool put it back" can be
+# answered WITHOUT touching the content: format names, counts, and a restorable
+# verdict derived from the SAME branch Save/Restore-ClipboardState use.
+# v4.6.1: this handler reads the FORMAT LIST and nothing else. It no longer calls
+# Save-ClipboardState (which opens text/FileDrop, decodes the image and may write a
+# temp PNG), so the "metadata only" promise is now true by construction; the image is
+# reported as a FORMAT, never by size, and no carrier file is created or deleted here.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'clip-info'
+      if (@($own.Rest).Count -ne 0) { throw 'usage: clip-info [--json] - it takes no positional arguments (use paste/paste-file/copy-file to change the clipboard)' }
+      $formats = @()
+      try {
+        $do = [System.Windows.Forms.Clipboard]::GetDataObject()
+        if ($null -ne $do) { $formats = @($do.GetFormats()) }
+      } catch { $formats = @() }
+      $plan = Get-ClipboardFormatPlan $formats
+      # A plan-shaped state, not a saved snapshot: content fields are deliberately empty
+      # because this command never opened them.
+      $st = @{ Kind = $plan.Kind; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @($plan.Formats); Extras = @($plan.Extras) }
+      $imgNote = if ($plan.HasImage) { 'Bitmap/DIB format present - content NOT decoded by this read-only command (the writing command saves the carrier)' } else { 'none' }
+      $textNote = if ($plan.HasText) { 'present - content NOT read by this read-only command' } else { 'none' }
+      $filesNote = if ($plan.HasFiles) { 'FileDrop present - the list was NOT read by this read-only command' } else { 'none' }
+      $extrasNote = if (@($plan.Extras).Count -gt 0) { Format-ClipboardFormatNames $plan.Extras } else { 'none' }
+      $restorable = Get-ClipboardRestorableVerdict $st
+      if ($script:Json) {
+        [pscustomobject]@{
+          kind = $plan.Kind
+          formats = $formats
+          extras = @($plan.Extras)
+          text = $textNote
+          files = $filesNote
+          image = $imgNote
+          restorable = $restorable
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        "clipboard kind=$($plan.Kind) formats=$(@($plan.Formats).Count) unknown=$($extrasNote)"
+        "  formats: " + $(if (@($plan.Formats).Count -gt 0) { (@($plan.Formats) -join ', ') } else { '(none)' })
+        "  text: $textNote"
+        "  files: $filesNote"
+        "  image: $imgNote"
+        "  restorable by this tool: $restorable"
+        "  (read-only: no text, file list or image was read or decoded, and nothing was written)"
+      }
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package D (v4.6.0): wait-cond - ONE bounded wait for the conditions the
+# older commands each cover separately, with the three outcomes kept distinct:
+# matched, timed out, and COULD NOT READ (a read that throws is never reported as
+# "the condition did not happen"). Read-only; it never activates or clicks.
+# ---------------------------------------------------------------------------
+function Get-WaitUiaState([string]$wSel, [string]$nameSub, [Hashtable]$found) {
+  $w = Resolve-Window $wSel
+  if (-not $w) { return 'gone' }
+  $rr = Uia-Roots $w
+  if ($rr.Roots.Count -lt 1) { return 'no-uia-root' }
+  $el = Uia-Find $rr.Roots $nameSub ''
+  if (-not $el) { return 'not-found' }
+  $st = ''
+  $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
+  if ($null -ne $tp) { return ('toggle:' + [string]$tp.Current.ToggleState) }
+  $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+  if ($null -ne $si) { return ('selected:' + ([bool]$si.Current.IsSelected).ToString()) }
+  $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+  if ($null -ne $ec) { return ('expand:' + [string]$ec.Current.ExpandCollapseState) }
+  return 'no-state-pattern'
+}
+
+function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'wait-cond'
+      $words = @($own.Rest)
+      if ($words.Count -ne 1) { throw 'usage: wait-cond <sel> (--win | --gone | --foreground | --text <needle> | --uia <nameSub> [--state <On|Off|Expanded|Collapsed|Selected|NotSelected>]) [--timeout s] [--interval ms]' }
+      $sel = [string]$words[0]
+      $wantWin = [bool]$own.Values['--win']
+      $wantGone = [bool]$own.Values['--gone']
+      $wantFg = [bool]$own.Values['--foreground']
+      $needle = [string]$own.Values['--text']
+      $uiaName = [string]$own.Values['--uia']
+      $wantState = [string]$own.Values['--state']
+      $preds = 0
+      foreach ($b in @($wantWin, $wantGone, $wantFg, [bool]($needle -ne ''), [bool]($uiaName -ne ''))) { if ($b) { $preds++ } }
+      if ($preds -ne 1) { throw 'wait-cond: give exactly ONE predicate (--win, --gone, --foreground, --text <needle> or --uia <nameSub>); nothing was polled' }
+      if ($wantState -ne '' -and $uiaName -eq '') { throw 'wait-cond: --state only means something with --uia <nameSub>; nothing was polled' }
+      if ($wantState -ne '' -and $wantState -notin @('On', 'Off', 'Expanded', 'Collapsed', 'Selected', 'NotSelected')) { throw "wait-cond: --state must be On|Off|Expanded|Collapsed|Selected|NotSelected, got '$wantState'; nothing was polled" }
+      $timeout = [int]$own.Values['--timeout']
+      $interval = [int]$own.Values['--interval']
+      $sw = [System.Diagnostics.Stopwatch]::StartNew()
+      $lastRead = ''
+      $readErrors = 0
+      $polls = 0
+      while ($sw.Elapsed.TotalSeconds -lt $timeout) {
+        $polls++
+        $ok = $false
+        try {
+          if ($wantWin -or $wantGone -or $wantFg) {
+            $w = Resolve-Window $sel
+            if ($wantWin) { $ok = ($null -ne $w); $lastRead = $(if ($w) { "hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'no window' }) }
+            elseif ($wantGone) { $ok = ($null -eq $w); $lastRead = $(if ($w) { "still hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'gone' }) }
+            else {
+              $fg = Get-ForegroundInfo
+              $ok = ("$fg".Contains("pid=$($w.Pid)")) -and ($null -ne $w)
+              $lastRead = "foreground=$fg"
+            }
+          } elseif ($needle -ne '') {
+            $w = Resolve-Window $sel
+            if (-not $w) { throw "target window '$sel' is gone - a text wait cannot read a window that is not there" }
+            $r = Get-TargetRect $w
+            if ($null -eq $r) { throw "the target rect for '$sel' could not be read now" }
+            $f = Find-OcrHitsScaled $r.X $r.Y $r.W $r.H $needle 'auto' 16 $false
+            $ok = (@($f.Hits).Count -gt 0)
+            $lastRead = "ocr hits=$(@($f.Hits).Count)"
+          } else {
+            $got = Get-WaitUiaState $sel $uiaName $null
+            $lastRead = $got
+            if ($wantState -eq '') { $ok = ($got -ne 'gone' -and $got -ne 'no-uia-root' -and $got -ne 'not-found' -and $got -ne 'no-state-pattern') }
+            elseif ($wantState -in @('On', 'Off')) { $ok = ($got -ceq ('toggle:' + $wantState)) }
+            elseif ($wantState -in @('Expanded', 'Collapsed')) { $ok = ($got -ceq ('expand:' + $wantState)) }
+            else { $ok = ($got -ceq ('selected:' + $(if ($wantState -eq 'Selected') { 'True' } else { 'False' }))) }
+          }
+        } catch {
+          $readErrors++
+          $lastRead = 'read error: ' + $_.Exception.Message
+        }
+        if ($ok) {
+          $mode = $(if ($wantWin) { 'win' } elseif ($wantGone) { 'gone' } elseif ($wantFg) { 'foreground' } elseif ($needle -ne '') { 'text' } else { 'uia' })
+          "wait-cond $mode met after $([math]::Round($sw.Elapsed.TotalSeconds,1))s ($polls polls): $lastRead"
+          return
+        }
+        Start-Sleep -Milliseconds $interval
+      }
+      if ($readErrors -gt 0 -and $readErrors -eq $polls) {
+        throw "wait-cond: timed out after ${timeout}s but EVERY poll failed to read ($lastRead) - this is a read failure, not evidence the condition stayed false"
+      }
+      $mode = $(if ($wantWin) { 'win' } elseif ($wantGone) { 'gone' } elseif ($wantFg) { 'foreground' } elseif ($needle -ne '') { 'text' } else { 'uia' })
+      throw "wait-cond: timeout after ${timeout}s waiting for $mode on '$sel' ($polls polls, $readErrors read errors); last read: $lastRead"
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package H (v4.6.0): capabilities - the command surface DERIVED from the
+# dispatcher's own registry, not a second hand-written list. Each name comes from
+# $script:StHandlerGroups (whose total this command re-checks), flags come from the
+# same private/shared tables the parsers read, and the entry identity is the file
+# this process is actually running. A name that is registered but unreachable, or
+# a registry total that disagrees with the names summed by group, is an error.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'capabilities'
+      if (@($own.Rest).Count -ne 0) { throw 'usage: capabilities [--json] - it takes no positional arguments' }
+      $names = New-Object System.Collections.ArrayList
+      foreach ($gk in @(Get-HashKeys $script:StHandlerGroups | Sort-Object)) {
+        foreach ($n in @($script:StHandlerGroups[$gk])) { [void]$names.Add([pscustomobject]@{ Name = [string]$n; Group = [string]$gk }) }
+      }
+      $groupsCount = @(Get-HashKeys $script:StHandlerGroups).Count
+      $rows = New-Object System.Collections.ArrayList
+      foreach ($r in @($names | Sort-Object Name)) {
+        $ownF = @(Get-HashKeys (Get-OwnFlagSpec $r.Name) | Sort-Object)
+        $sharedF = @(Get-CommandSharedSet $r.Name)
+        $allF = @(Get-CommandFlagSet $r.Name)
+        [void]$rows.Add([pscustomobject]@{
+          name = $r.Name
+          group = $r.Group
+          ownFlags = $ownF
+          sharedFlags = $sharedF
+          flags = $allF
+          json = (@(Get-ActionJsonCommandSet) -contains $r.Name)
+        })
+      }
+      $entryPath = [string]$script:ToolEntryPath
+      $sha = ''
+      if ($entryPath -ne '' -and (Test-Path -LiteralPath $entryPath -PathType Leaf)) {
+        try { $sha = (Get-FileHash -LiteralPath $entryPath -Algorithm SHA256).Hash.ToLowerInvariant() } catch { $sha = 'unreadable' }
+      }
+      $dpi = [string]$script:DpiMode
+      if ($dpi -eq '') { $dpi = 'unreadable' }
+      if ($script:Json) {
+        [pscustomobject]@{
+          version = $script:ToolVersion
+          entry = [pscustomobject]@{ path = $entryPath; sha256 = $sha }
+          environment = [pscustomobject]@{ psversion = [string]$PSVersionTable.PSVersion; dpi = $dpi; os = [string][System.Environment]::OSVersion.VersionString }
+          counts = [pscustomobject]@{ groups = $groupsCount; names = @($rows).Count }
+          commands = @($rows)
+        } | ConvertTo-Json -Compress -Depth 6
+      } else {
+        "capabilities: version=$($script:ToolVersion) names=$(@($rows).Count) groups=$groupsCount"
+        "  entry: $entryPath"
+        "  sha256: $sha"
+        "  environment: PowerShell $($PSVersionTable.PSVersion)  dpi=$dpi"
+        foreach ($g in @('read', 'act', 'ui', 'batch')) {
+          $gn = @($rows | Where-Object { $_.Group -eq $g })
+          "  [$g] $($gn.Count): " + (($gn | ForEach-Object { $_.name }) -join ' ')
+        }
+        "  (flags/json per command: pass --json for the machine-readable table)"
+      }
+}
+
 # lib/handlers-act.ps1 - the act-group handlers, lifted out of desktop.ps1 (A-17..A-19 line).
 #    Byte-identical to what the dispatcher carried after A-15 pen 2: the union of the lifted lines was
 #    hashed before the cut and the same bytes are re-hashed from this file afterwards (printed by
@@ -10150,73 +11352,125 @@ function Invoke-Handler-hover([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): click - the case body, verbatim
 function Invoke-Handler-click([string]$Cmd, [string[]]$Rest) {
-      # click <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--force]
+      # click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift...]
+      #       [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--force]
       # v1.4.0: a bare coordinate click is still unguarded (it targets whatever
       # sits at the point), but --to activates + verifies a window first and the
       # content guard can assert context BEFORE the click - the audit-point that
       # coordinate clicks were the only zero-guard link in the chain.
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 2) { throw 'usage: click <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--allow-outside] [--force]' }
+      # CU-OPS package B: --button and --mods are stripped BEFORE Split-Target and
+      # validated before the pointer moves, so an unknown button or an already-held
+      # modifier refuses with no input sent.
+      $own = Strip-OwnFlags $Rest 'click'
+      $p = Split-Target @($own.Rest)
+      if ($p.Words.Count -lt 2) { throw 'usage: click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--allow-outside] [--force]' }
+      $button = if ($own.Present['--button']) { [string]$own.Values['--button'] } else { 'left' }
+      $mods = [string]$own.Values['--mods']
+      # CU-OPS package D: the coordinate space is validated before the pointer moves,
+      # and the window origin is read AFTER resolution (see Get-PointSpaceOrigin).
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      [void](Get-MouseButtonSpec $button)
+      [void](Resolve-MouseModifiers $mods)
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
+      $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       $clickLogArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
       if ($null -ne $tgt) { $clickLogArgs = @($clickLogArgs) + @("pid=$($tgt.Pid)") }
-      Log-Action $clickLogArgs "coords=$($p.Words[0]),$($p.Words[1])" $Cmd
-      Move-Click ([int]$p.Words[0]) ([int]$p.Words[1]) 'left'
-      "clicked $($p.Words[0]),$($p.Words[1])"
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
+      Log-Action $clickLogArgs "coords=$($pt.X),$($pt.Y)$spaceLog button=$($button.ToLowerInvariant()) mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
+      Move-Click $pt.X $pt.Y $button $mods
+      "clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry) button=$($button.ToLowerInvariant())$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'clicked'
       Invoke-ActionExpectation $p $tgt 'clicked'
 }
 
 # v4.4.0 (A-15): rclick - the case body, verbatim
 function Invoke-Handler-rclick([string]$Cmd, [string[]]$Rest) {
-      # rclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force] (guards + landing check like click)
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 2) { throw 'usage: rclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      # rclick <x> <y> [--mods shift...] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force] (guards + landing check like click)
+      $own = Strip-OwnFlags $Rest 'rclick'
+      $p = Split-Target @($own.Rest)
+      if ($p.Words.Count -lt 2) { throw 'usage: rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      $mods = [string]$own.Values['--mods']
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      [void](Resolve-MouseModifiers $mods)
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
+      $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($p.Words[0]),$($p.Words[1])" $Cmd
-      Move-Click ([int]$p.Words[0]) ([int]$p.Words[1]) 'right'
-      "right-clicked $($p.Words[0]),$($p.Words[1])"
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
+      Move-Click $pt.X $pt.Y 'right' $mods
+      "right-clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry)$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'right-clicked'
       Invoke-ActionExpectation $p $tgt 'right-clicked'
 }
 
 # v4.4.0 (A-15): dblclick - the case body, verbatim
 function Invoke-Handler-dblclick([string]$Cmd, [string[]]$Rest) {
-      # dblclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--force] (guards like click)
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 2) { throw 'usage: dblclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      # dblclick <x> <y> [--mods ctrl+shift...] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--force] (guards like click)
+      $own = Strip-OwnFlags $Rest 'dblclick'
+      $p = Split-Target @($own.Rest)
+      if ($p.Words.Count -lt 2) { throw 'usage: dblclick <x> <y> [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      $mods = [string]$own.Values['--mods']
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      [void](Resolve-MouseModifiers $mods)
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($p.Words[0]),$($p.Words[1])" $Cmd
+      $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
       $ecb = Get-ExpectChangeBaseline $p $tgt
-      [void][DT]::SetCursorPos([int]$p.Words[0], [int]$p.Words[1])
-      Start-Sleep -Milliseconds 150
-      1..2 | ForEach-Object {
-        [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-        Start-Sleep -Milliseconds 40
-        [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
-        Start-Sleep -Milliseconds 60
+      $script:LastMouseReceipt = ''
+      $mx = $pt.X; $my = $pt.Y
+      $dbl = {
+        [void][DT]::SetCursorPos($mx, $my)
+        Start-Sleep -Milliseconds 150
+        1..2 | ForEach-Object {
+          [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
+          Start-Sleep -Milliseconds 40
+          [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+          Start-Sleep -Milliseconds 60
+        }
       }
-      "double-clicked $($p.Words[0]),$($p.Words[1])"
+      if ($mods) {
+        $rc = Invoke-ModifierGesture @(Resolve-MouseModifiers $mods) $dbl
+        $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+      } else { & $dbl }
+      "double-clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry)$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'double-clicked'
       Invoke-ActionExpectation $p $tgt 'double-clicked'
 }
@@ -10435,6 +11689,19 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       $expectVisibleText = [string]$own.Values['--expect-visible-text']
       $unit = if ($own.Present['--unit']) { [string]$own.Values['--unit'] } else { 'raw' }
       $axis = if ($own.Present['--axis']) { [string]$own.Values['--axis'] } else { 'vertical' }
+      # CU-OPS package B: modifiers are an INPUT to the wheel event. What the application
+      # does with Ctrl+wheel (zoom, horizontal pan, nothing) is the application's decision,
+      # so --verify-scroll is refused with modifiers: a ScrollPattern position change would
+      # be read as "the wheel worked" while the gesture was really a zoom request.
+      $mods = [string]$own.Values['--mods']
+      # CU-OPS package D: relative scroll points are converted against the resolved
+      # target right before the cursor moves (never against a point kept from earlier).
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      $created = [string]$own.Values['--created']
+      $modList = @(Resolve-MouseModifiers $mods)
+      if ($modList.Count -gt 0 -and $verifyScroll) {
+        throw "wheel: '--verify-scroll' cannot be combined with --mods '$mods' - with modifiers a wheel event is an application-defined gesture (zoom, pan, ...) and a changed ScrollPattern position is not evidence it did what you asked; use '--expect-visible-text <needle>' or '--expect-change x,y,w,h' instead; no wheel input was sent"
+      }
       if ($unit.ToLowerInvariant() -notin @('raw', 'notches')) { throw "wheel: '--unit' must be raw or notches, got '$unit'" }
       if ($axis.ToLowerInvariant() -notin @('vertical', 'horizontal')) { throw "wheel: '--axis' must be vertical or horizontal, got '$axis'" }
       $atPresent = [bool]$own.Present['--at']
@@ -10446,6 +11713,7 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       $wordCount = @($p.Words).Count
       if ($wordCount -notin @(0, 1, 3)) { throw "usage: wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>|--at <sel>] [--focus-first] [--expect-change [x,y,w,h]] [--verify-scroll [--expect-change x,y,w,h]|--expect-visible-text <needle>] - coordinates must be a complete x/y pair" }
       if ($atPresent -and $wordCount -ne 3) { throw "wheel: '--at <sel>' requires explicit x y coordinates for the scroll point; a window centre does not identify the target control" }
+      if ($space -ne 'screen' -and $wordCount -ne 3) { throw "wheel: '--space $space' needs explicit x y - a relative space with no point has nothing to convert; no input was sent" }
       $wheelRequest = Resolve-WheelRequest @($p.Words) $unit $axis
       $verificationRequested = $verifyScroll -or -not [string]::IsNullOrWhiteSpace($expectVisibleText)
       if ($verifyScroll -and -not [string]::IsNullOrWhiteSpace($expectVisibleText)) { throw "wheel: choose one verification route: '--verify-scroll' or '--expect-visible-text <needle>'" }
@@ -10465,17 +11733,21 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       }
       $targetSel = if ($atPresent) { $atSel } else { [string]$p.Sel }
       $targetSource = if ($atPresent) { '--at' } elseif ($p.Sel) { '--to' } else { '' }
-      if (-not $targetSel -and ($p.Force -or $p.AlwaysActivate -or $p.ExpectHandle)) {
-        throw "wheel: '--force', '--always-activate' and '--expect-handle' require '--to <sel>' or '--at <sel>'"
+      if ($space -ne 'screen' -and -not $targetSel) { throw "--space $space needs '--to <sel>' or '--at <sel>': a relative scroll point with no named window has no defined origin; no input was sent" }
+      if (-not $targetSel -and ($p.Force -or $p.AlwaysActivate -or $p.ExpectHandle -or $created -or ($space -ne 'screen'))) {
+        throw "wheel: '--force', '--always-activate', '--expect-handle', '--created' and '--space window|client' require '--to <sel>' or '--at <sel>'"
       }
       $tgt = $null
       if ($targetSel) {
-        $tgt = Resolve-Target $targetSel $p.Force $p.AlwaysActivate $p.ExpectHandle
+        $tgt = Resolve-Target $targetSel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
       }
+      $origin = Get-PointSpaceOrigin $space $tgt
       $posInfo = 'at current cursor position'
       if ($wordCount -eq 3) {
-        $posInfo = "at ($wx,$wy)"
+        $wpt = Convert-PointSpace $wx $wy $origin
+        $wx = $wpt.X; $wy = $wpt.Y
+        $posInfo = "at ($wx,$wy)$(if ($origin.Space -eq 'screen') { '' } else { ' space=' + $origin.Space })"
         $requestedX = $wx; $requestedY = $wy
       } else {
         $requestedPoint = New-Object DT+POINT
@@ -10555,8 +11827,21 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       $observed = if ($null -eq $pre.Hit) { '(none)' } else { "pid=$($pre.Hit.Pid) hwnd=$($pre.Hit.Hwnd) title='$($pre.Hit.Title)'" }
       $targetInfo = if ($null -eq $tgt) { 'target=unspecified' } else { "target-check=matched via $targetSource hwnd=$($tgt.Handle)" }
       $effectInfo = if ($verificationRequested) { 'effect-check=bounded-opt-in' } elseif ($p.ExpectChange) { 'effect-check=opt-in-pixel-hash' } else { 'effect=not-verified' }
-      Log-Action @($p.Words) "scroll-point=$($pre.X),$($pre.Y) $targetInfo observed=$observed request=$($wheelRequest.EventName):$($wheelRequest.RawDelta)" $Cmd
-      $inserted = [DT]::SendWheelInput([int]$wheelRequest.RawDelta, [uint32]$wheelRequest.InputFlag)
+      Log-Action @($p.Words) "scroll-point=$($pre.X),$($pre.Y) $targetInfo observed=$observed request=$($wheelRequest.EventName):$($wheelRequest.RawDelta) mods=$(if ($modList.Count -gt 0) { $modList -join '+' } else { 'none' })" $Cmd
+      $inserted = 0
+      $modReceipt = ''
+      # ONE call site on purpose: the CU-REL-04 lint pins "one wheel call is the maximum", so a
+      # modified gesture reuses the same send instead of growing a second [DT]::SendWheelInput line.
+      $wheelSend = { [DT]::SendWheelInput([int]$wheelRequest.RawDelta, [uint32]$wheelRequest.InputFlag) }
+      if ($modList.Count -gt 0) {
+        # The modifiers are pressed and released inside this one call; the wheel event is
+        # the only thing between them, and the release runs even if the event fails.
+        $rc = Invoke-ModifierGesture $modList { $script:WheelInserted = & $wheelSend }
+        $inserted = $script:WheelInserted
+        $modReceipt = Format-ModifierReceipt $rc
+      } else {
+        $inserted = & $wheelSend
+      }
       if ([uint32]$inserted -ne 1) {
         $win32 = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
         throw "wheel: SendInput inserted $inserted of 1 requested event (win32 error $win32); no automatic retry was attempted and no successful wheel receipt was produced"
@@ -10564,7 +11849,7 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       if (-not $verificationRequested) { Start-Sleep -Milliseconds 300 }
       $p2 = New-Object DT+POINT
       [void][DT]::GetCursorPos([ref]$p2)
-      $receipt = "wheel $($wheelRequest.OriginalAmount) unit=$($wheelRequest.Unit) axis=$($wheelRequest.Axis) direction=$($wheelRequest.Direction) raw-delta=$($wheelRequest.RawDelta) amount-source=$($wheelRequest.AmountSource) requested=1 event=$($wheelRequest.EventName) SendInput-inserted=$inserted/1 scroll-point=($($pre.X),$($pre.Y)) observed-before-injection=$observed $targetInfo foreground-before-injection=$($pre.Foreground) $effectInfo  $posInfo  cursor-after=($($p2.X),$($p2.Y))"
+      $receipt = "wheel $($wheelRequest.OriginalAmount) unit=$($wheelRequest.Unit) axis=$($wheelRequest.Axis) direction=$($wheelRequest.Direction) raw-delta=$($wheelRequest.RawDelta) amount-source=$($wheelRequest.AmountSource) requested=1 event=$($wheelRequest.EventName) SendInput-inserted=$inserted/1$modReceipt$(if ($modList.Count -gt 0) { ' gesture-scope=application-defined (a modified wheel event is a request; the application decides whether that is zoom, pan or nothing)' }) scroll-point=($($pre.X),$($pre.Y)) observed-before-injection=$observed $targetInfo foreground-before-injection=$($pre.Foreground) $effectInfo  $posInfo  cursor-after=($($p2.X),$($p2.Y))"
       if (-not $verificationRequested) {
         Write-Output $receipt
         if ($ecb) { Invoke-ExpectChangeCheck $p $ecb 'wheel' }
@@ -10687,39 +11972,90 @@ function Invoke-Handler-drag([string]$Cmd, [string[]]$Rest) {
       $steps = [int]$own.Values['--steps']
       $hold = [int]$own.Values['--hold']
       $p = Split-Target @($own.Rest) 'drag'
-      if ($p.Words.Count -lt 4) { throw 'usage: drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--to <sel>] [--guard-text <s>] [--force]' }
+      if ($p.Words.Count -lt 4) { throw 'usage: drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left|middle|right|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>] [--force]' }
+      # CU-OPS package B: the same one-call press/act/release ownership as the clicks.
+      # Middle-drag (canvas pan), right-drag (some lists and 3D views) and the side
+      # buttons all share this one path, so a new button cannot grow its own unguarded
+      # copy of the drag code.
+      $button = if ($own.Present['--button']) { [string]$own.Values['--button'] } else { 'left' }
+      $mods = [string]$own.Values['--mods']
+      # CU-OPS package D: both endpoints come from ONE origin read, taken after the
+      # target resolved, so a resize between the two conversions cannot split the path.
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      $buttonSpec = Get-MouseButtonSpec $button
+      $modList = @(Resolve-MouseModifiers $mods)
       # X-02: every sibling of this case (click / dblclick / relclick / wheel / press-down /
       # press-up / drag-to / menu-pick) initialises $tgt before the conditional resolve; drag
       # was the one that did not, so a drag WITHOUT --to reached Invoke-HitWindowCheck with a
       # never-set variable. Non-strict that reads as $null; under StrictMode it is a terminating
       # error and the whole command dies before moving the cursor.
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      $x1 = [int]$p.Words[0]; $y1 = [int]$p.Words[1]; $x2 = [int]$p.Words[2]; $y2 = [int]$p.Words[3]
+      $rx1 = [int]$p.Words[0]; $ry1 = [int]$p.Words[1]; $rx2 = [int]$p.Words[2]; $ry2 = [int]$p.Words[3]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $dpt1 = Convert-PointSpace $rx1 $ry1 $origin
+      $dpt2 = Convert-PointSpace $rx2 $ry2 $origin
+      $x1 = $dpt1.X; $y1 = $dpt1.Y; $x2 = $dpt2.X; $y2 = $dpt2.Y
       # Both verdicts exist BEFORE the press - the order here is load-bearing.
       Invoke-HitWindowCheck $x1 $y1 $tgt ($p.Sel -ne '') $p.AllowOutside
       Invoke-HitWindowCheck $x2 $y2 $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$x1,$y1 -> $x2,$y2" $Cmd
-      [void][DT]::SetCursorPos($x1, $y1)
-      Start-Sleep -Milliseconds 150
-      [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-      Start-Sleep -Milliseconds $hold
-      for ($s = 1; $s -le $steps; $s++) {
-        $ix = [int][math]::Round($x1 + ($x2 - $x1) * $s / $steps)
-        $iy = [int][math]::Round($y1 + ($y2 - $y1) * $s / $steps)
-        [void][DT]::SetCursorPos($ix, $iy)
-        Start-Sleep -Milliseconds 12
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx1,$ry1 -> $rx2,$ry2" }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$x1,$y1 -> $x2,$y2$spaceLog button=$($buttonSpec.Name) mods=$(if ($modList.Count -gt 0) { $modList -join '+' } else { 'none' })" $Cmd
+      $script:LastMouseReceipt = ''
+      $dx1 = $x1; $dy1 = $y1; $dx2 = $x2; $dy2 = $y2; $dSteps = $steps; $dHold = $hold; $dBtn = $buttonSpec.Name
+      $dragAct = {
+        [void][DT]::SetCursorPos($dx1, $dy1)
+        Start-Sleep -Milliseconds 150
+        [void](Invoke-MouseButtonEvent $dBtn $true)
+        # CU-OPS-ADJ-06: once the button is down, the UP lives in a finally. A failure on
+        # the path must neither leave the button held nor be replaced by a "dragged" receipt;
+        # a failed UP is carried out separately instead of being swallowed.
+        $dragErr = $null
+        $dUpErr = $null
+        try {
+          Start-Sleep -Milliseconds $dHold
+          for ($s = 1; $s -le $dSteps; $s++) {
+            $ix = [int][math]::Round($dx1 + ($dx2 - $dx1) * $s / $dSteps)
+            $iy = [int][math]::Round($dy1 + ($dy2 - $dy1) * $s / $dSteps)
+            [void][DT]::SetCursorPos($ix, $iy)
+            Start-Sleep -Milliseconds 12
+          }
+          [void][DT]::SetCursorPos($dx2, $dy2)
+          Start-Sleep -Milliseconds 100
+        } catch {
+          $dragErr = $_
+        } finally {
+          try {
+            [void](Invoke-MouseButtonEvent $dBtn $false)
+            Start-Sleep -Milliseconds 200
+          } catch {
+            $dUpErr = $_
+          }
+        }
+        if ($null -ne $dragErr -and $null -ne $dUpErr) {
+          throw ('drag: the path failed (' + $dragErr.Exception.Message + ') and the button UP also failed (' + $dUpErr.Exception.Message + ') - ' + $dBtn + ' may still be held down')
+        }
+        if ($null -ne $dragErr) {
+          throw ('drag: the path failed while ' + $dBtn + ' was down: ' + $dragErr.Exception.Message + ' (button released)')
+        }
+        if ($null -ne $dUpErr) {
+          throw ('drag: mouse button ' + $dBtn + ' UP failed: ' + $dUpErr.Exception.Message + ' - the button state is not what the caller asked for')
+        }
       }
-      [void][DT]::SetCursorPos($x2, $y2)
-      Start-Sleep -Milliseconds 100
-      [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
-      Start-Sleep -Milliseconds 200
-      "dragged ($x1,$y1) -> ($x2,$y2) steps=$steps hold=${hold}ms"
+      if ($modList.Count -gt 0) {
+        $rc = Invoke-ModifierGesture $modList $dragAct
+        $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+      } else { & $dragAct }
+      "dragged ($x1,$y1) -> ($x2,$y2)$(if ($origin.Space -eq 'screen') { '' } else { ' space=' + $origin.Space }) steps=$steps hold=${hold}ms button=$($buttonSpec.Name)$(if ($modList.Count -gt 0) { ' mods=' + ($modList -join '+') })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'dragged'
 }
 
@@ -11155,6 +12491,197 @@ function Invoke-Handler-open-and-pick([string]$Cmd, [string[]]$Rest) {
       "open-and-pick: opener ($openX,$openY) beat 400ms, clicked '$($hit.Text)' at ($cx,$cy) (hit 1/$($hits.Count))$(if ($f.Scaled) { ' [found via 2x upscale]' })$(Get-OcrFoldMarker $hits)"
       Invoke-ExpectChangeCheck $p $ecb 'open-and-pick'
       Invoke-ActionExpectation $p $tgt 'picked'
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package A: proc-start / proc-kill.
+#   proc-list / proc-info / proc-wait live in handlers-read (observation); the two
+#   commands here are the only ones that CREATE or END something. Termination is
+#   preview-by-default and binds a PID to its recorded creation time: the identity is
+#   re-read THROUGH THE SAME OPENED PROCESS OBJECT that TerminateProcess is issued on,
+#   so "verified A, then killed a recycled PID" cannot happen. A terminate request is
+#   asynchronous - it is reported as an exit only when the same object has actually ended.
+# ---------------------------------------------------------------------------
+
+# Windows argv quoting (CommandLineToArgvW rules): the caller passes an array, this
+# makes the single command-line string. Start-Process -ArgumentList is NOT used -
+# it does not quote an operand containing a space (see the Chrome restart note).
+function Format-ProcArg([string]$a) {
+  if ($a -eq '') { return '""' }
+  if ($a -notmatch '[\s"]') { return $a }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  $bs = 0
+  foreach ($ch in $a.ToCharArray()) {
+    if ($ch -eq [char]'\') { $bs++; continue }
+    if ($ch -eq [char]'"') { [void]$sb.Append(('\' * (($bs * 2) + 1))); [void]$sb.Append('"'); $bs = 0; continue }
+    if ($bs -gt 0) { [void]$sb.Append(('\' * $bs)); $bs = 0 }
+    [void]$sb.Append($ch)
+  }
+  if ($bs -gt 0) { [void]$sb.Append(('\' * ($bs * 2))) }
+  [void]$sb.Append('"')
+  return $sb.ToString()
+}
+
+# Parent-PID chain of THIS tool's own process, so killing an ancestor that would take
+# this session down with it is refused instead of discovering it afterwards.
+function Get-ProcAncestors([int]$startId) {
+  $set = New-Object System.Collections.ArrayList
+  $cur = $startId
+  $steps = 0
+  while ($cur -gt 0 -and $steps -lt 16) {
+    $parent = 0
+    try {
+      $c = Get-CimInstance Win32_Process -Filter ("ProcessId=$cur") -ErrorAction Stop
+      if ($c) { $parent = [int]$c.ParentProcessId }
+    } catch { $parent = 0 }
+    if ($parent -le 0 -or $parent -eq $cur) { break }
+    if ($set.Contains($parent)) { break }
+    [void]$set.Add($parent)
+    $cur = $parent
+    $steps++
+  }
+  return ,$set
+}
+
+# proc-start [--cwd <dir>] [--wait-window <s>] <exe> [argv...]
+# The exe is a real path (or a bare image name resolved through App Paths); the rest is
+# argv, quoted here - never concatenated into a shell string, never elevated.
+function Invoke-Handler-proc-start([string]$Cmd, [string[]]$Rest) {
+  $tokens = @($Rest)
+  # Flags may only PRECEDE the exe; everything from the first non-flag token on is
+  # exe + argv and is never scanned for flags (a program's own --help must reach it).
+  # Which own flags take a value is read from the table, not re-typed here.
+  $spec = Get-OwnFlagSpec 'proc-start'
+  $head = New-Object System.Collections.ArrayList
+  $needValue = $false
+  $i = 0
+  while ($i -lt $tokens.Count) {
+    $t = [string]$tokens[$i]
+    if ($needValue) { [void]$head.Add($t); $needValue = $false; $i++; continue }
+    if ($t -like '--*') {
+      [void]$head.Add($t); $i++
+      if ($spec.ContainsKey($t) -and -not [bool](Get-OptValue $spec[$t] 'Bool')) { $needValue = $true }
+      continue
+    }
+    break
+  }
+  $own = Strip-OwnFlags @($head) 'proc-start'
+  $cwd = [string]$own.Values['--cwd']
+  $waitWindow = [int]$own.Values['--wait-window']
+  if ($i -ge $tokens.Count) { throw 'usage: proc-start [--cwd <dir>] [--wait-window <s>] <exe> [argv...]' }
+  $exe = [string]$tokens[$i]
+  $argv = @()
+  if ($i + 1 -lt $tokens.Count) { $argv = @($tokens[($i + 1)..($tokens.Count - 1)]) }
+  $rooted = [System.IO.Path]::IsPathRooted($exe)
+  if ($rooted) {
+    if (-not [System.IO.File]::Exists($exe)) { throw "proc-start: '$exe' is not an existing file - nothing was started" }
+  } elseif ($exe -match '[\\/]') {
+    throw "proc-start: '$exe' has a directory component but is not rooted - give the full path, nothing was started"
+  }
+  if ($cwd) {
+    if (-not [System.IO.Directory]::Exists($cwd)) { throw "proc-start: --cwd '$cwd' is not an existing directory - nothing was started" }
+  }
+  Log-Action (Get-RedactedLogArgs $Rest $argv $false) "exe='$exe' argc=$($argv.Count)$(if ($cwd) { " cwd='$cwd'" } else { '' })" $Cmd
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  if ($argv.Count -gt 0) { $psi.Arguments = (($argv | ForEach-Object { Format-ProcArg ([string]$_) }) -join ' ') }
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $false
+  if ($cwd) { $psi.WorkingDirectory = $cwd }
+  $pr = $null
+  try { $pr = [System.Diagnostics.Process]::Start($psi) } catch { throw "proc-start: could not start '$exe' - $($_.Exception.Message)" }
+  $startIso = 'denied'
+  try { $startIso = $pr.StartTime.ToString('o') } catch { $startIso = 'denied' }
+  "started pid=$($pr.Id) start=$startIso exe='$exe' argc=$($argv.Count)$(if ($startIso -eq 'denied') { ' (creation time denied - proc-kill --go cannot bind it)' } else { '' })"
+  if ($waitWindow -gt 0) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $hwnd = 0
+    while ($sw.Elapsed.TotalSeconds -lt $waitWindow) {
+      try { $pr.Refresh(); $hwnd = $pr.MainWindowHandle.ToInt64() } catch { $hwnd = 0 }
+      if ($hwnd -ne 0) { break }
+      Start-Sleep -Milliseconds 200
+    }
+    if ($hwnd -ne 0) {
+      "window appeared after $([math]::Round($sw.Elapsed.TotalSeconds,1))s hwnd=0x$($hwnd.ToString('X')) title='$(try { $pr.MainWindowTitle } catch { 'denied' })'"
+    } else {
+      throw "proc-start: pid=$($pr.Id) is running but has no top-level window after ${waitWindow}s - the process was NOT stopped; use proc-wait/proc-info if a window is still expected"
+    }
+  }
+}
+
+# proc-kill <pid> [--created <iso>] [--timeout <s>] [--go]
+# Preview by default. --go needs --created (the identity read with proc-info), refuses
+# protected/system/session processes, this tool itself and its own ancestor chain, and
+# never kills a subtree.
+function Invoke-Handler-proc-kill([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-kill'
+  $words = @($own.Rest)
+  $go = [bool]$own.Values['--go']
+  $created = [string]$own.Values['--created']
+  $timeout = [int]$own.Values['--timeout']
+  if ($words.Count -ne 1) { throw 'usage: proc-kill <pid> [--created <iso>] [--timeout <s>] [--go]   (preview unless --go)' }
+  $pidNum = 0
+  if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-kill: '$($words[0])' is not a pid" }
+  $snap = Get-ProcSnapshot $pidNum
+  if (-not $snap.exists) { throw "proc-kill: pid=$pidNum is not running right now - nothing to kill (a PID alone is not an identity, and a reused PID will not be chased)" }
+  if ($snap.protected) { throw "proc-kill: pid=$pidNum name=$($snap.name) is a protected system/session process - refused, nothing was terminated" }
+  if ($pidNum -eq $PID) { throw "proc-kill: pid=$pidNum is this tool's own process - refused, nothing was terminated" }
+  $anc = Get-ProcAncestors ([int]$PID)
+  if ($anc.Contains($pidNum)) { throw "proc-kill: pid=$pidNum is an ancestor of this tool (chain: $($anc -join '<-')) - terminating it would take this session down, refused" }
+  "target: $(Format-ProcSnapshot $snap)"
+  if ($created) {
+    $id = Test-ProcIdentity $pidNum $created
+    if (-not $id.Ok) { throw "proc-kill: identity refused - $($id.Why). Nothing was terminated." }
+    "identity: $($id.Why)"
+  }
+  if (-not $go) {
+    "preview only: nothing was terminated. Re-run with --go$(if (-not $created) { ' AND --created <start> from the line above' }) to send the terminate request. Unsaved work in the target may be lost; a graceful win-close (WM_CLOSE) or dialog-cancel first is safer."
+    return
+  }
+  if (-not $created) { throw 'proc-kill: --go requires --created <iso> so the PID is bound to one observed process; re-read it with proc-info. Nothing was terminated.' }
+  # Open ONE process object, pin ONE native handle through it, re-read the creation time
+  # THROUGH THAT HANDLE, terminate THROUGH IT, wait THROUGH IT, then release it.
+  # CU-OPS-ADJ-02: sharing a .NET Process object is not by itself a stable native handle;
+  # Process.Handle opens the handle once and caches that IntPtr, so a later Kill/WaitForExit
+  # cannot quietly open a fresh handle on a reused PID.
+  $pr = $null
+  try { $pr = [System.Diagnostics.Process]::GetProcessById($pidNum) } catch { throw "proc-kill: pid=$pidNum cannot be opened ($($_.Exception.Message)) - nothing was terminated" }
+  try {
+    $hProcess = [IntPtr]::Zero
+    try { $hProcess = $pr.Handle } catch { throw "proc-kill: pid=$pidNum was opened but no native process handle could be pinned ($($_.Exception.Message)) - identity cannot be confirmed, nothing was terminated" }
+    if ($hProcess -eq [IntPtr]::Zero) { throw "proc-kill: pid=$pidNum returned a null native handle - identity cannot be confirmed, nothing was terminated" }
+    'handle: pinned=yes value=0x' + ([int64]$hProcess).ToString('X')
+    $hStart = 'denied'
+    try { $hStart = $pr.StartTime.ToString('o') } catch { $hStart = 'denied' }
+    if ($hStart -eq 'denied') { throw "proc-kill: pid=$pidNum was opened but its creation time is unreadable through that handle - identity cannot be confirmed, nothing was terminated" }
+    $want = [datetime]::MinValue; $have = [datetime]::MinValue
+    $parseOk = [datetime]::TryParse($created, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$want)
+    if (-not $parseOk) { $parseOk = [datetime]::TryParse($created, [ref]$want) }
+    if (-not $parseOk) { throw "proc-kill: --created '$created' is not a parseable time - nothing was terminated" }
+    $have = [datetime]::Parse($hStart, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    # CU-OPS-ADJ-01: exact, with the same no-tolerance rule as Test-ProcIdentity.
+    $diff = ($have.ToUniversalTime() - $want.ToUniversalTime()).TotalSeconds
+    if ($diff -ne 0) { throw "proc-kill: the opened handle's creation time $hStart does not match --created $created (diff $diff s; the creation time must be exact) - the PID was reused or the pin is stale, nothing was terminated" }
+    Log-Action $Rest "pid=$pidNum name=$($snap.name) created=$created handle=0x$(([int64]$hProcess).ToString('X'))" $Cmd
+    try { $pr.Kill() } catch {
+      $msg = $_.Exception.Message
+      if ($pr.HasExited) { "proc-kill: pid=$pidNum had already exited before the request - confirmed by the same pinned handle; no terminate was needed"; return }
+      throw "proc-kill: terminate request FAILED for pid=$pidNum ($msg) - the process is still running as far as this tool can see"
+    }
+    $waited = $false
+    try { $waited = $pr.WaitForExit([int]($timeout * 1000)) } catch { $waited = $false }
+    $gone = $false
+    try { $gone = [bool]$pr.HasExited } catch { $gone = $false }
+    if ($gone) {
+      "terminated pid=$pidNum name=$($snap.name) confirmed-exit=yes waited=$($timeout)s handle-pinned=yes"
+      return
+    }
+    throw "proc-kill: terminate request was ACCEPTED for pid=$pidNum but the process has not exited within ${timeout}s - a request is not an exit. It may be unwinding; re-check with proc-info $pidNum before retrying"
+  } finally {
+    # Release LAST, after every read above has been taken from the same handle.
+    try { $pr.Dispose() } catch { }
+  }
 }
 
 
@@ -11692,6 +13219,253 @@ function Invoke-Handler-uia-settext([string]$Cmd, [string[]]$Rest, [ref]$SkipTai
       "set text via $via on element '$nm': wrote $($text.Length) chars, readback match=True"
 }
 
+# ---------------------------------------------------------------------------
+# CU-OPS package E (v4.6.0): UIA semantic state and semantic actions.
+# The read side answers "what does this control expose RIGHT NOW" - one line per
+# pattern, and a pattern that is absent says so instead of being omitted. The act
+# side acts ONLY through the pattern it names and verifies the state afterwards;
+# a missing pattern, a read-only range, a stale element or an out-of-bounds value
+# is a refusal that changed nothing, never a fallback click.
+# ---------------------------------------------------------------------------
+function Get-UiaPatternOrNull($el, $pattern) {
+  try { return $el.GetCurrentPattern($pattern) } catch { return $null }
+}
+
+function Get-UiaElementLabel($el) {
+  $nm = ''
+  try { $nm = $el.Current.Name } catch { }
+  if ("$nm".Length -eq 0) { $nm = '(unnamed)' }
+  $ct = ''
+  try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+  return ($ct + " '" + $nm + "'")
+}
+
+function Get-UiaToggleState($el) {
+  $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
+  if ($null -eq $tp) { return $null }
+  return [string]$tp.Current.ToggleState
+}
+
+function Get-UiaRangeInfo($el) {
+  $rp = Get-UiaPatternOrNull $el ([System.Windows.Automation.RangeValuePattern]::Pattern)
+  if ($null -eq $rp) { return $null }
+  $ci = $rp.Current
+  return @{ Value = $ci.Value; Min = $ci.Minimum; Max = $ci.Maximum; ReadOnly = [bool]$ci.IsReadOnly }
+}
+
+function Format-UiaStateLines($el, [bool]$withText) {
+  $lines = New-Object System.Collections.ArrayList
+  $ct = ''
+  try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+  $nm = ''
+  try { $nm = $el.Current.Name } catch { }
+  $en = $null; $off = $null; $pw = $null
+  try { $en = [bool]$el.Current.IsEnabled } catch { }
+  try { $off = [bool]$el.Current.IsOffscreen } catch { }
+  try { $pw = [bool]$el.Current.IsPassword } catch { }
+  $ident = ''
+  try { $ident = [string]$el.Current.AutomationId } catch { }
+  [void]$lines.Add("element: $ct  name='" + $nm + "'  automationId='" + $ident + "'")
+  [void]$lines.Add("enabled=" + $(if ($null -eq $en) { 'unknown' } else { $en.ToString().ToLower() }) + "  offscreen=" + $(if ($null -eq $off) { 'unknown' } else { $off.ToString().ToLower() }) + "  password=" + $(if ($null -eq $pw) { 'unknown' } else { $pw.ToString().ToLower() }))
+  $tg = Get-UiaToggleState $el
+  if ($null -eq $tg) { [void]$lines.Add('toggle: no TogglePattern') } else { [void]$lines.Add('toggle: ' + $tg) }
+  $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+  if ($null -eq $si) { [void]$lines.Add('selection: no SelectionItemPattern') } else { [void]$lines.Add('selection: isSelected=' + ([bool]$si.Current.IsSelected).ToString().ToLower()) }
+  $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+  if ($null -eq $ec) { [void]$lines.Add('expand: no ExpandCollapsePattern') } else { [void]$lines.Add('expand: ' + [string]$ec.Current.ExpandCollapseState) }
+  $rg = Get-UiaRangeInfo $el
+  if ($null -eq $rg) { [void]$lines.Add('range: no RangeValuePattern') } else {
+    [void]$lines.Add('range: value=' + $rg.Value + ' min=' + $rg.Min + ' max=' + $rg.Max + ' readonly=' + $rg.ReadOnly.ToString().ToLower())
+  }
+  $vp = Get-UiaPatternOrNull $el ([System.Windows.Automation.ValuePattern]::Pattern)
+  if ($null -eq $vp) { [void]$lines.Add('value: no ValuePattern') } else {
+    $ro = $null
+    try { $ro = [bool]$vp.Current.IsReadOnly } catch { }
+    if ($pw) {
+      [void]$lines.Add('value: (password field - value not read)  writable=' + $(if ($null -eq $ro) { 'unknown' } else { (-not $ro).ToString().ToLower() }))
+    } else {
+      $val = ''
+      try { $val = [string]$vp.Current.Value } catch { }
+      [void]$lines.Add('value: ' + $val.Length + ' chars  writable=' + $(if ($null -eq $ro) { 'unknown' } else { (-not $ro).ToString().ToLower() }) + $(if ($withText) { "  text='" + $val + "'" } else { '  (pass --text to print it)' }))
+    }
+  }
+  $tx = Get-UiaPatternOrNull $el ([System.Windows.Automation.TextPattern]::Pattern)
+  if ($null -eq $tx) { [void]$lines.Add('text: no TextPattern') } else {
+    $snippet = ''
+    $total = 0
+    try {
+      $snippet = [string]$tx.DocumentRange.GetText(200)
+      $total = ([string]$tx.DocumentRange.GetText(-1)).Length
+    } catch { $snippet = '' }
+    if ($pw) { [void]$lines.Add('text: (password field - text not read)') }
+    else { [void]$lines.Add('text: ' + $total + ' chars' + $(if ($withText) { "  text='" + [regex]::Replace($snippet, '\s+', ' ') + "'" } else { '  (pass --text to print it)' })) }
+  }
+  $sc = Get-UiaPatternOrNull $el ([System.Windows.Automation.ScrollItemPattern]::Pattern)
+  [void]$lines.Add('scrollItem: ' + $(if ($null -eq $sc) { 'no ScrollItemPattern' } else { 'ScrollItemPattern' }))
+  return @($lines)
+}
+
+function Invoke-Handler-uia-state([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'uia-state'
+      $p = $own.Rest
+      if (@($p).Count -lt 2) { throw 'usage: uia-state <sel> <nameSub> [--text]' }
+      $w = Resolve-Window $p[0]
+      if (-not $w) { throw (Format-WindowMissMessage $p[0]) }
+      $rr = Uia-Roots $w
+      if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid) - this target exposes no UIA tree" }
+      $el = Uia-Find $rr.Roots $p[1] ''
+      if (-not $el) { throw "no element matching: $($p[1]) - re-read with uia-tree / uia-find; nothing was changed" }
+      $withText = [bool]$own.Values['--text']
+      if ($script:Json) {
+        $tg = Get-UiaToggleState $el
+        $rg = Get-UiaRangeInfo $el
+        $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+        $vp = Get-UiaPatternOrNull $el ([System.Windows.Automation.ValuePattern]::Pattern)
+        $nm = ''; try { $nm = [string]$el.Current.Name } catch { }
+        $ct = ''; try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+        $pw = $null; try { $pw = [bool]$el.Current.IsPassword } catch { }
+        [pscustomobject]@{
+          pid = $w.Pid; title = $w.Title; type = $ct; name = $nm; password = $pw
+          toggle = $tg
+          selected = $(if ($null -eq $si) { $null } else { [bool]$si.Current.IsSelected })
+          expand = $(if ($null -eq $ec) { $null } else { [string]$ec.Current.ExpandCollapseState })
+          range = $rg
+          value = $(if ($null -eq $vp -or $pw) { $null } elseif ($withText) { [string]$vp.Current.Value } else { $null })
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        "target: pid=$($w.Pid) title='$($w.Title)'"
+        Format-UiaStateLines $el $withText
+      }
+}
+
+function Invoke-Handler-uia-do([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'uia-do'
+      $p = @($own.Rest)
+      if ($p.Count -lt 3) { throw 'usage: uia-do <toggle|toggle-on|toggle-off|select|add-select|remove-select|expand|collapse|scroll-into-view|range-set> <sel> <nameSub> [value]' }
+      $action = [string]$p[0]
+      $known = @('toggle', 'toggle-on', 'toggle-off', 'select', 'add-select', 'remove-select', 'expand', 'collapse', 'scroll-into-view', 'range-set')
+      if ($action -notin $known) { throw ("uia-do: unknown action '" + $action + "' - known: " + ($known -join ', ') + "; nothing was changed") }
+      if ($action -eq 'range-set' -and $p.Count -lt 4) { throw 'usage: uia-do range-set <sel> <nameSub> <value>' }
+      if ($action -ne 'range-set' -and $p.Count -gt 3) { throw ("uia-do " + $action + ": takes exactly <sel> <nameSub>, got extra argument '" + $p[3] + "'; nothing was changed") }
+      $w = Resolve-Window $p[1]
+      if (-not $w) { throw (Format-WindowMissMessage $p[1]) }
+      $rr = Uia-Roots $w
+      if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid) - this target exposes no UIA tree" }
+      $el = Uia-Find $rr.Roots $p[2] ''
+      if (-not $el) { throw "no element matching: $($p[2]) - re-read with uia-tree / uia-find; nothing was changed" }
+      $label = Get-UiaElementLabel $el
+      # CU-OPS package E (v4.6.1): a disabled element keeps its patterns, so the old code could
+      # call Toggle/Select on a greyed-out control and report a provider no-op as a success.
+      # Refuse BEFORE any pattern call: disabled is its own answer, not a missing-pattern error.
+      $enabledNow = $null
+      try { $enabledNow = [bool]$el.Current.IsEnabled } catch { }
+      if ($enabledNow -eq $false) { throw ("uia-do " + $action + ": " + $label + " is disabled (enabled=false) - nothing was changed; enable it first or pick another control") }
+      $echo = ''
+      # Every branch acts once, then reads the state back; a failed read-back is an
+      # error, not a success story.
+      if ($action -in @('toggle', 'toggle-on', 'toggle-off')) {
+        $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
+        if ($null -eq $tp) { throw ("uia-do " + $action + ": " + $label + " exposes no TogglePattern - nothing was changed; the control is not a toggle") }
+        $before = [string]$tp.Current.ToggleState
+        if ($action -eq 'toggle-on' -and $before -eq 'On') { $echo = 'already On (no toggle sent)' }
+        elseif ($action -eq 'toggle-off' -and $before -eq 'Off') { $echo = 'already Off (no toggle sent)' }
+        else {
+          $tp.Toggle()
+          $after = [string]$tp.Current.ToggleState
+          if ($action -eq 'toggle') { $echo = 'toggled ' + $before + ' -> ' + $after }
+          elseif ($action -eq 'toggle-on') {
+            if ($after -ne 'On') { throw ("uia-do toggle-on: " + $label + " reports " + $after + " after Toggle (an indeterminate toggle may need two calls)") }
+            $echo = 'toggled ' + $before + ' -> On'
+          } else {
+            if ($after -ne 'Off') { throw ("uia-do toggle-off: " + $label + " reports " + $after + " after Toggle (an indeterminate toggle may need two calls)") }
+            $echo = 'toggled ' + $before + ' -> Off'
+          }
+        }
+      } elseif ($action -eq 'select') {
+        $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        if ($null -eq $si) { throw ("uia-do select: " + $label + " exposes no SelectionItemPattern - nothing was changed") }
+        if ([bool]$si.Current.IsSelected) { $echo = 'already selected (no select sent)' }
+        else {
+          $si.Select()
+          if (-not [bool]$si.Current.IsSelected) { throw ("uia-do select: " + $label + " still reports isSelected=false after Select") }
+          $echo = 'selected (readback isSelected=true)'
+        }
+      } elseif ($action -in @('add-select', 'remove-select')) {
+        # Multi-select needs its OWN pattern calls: Select() on a second item in a Multiple-mode
+        # list replaces the selection, so "select the second item too" cannot be expressed with it.
+        $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        if ($null -eq $si) { throw ("uia-do " + $action + ": " + $label + " exposes no SelectionItemPattern - nothing was changed") }
+        $wasSel = [bool]$si.Current.IsSelected
+        if ($action -eq 'add-select') {
+          if ($wasSel) { $echo = 'already selected (nothing sent)' }
+          else {
+            $si.AddToSelection()
+            if (-not [bool]$si.Current.IsSelected) { throw ("uia-do add-select: " + $label + " still reports isSelected=false after AddToSelection") }
+            $echo = 'added to selection (readback isSelected=true)'
+          }
+        } else {
+          if (-not $wasSel) { $echo = 'already not selected (nothing sent)' }
+          else {
+            $si.RemoveFromSelection()
+            if ([bool]$si.Current.IsSelected) { throw ("uia-do remove-select: " + $label + " still reports isSelected=true after RemoveFromSelection") }
+            $echo = 'removed from selection (readback isSelected=false)'
+          }
+        }
+      } elseif ($action -in @('expand', 'collapse')) {
+        $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+        if ($null -eq $ec) { throw ("uia-do " + $action + ": " + $label + " exposes no ExpandCollapsePattern - nothing was changed") }
+        $want = if ($action -eq 'expand') { 'Expanded' } else { 'Collapsed' }
+        $before = [string]$ec.Current.ExpandCollapseState
+        if ($before -eq $want) { $echo = 'already ' + $want + ' (nothing sent)' }
+        else {
+          if ($action -eq 'expand') { $ec.Expand() } else { $ec.Collapse() }
+          $after = [string]$ec.Current.ExpandCollapseState
+          if ($after -ne $want) { throw ("uia-do " + $action + ": " + $label + " reports " + $after + " after the call") }
+          # v4.6.1: spell the past tense explicitly. The old 'expand' + 'd' shape printed
+          # "expandd" in the receipt (measured 13:02 on the WPF combo).
+          $echo = $(if ($action -eq 'expand') { 'expanded' } else { 'collapsed' }) + ' ' + $before + ' -> ' + $after
+        }
+      } elseif ($action -eq 'scroll-into-view') {
+        $sc = Get-UiaPatternOrNull $el ([System.Windows.Automation.ScrollItemPattern]::Pattern)
+        if ($null -eq $sc) { throw ("uia-do scroll-into-view: " + $label + " exposes no ScrollItemPattern - nothing was changed") }
+        # v4.6.1: the old echo said "no state to read back". IsOffscreen IS that state, so the
+        # scroll is now proven rather than asserted: a provider that accepts ScrollIntoView and
+        # leaves the item off screen is an error, not a success.
+        $offBefore = $null
+        try { $offBefore = [bool]$el.Current.IsOffscreen } catch { }
+        if ($null -eq $offBefore) { throw ("uia-do scroll-into-view: " + $label + " would not report IsOffscreen - the scroll cannot be verified; nothing was changed") }
+        if (-not $offBefore) {
+          $echo = 'already on screen (offscreen=false, no scroll sent)'
+        } else {
+          $sc.ScrollIntoView()
+          $offAfter = $null
+          try { $offAfter = [bool]$el.Current.IsOffscreen } catch { }
+          if ($null -eq $offAfter) { throw ("uia-do scroll-into-view: " + $label + " would not report IsOffscreen after ScrollIntoView - the scroll is unverified") }
+          if ($offAfter) { throw ("uia-do scroll-into-view: " + $label + " still reports offscreen=true after ScrollIntoView (the provider accepted the call but did not bring it on screen)") }
+          $echo = 'scrolled into view (offscreen: true -> false, read back)'
+        }
+      } else {
+        # range-set
+        $rp = Get-UiaPatternOrNull $el ([System.Windows.Automation.RangeValuePattern]::Pattern)
+        if ($null -eq $rp) { throw ("uia-do range-set: " + $label + " exposes no RangeValuePattern - nothing was changed") }
+        if ([bool]$rp.Current.IsReadOnly) { throw ("uia-do range-set: " + $label + " reports IsReadOnly=true - nothing was changed") }
+        $val = 0.0
+        if (-not [double]::TryParse([string]$p[3], [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$val)) {
+          throw ("uia-do range-set: '" + $p[3] + "' is not a number; nothing was changed")
+        }
+        $mn = [double]$rp.Current.Minimum; $mx = [double]$rp.Current.Maximum
+        if ($val -lt $mn -or $val -gt $mx) { throw ("uia-do range-set: " + $val + " is outside the control's range " + $mn + ".." + $mx + " - nothing was changed (no clamping)") }
+        $rp.SetValue($val)
+        $after = [double]$rp.Current.Value
+        if ([math]::Abs($after - $val) -gt 0.000001) { throw ("uia-do range-set: readback " + $after + " != requested " + $val + " for " + $label) }
+        $echo = 'range value ' + $after + ' (range ' + $mn + '..' + $mx + ', readback match=True)'
+      }
+      Log-Action @($p) "pid=$($w.Pid) title='$($w.Title)' element=$label action=$action" $Cmd
+      "uia-do $action on $label`: $echo"
+}
+
+
 # v4.4.0 (A-15): type - the case body, verbatim
 function Invoke-Handler-type([string]$Cmd, [string[]]$Rest) {
       # type [--to <sel>] <text...> [--verify] [--guard-text <s>|--guard-region x,y,w,h=s] [--force]
@@ -11806,7 +13580,334 @@ function Invoke-Handler-keys([string]$Cmd, [string[]]$Rest) {
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
 }
 
-# v4.4.0 (A-15): ime - the case body, verbatim
+# CU-OPS-COMPLETE-20261026-01 (package C): native key gestures.
+#
+# keys keeps SendKeys verbatim - its '^v'/'%{F4}' syntax is not reinterpreted here, because
+# silently changing what an existing spec means is exactly the break this package was told
+# to avoid. The native entry point is a NEW command with its own grammar:
+#
+#   key ctrl+shift+t        press ctrl, press shift, tap t, release shift, release ctrl
+#   key f5 --repeat 3       tap F5 three times
+#   key enter --hold 800    hold Enter for 800 ms, then release (one bounded hold)
+#
+# Every press is released inside this call. SendInput reports how many events it inserted,
+# and it does not reset an already-down key, so a key someone else holds is refused instead
+# of being pressed or released by us. The Windows key is accepted for real shortcuts but a
+# small list of session-wide sequences (lock, show desktop, Run dialog, ...) is refused:
+# this tool will not lock the owner's screen or rearrange their desktop to prove a green.
+$script:KeyVk = @{
+  'enter' = @{ Vk = 0x0D; Ext = $false }; 'return' = @{ Vk = 0x0D; Ext = $false }
+  'tab' = @{ Vk = 0x09; Ext = $false }; 'esc' = @{ Vk = 0x1B; Ext = $true }; 'escape' = @{ Vk = 0x1B; Ext = $true }
+  'space' = @{ Vk = 0x20; Ext = $false }; 'backspace' = @{ Vk = 0x08; Ext = $false }; 'bs' = @{ Vk = 0x08; Ext = $false }
+  'delete' = @{ Vk = 0x2E; Ext = $true }; 'del' = @{ Vk = 0x2E; Ext = $true }
+  'insert' = @{ Vk = 0x2D; Ext = $true }; 'ins' = @{ Vk = 0x2D; Ext = $true }
+  'home' = @{ Vk = 0x24; Ext = $true }; 'end' = @{ Vk = 0x23; Ext = $true }
+  'pageup' = @{ Vk = 0x21; Ext = $true }; 'pgup' = @{ Vk = 0x21; Ext = $true }
+  'pagedown' = @{ Vk = 0x22; Ext = $true }; 'pgdn' = @{ Vk = 0x22; Ext = $true }
+  'left' = @{ Vk = 0x25; Ext = $true }; 'up' = @{ Vk = 0x26; Ext = $true }
+  'right' = @{ Vk = 0x27; Ext = $true }; 'down' = @{ Vk = 0x28; Ext = $true }
+  'capslock' = @{ Vk = 0x14; Ext = $false }; 'numlock' = @{ Vk = 0x90; Ext = $true }; 'scrolllock' = @{ Vk = 0x91; Ext = $false }
+  'printscreen' = @{ Vk = 0x2C; Ext = $true }; 'prtsc' = @{ Vk = 0x2C; Ext = $true }
+  'pause' = @{ Vk = 0x13; Ext = $false }; 'apps' = @{ Vk = 0x5D; Ext = $true }
+  'minus' = @{ Vk = 0xBD; Ext = $false }; 'equal' = @{ Vk = 0xBB; Ext = $false }
+  'comma' = @{ Vk = 0xBC; Ext = $false }; 'period' = @{ Vk = 0xBE; Ext = $false }
+  'slash' = @{ Vk = 0xBF; Ext = $false }; 'semicolon' = @{ Vk = 0xBA; Ext = $false }
+  'quote' = @{ Vk = 0xDE; Ext = $false }; 'backslash' = @{ Vk = 0xDC; Ext = $false }
+  'grave' = @{ Vk = 0xC0; Ext = $false }
+  'add' = @{ Vk = 0x6B; Ext = $false }; 'subtract' = @{ Vk = 0x6D; Ext = $false }
+  'multiply' = @{ Vk = 0x6A; Ext = $false }; 'divide' = @{ Vk = 0x6F; Ext = $true }
+  'decimal' = @{ Vk = 0x6E; Ext = $false }
+}
+
+# Pure: one key name -> @{ Vk; Ext }. Letters, digits and F1-F24 are derived, not listed.
+function Resolve-KeyName([string]$name) {
+  $n = ("$name").Trim().ToLowerInvariant()
+  if (-not $n) { throw 'key: empty key name' }
+  if ($n.Length -eq 1) {
+    $c = [int][char]$n
+    if ($n -cmatch '^[a-z]$') { return @{ Vk = 0x41 + ($c - [int][char]'a'); Ext = $false } }
+    if ($n -match '^[0-9]$') { return @{ Vk = 0x30 + ($c - [int][char]'0'); Ext = $false } }
+  }
+  if ($n -match '^f([0-9]{1,2})$') {
+    $num = [int]$Matches[1]
+    if ($num -lt 1 -or $num -gt 24) { throw "key: '$name' is out of range - F1..F24 only" }
+    return @{ Vk = 0x70 + ($num - 1); Ext = $false }
+  }
+  if ($n -match '^numpad([0-9])$') { return @{ Vk = 0x60 + [int]$Matches[1]; Ext = $false } }
+  if ($script:KeyVk.ContainsKey($n)) { return $script:KeyVk[$n] }
+  throw "key: unknown key name '$name' - accepted: a-z, 0-9, F1..F24, numpad0..9, enter, tab, esc, space, backspace, delete, insert, home, end, pageup, pagedown, left, up, right, down, capslock, numlock, scrolllock, printscreen, pause, apps, and the punctuation names in 'desktop.ps1 help key'; no key was sent"
+}
+
+# Pure: 'ctrl+shift+t' -> @{ Mods = @('ctrl','shift'); Key = 't'; Spec = ... }. Refuses the
+# session-wide sequences and any repeat of one modifier, before any input exists.
+function Resolve-KeyCombo([string]$combo) {
+  $parts = @(("$combo").Trim() -split '\+')
+  if ($parts.Count -eq 0 -or -not $parts[$parts.Count - 1]) { throw "key: '$combo' has no base key - write e.g. ctrl+shift+t" }
+  $base = $parts[$parts.Count - 1]
+  $mods = @()
+  for ($i = 0; $i -lt $parts.Count - 1; $i++) {
+    $m = $parts[$i].Trim().ToLowerInvariant()
+    if ($m -eq 'control') { $m = 'ctrl' }
+    if ($m -eq 'windows') { $m = 'win' }
+    if ($m -notin @('ctrl', 'shift', 'alt', 'win')) { throw "key: unknown modifier '$($parts[$i])' in '$combo' - accepted: ctrl, shift, alt, win" }
+    if ($mods -contains $m) { throw "key: modifier '$m' appears twice in '$combo'" }
+    $mods += $m
+  }
+  $baseInfo = Resolve-KeyName $base
+  $bn = $base.Trim().ToLowerInvariant()
+  if (($mods -contains 'ctrl') -and ($mods -contains 'alt') -and ($mods -contains 'delete' -or $bn -eq 'delete' -or $bn -eq 'del')) {
+    throw "key: Ctrl+Alt+Del is the Secure Attention Sequence - it is handled by the OS/security desktop and cannot be synthesised by SendInput; this tool refuses instead of pretending it can"
+  }
+  if ($mods -contains 'win') {
+    if ($bn -in @('l', 'd', 'u', 'r', 'q', 'w', 'tab', 'esc', 'escape', 'f4')) {
+      throw "key: Win+$bn acts on the whole session (lock / desktop / utility / Run / task view), not on a window; this tool will not prove a capability by locking or rearranging the owner's desktop. Ctrl/Shift/Alt are the supported gesture modifiers"
+    }
+  }
+  return @{ Mods = $mods; Key = $bn; Base = $baseInfo; Spec = $combo }
+}
+
+# Observed physical state, read-only. GetAsyncKeyState is the same read the mouse family uses.
+function Get-InputStateLine {
+  $names = @(
+    @{ N = 'ctrl'; Vk = 0x11 }, @{ N = 'shift'; Vk = 0x10 }, @{ N = 'alt'; Vk = 0x12 }, @{ N = 'win'; Vk = 0x5B },
+    @{ N = 'capslock'; Vk = 0x14 }, @{ N = 'numlock'; Vk = 0x90 }, @{ N = 'scrolllock'; Vk = 0x91 }
+  )
+  $down = @()
+  foreach ($k in $names) { if (([DT]::IsVkDown([int]$k.Vk)) -ne 0) { $down += $k.N } }
+  $btn = @()
+  foreach ($b in @('left', 'right', 'middle', 'back', 'forward')) {
+    try { if (Get-MouseButtonDown $b) { $btn += $b } } catch { }
+  }
+  return ("down=" + $(if ($down.Count) { $down -join '+' } else { 'none' }) + " buttons=" + $(if ($btn.Count) { $btn -join '+' } else { 'none' }))
+}
+
+# The ownership ledger: written while THIS tool has a key down, removed when THAT KEY is
+# released. A hard-killed process cannot run its finally block, so the file is what lets a
+# later call distinguish "this tool may still be holding X" from "someone else is holding X".
+# Nothing is released on a guess: key-release only touches keys named here.
+#
+# CU-OPS-ADJ-04/05 (v4.6.1): one flat record PER KEY with its own vk/ext/owner/state, so a
+# modifier (ctrl/shift/alt/win) can be written and read back without going through
+# Resolve-KeyName (which only knows base keys), and so clearing one released key cannot
+# erase another key's recovery record. Legacy name-list entries are still read.
+function Get-KeyLedgerPath {
+  $dir = Join-Path $env:TEMP 'agent-computer-use'
+  return (Join-Path $dir 'key-held.json')
+}
+
+# Modifier names resolve here; everything else is a base key.
+function Resolve-LedgerKey([string]$name) {
+  switch (("$name").Trim().ToLowerInvariant()) {
+    'ctrl' { return @{ Vk = 0x11; Ext = $false } }
+    'control' { return @{ Vk = 0x11; Ext = $false } }
+    'shift' { return @{ Vk = 0x10; Ext = $false } }
+    'alt' { return @{ Vk = 0x12; Ext = $false } }
+    'win' { return @{ Vk = 0x5B; Ext = $true } }
+    'windows' { return @{ Vk = 0x5B; Ext = $true } }
+  }
+  return (Resolve-KeyName $name)
+}
+
+# Normalized: always @{ pid; name; vk; ext; state; combo; at }, legacy entries expanded.
+function Read-KeyLedger {
+  $p = Get-KeyLedgerPath
+  if (-not (Test-Path -LiteralPath $p)) { return @() }
+  try {
+    $raw = Get-Content -LiteralPath $p -Raw -ErrorAction Stop
+    $obj = $raw | ConvertFrom-Json
+    $out = @()
+    foreach ($e in @($obj.entries)) {
+      if ($null -eq $e) { continue }
+      $nm = ''
+      if ($e.PSObject.Properties['name']) { $nm = [string]$e.name }
+      if ($nm -ne '') {
+        $out += @{ pid = [int]$e.pid; name = $nm; vk = [int]$e.vk; ext = [bool]$e.ext; state = [string]$e.state; combo = [string]$e.combo; at = [string]$e.at }
+        continue
+      }
+      if ($e.PSObject.Properties['keys']) {
+        foreach ($k in @($e.keys)) {
+          $info = $null
+          try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
+          $out += @{
+            pid = [int]$e.pid; name = [string]$k
+            vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
+            state = 'down'; combo = [string]$e.combo; at = [string]$e.at
+          }
+        }
+      }
+    }
+    return $out
+  } catch { return @() }
+}
+
+function Write-KeyLedger($entries) {
+  $p = Get-KeyLedgerPath
+  $dir = Split-Path -Parent $p
+  if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  $obj = @{ written_at = (Get-Date).ToString('o'); pid = $PID; entries = @($entries) }
+  Set-Content -LiteralPath $p -Value ($obj | ConvertTo-Json -Depth 5 -Compress) -Encoding UTF8
+}
+
+function Add-KeyLedger($entries) {
+  Write-KeyLedger (@(Read-KeyLedger) + @($entries))
+}
+
+# Remove ONLY the records for one key owned by one pid; other keys/owners survive.
+function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid) {
+  $all = @(Read-KeyLedger)
+  $keep = @($all | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $ownerPid)) })
+  if ($keep.Count -eq 0) { Clear-KeyLedger } else { Write-KeyLedger $keep }
+}
+
+function Clear-KeyLedger {
+  $p = Get-KeyLedgerPath
+  if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+}
+
+# The case body of `key`. Runs parse -> refuse -> one owned gesture -> receipt.
+function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'key'
+  $p = Split-Target @($own.Rest) 'key'
+  if ($p.Words.Count -lt 1) { throw 'usage: key [--to <sel>] <combo> [--repeat n] [--interval ms] [--hold ms] [--guard-text <s>] [--expect <needle>] [--force]   e.g. key ctrl+shift+t / key f5 --repeat 3 / key enter --hold 800' }
+  $combo = Resolve-KeyCombo $p.Words[0]
+  # bounds are the promise the echo makes; they are checked before any input exists
+  $repeat = [int]$own.Values['--repeat']; if ($repeat -lt 1 -or $repeat -gt 50) { throw "key: --repeat must be 1..50 (got $repeat); no key was sent" }
+  $interval = [int]$own.Values['--interval']; if ($interval -lt 0 -or $interval -gt 5000) { throw "key: --interval must be 0..5000 ms (got $interval); no key was sent" }
+  $hold = [int]$own.Values['--hold']; if ($hold -lt 0 -or $hold -gt 20000) { throw "key: --hold must be 0..20000 ms (got $hold); no key was sent" }
+  $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+  Emit-ResolveNote
+  Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+  $vks = @()
+  foreach ($m in $combo.Mods) {
+    $vk = switch ($m) { 'ctrl' { 0x11 } 'shift' { 0x10 } 'alt' { 0x12 } 'win' { 0x5B } }
+    if (([DT]::IsVkDown([int]$vk)) -ne 0) {
+      throw "key: modifier '$m' is already held down (not by this call); this tool will not press or release a key it does not own - let go of it first. Observed: $(Get-InputStateLine); no key was sent"
+    }
+    $vks += @{ Name = $m; Vk = [int]$vk; Ext = ($m -eq 'win') }
+  }
+  if (([DT]::IsVkDown([int]$combo.Base.Vk)) -ne 0) {
+    throw "key: '$($combo.Key)' is already held down (not by this call); refusing to press or release it. Observed: $(Get-InputStateLine); no key was sent"
+  }
+  Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' combo=$($combo.Spec) repeat=$repeat hold=${hold}ms interval=${interval}ms" $Cmd
+  $pressed = @()
+  $baseDown = $false
+  $inserted = 0
+  $fail = ''
+  $releaseFail = @()
+  $intent = @()
+  foreach ($v in $vks) {
+    $intent += @{ pid = $PID; name = $v.Name; vk = [int]$v.Vk; ext = [bool]$v.Ext; state = 'down'; combo = $combo.Spec; at = (Get-Date).ToString('o') }
+  }
+  $intent += @{ pid = $PID; name = $combo.Key; vk = [int]$combo.Base.Vk; ext = [bool]$combo.Base.Ext; state = 'down'; combo = $combo.Spec; at = (Get-Date).ToString('o') }
+  Add-KeyLedger $intent
+  try {
+    foreach ($v in $vks) {
+      $n = [uint32][DT]::SendKeyInput([int]$v.Vk, $false, [bool]$v.Ext)
+      if ($n -ne 1) { throw "key: modifier '$($v.Name)' DOWN: SendInput inserted $n of 1; the gesture did not run" }
+      $pressed += $v
+      $inserted++
+      Start-Sleep -Milliseconds 30
+    }
+    for ($r = 1; $r -le $repeat; $r++) {
+      $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $false, [bool]$combo.Base.Ext)
+      if ($n -ne 1) { throw "key: '$($combo.Key)' DOWN (repeat $r of $repeat): SendInput inserted $n of 1" }
+      $baseDown = $true
+      $inserted++
+      Start-Sleep -Milliseconds $hold
+      $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
+      if ($n -ne 1) { throw "key: '$($combo.Key)' UP (repeat $r of $repeat): SendInput inserted $n of 1 - the key may still be down; its ledger record is kept, run 'key-release'" }
+      $baseDown = $false
+      $inserted++
+      if ($r -lt $repeat -and $interval -gt 0) { Start-Sleep -Milliseconds $interval }
+    }
+  } catch {
+    $fail = $_.Exception.Message
+  } finally {
+    $rel = @()
+    # Every modifier this call pressed is released and COUNTED, and its UP is verified:
+    # a swallowed failed UP used to be receipted as "released" (CU-OPS-ADJ-03/ADJ-04).
+    $pos = @($pressed).Count - 1
+    while ($pos -ge 0) {
+      $v = $pressed[$pos]
+      $upOk = $false
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$v.Vk, $true, [bool]$v.Ext)
+        if ($n -eq 1) { $upOk = $true; $inserted++ } else { $releaseFail += "$($v.Name)(inserted $n/1)" }
+      } catch { $releaseFail += "$($v.Name)($($_.Exception.Message))" }
+      if ($upOk) { $rel += $v.Name; Remove-KeyLedgerRecords $v.Name $PID }
+      $pos--
+    }
+    # The base key's record is only owed while it is actually down; a failed base UP keeps
+    # it so key-release can still recover it (CU-OPS-ADJ-04).
+    if (-not $baseDown) { Remove-KeyLedgerRecords $combo.Key $PID }
+    Start-Sleep -Milliseconds 40
+    $script:LastKeyReceipt = ("combo=" + $combo.Spec + " mods=" + $(if ($combo.Mods.Count) { $combo.Mods -join '+' } else { 'none' }) + " repeat=$repeat hold=${hold}ms interval=${interval}ms SendInput-inserted=$inserted released=" + $(if ($rel.Count) { $rel -join '+' } else { 'none' }))
+  }
+  if ($releaseFail.Count -gt 0) {
+    $msg = "key: modifier UP failed for: $($releaseFail -join ', ') - those keys may still be down and their ledger records are kept; run 'key-release'"
+    if ($fail) { throw ($fail + ' | ' + $msg) }
+    throw $msg
+  }
+  if ($fail) { throw ($fail + " (any key still down is kept in the ownership ledger: run 'key-state' / 'key-release'; observed now: $(Get-InputStateLine))") }
+  Start-Sleep -Milliseconds 250
+  $warn = Test-PostSendForeground $target $p.Force
+  "key $($combo.Spec): target pid=$($target.Pid) title='$($target.Title)'  $($script:LastKeyReceipt)"
+  Invoke-ActionExpectation $p $target 'sent key'
+  if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
+}
+
+# Read-only: what is down right now, and what (if anything) this tool has on record.
+function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
+  $ledger = @(Read-KeyLedger)
+  $owned = @()
+  foreach ($e in $ledger) {
+    # vk comes from the record itself: modifiers are ledger keys too, and Resolve-KeyName
+    # would reject ctrl/shift/alt/win (CU-OPS-ADJ-05).
+    $vk = [int]$e.vk
+    if ($vk -ne 0 -and ([DT]::IsVkDown($vk) -ne 0)) { $owned += "$($e.name)(pid=$($e.pid))" }
+  }
+  "key-state: $(Get-InputStateLine)  owned-held=$(if ($owned.Count) { $owned -join ',' } else { 'none' })  ledger=$(if ($ledger.Count) { $ledger.Count.ToString() + ' entr(y/ies)' } else { 'absent' })"
+  "note: every key this tool presses is released inside the same call; an entry here can only outlive a killed process. 'key-release' touches only keys named in the ledger."
+}
+
+# Releases only keys the ledger names AND that are still down. Everything else is reported.
+function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
+  # The ledger records keys THIS tool pressed and has not released yet. Only those - and only
+  # if they are still physically down - are released; anything else is reported, not touched.
+  # Release is preview by default: the ledger is the only thing that separates "ours" from
+  # "the user is holding this", and a stray release could undo somebody else's chord.
+  $own = Strip-OwnFlags $Rest 'key-release'
+  if (@($own.Rest).Count -gt 0) { throw "key-release: unexpected argument '$($own.Rest[0])' - it takes no operand, only --go" }
+  $go = [bool]$own.Values['--go']
+  $ledger = @(Read-KeyLedger)
+  if ($ledger.Count -eq 0) {
+    "key-release: no ownership ledger exists - this tool has no key on record as held, so there is nothing it may release. Observed: $(Get-InputStateLine)"
+    return
+  }
+  $acts = @()
+  foreach ($e in $ledger) {
+    $vk = [int]$e.vk
+    if ($vk -eq 0) { $acts += "$($e.name) = unreadable record (skipped, recorded pid=$($e.pid))"; continue }
+    if (([DT]::IsVkDown($vk)) -ne 0) { $acts += "$($e.name) = still down (recorded pid=$($e.pid))" } else { $acts += "$($e.name) = already up" }
+  }
+  "key-release" + $(if ($go) { '' } else { ' (DRY-RUN: add --go to release; nothing was sent)' }) + ":"
+  $acts | ForEach-Object { "  $_" }
+  if (-not $go) { return }
+  $released = @()
+  $failed = @()
+  foreach ($e in $ledger) {
+    $vk = [int]$e.vk; $ext = [bool]$e.ext
+    if ($vk -eq 0) { continue }
+    if (([DT]::IsVkDown($vk)) -eq 0) { Remove-KeyLedgerRecords ([string]$e.name) ([int]$e.pid); continue }
+    try {
+      $n = [uint32][DT]::SendKeyInput($vk, $true, $ext)
+      if ($n -eq 1) { $released += [string]$e.name; Remove-KeyLedgerRecords ([string]$e.name) ([int]$e.pid) } else { $failed += "$($e.name)(inserted $n/1)" }
+    } catch { $failed += "$($e.name)($($_.Exception.Message))" }
+  }
+  "  released=" + $(if ($released.Count) { $released -join '+' } else { 'none' }) + " failed=" + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + "  observed-after=$(Get-InputStateLine)"
+  if ($failed.Count) { throw "key-release: $($failed.Count) key(s) could not be released: $($failed -join ', ')" }
+}
+
 function Invoke-Handler-ime([string]$Cmd, [string[]]$Rest) {
       # ime - read-only: which keyboard layout/IME the FOREGROUND window's
       # thread is using. ime=yes means SendKeys-based `keys` can be swallowed
@@ -11822,7 +13923,7 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       # directly (SendInput Unicode) - paste stays the path for apps that only
       # accept clipboard input or for very long/multiline payloads.
       $p = Split-Target $Rest
-      if ($p.Words.Count -lt 1) { throw 'usage: paste [--to <sel>] <file> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--force]' }
+      if ($p.Words.Count -lt 1) { throw 'usage: paste [--to <sel>] <file> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--replace-clipboard] [--force]' }
       $file = $p.Words[0]
       if (-not (Test-Path $file)) { throw "file not found: $file" }
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
@@ -11838,6 +13939,10 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       $bomNote = ''
       if ($readRes.HadBom) { $bomNote = ' [UTF-8 BOM stripped]' }
       $clip = Save-ClipboardState
+      # CU-OPS package G: refuse BEFORE the write when the clipboard holds content this
+      # tool cannot put back. The user's clipboard is then untouched - the same contract
+      # the guard above runs on the target window.
+      Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste'
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$file" $Cmd
       # v2.2.0 (plan doc 3): the receipt half is measured BEFORE the send so the comparison is
       # honest, and only when the payload is long enough that a chip fold is possible - a short
@@ -11867,6 +13972,13 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
         Confirm-AutoExpect $auto
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
+      # CU-OPS package G (v4.6.1): the restore note is checked mechanically. The payload
+      # went out either way, but a previous clipboard that did not come back must not end
+      # with the same exit code as one that did - the user is told, and the code says so.
+      $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
+      if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
+        throw "paste: the payload WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+      }
 }
 
 # v4.4.0 (A-15): paste-file - the case body, verbatim
@@ -11878,13 +13990,14 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       # needle is visible in the target window (probed incident: a guard-green
       # window whose active chat had silently switched to a private friend).
       $p = Split-Target $Rest
-      if ($p.Words.Count -lt 1) { throw 'usage: paste-file [--to <sel>] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--force]' }
+      if ($p.Words.Count -lt 1) { throw 'usage: paste-file [--to <sel>] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--replace-clipboard] [--force]' }
       if (-not (Test-Path -LiteralPath $p.Words[0] -PathType Leaf)) { throw "file not found: $($p.Words[0])" }
       $fi = Get-Item -LiteralPath $p.Words[0]
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       $clip = Save-ClipboardState
+      Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste-file'
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$($fi.FullName)" $Cmd
       $ok = Set-ClipboardFileDrop $fi.FullName
       if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
@@ -11903,6 +14016,12 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
         Confirm-AutoExpect $auto
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
+      # CU-OPS package G (v4.6.1): same mechanical check as paste - the file went out,
+      # but a previous clipboard that did not come back is a non-zero exit, not a footnote.
+      $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
+      if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
+        throw "paste-file: the file WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+      }
 }
 
 # v4.4.0 (A-15): copy-file - the case body, verbatim
@@ -13641,9 +15760,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 55 sites, table sums to the same 55)' (
-    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 55) -and
-    ($a07OwnerSum -eq 55) -and (@($script:StCommandOwners).Count -eq 41))
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (45 keys, 59 sites, table sums to the same 59)' (
+    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 59) -and
+    ($a07OwnerSum -eq 59) -and (@($script:StCommandOwners).Count -eq 45))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -13654,8 +15773,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a07A2 in @($script:StCommandExclusions)) { if ([string]$a07A1 -ceq [string]$a07A2) { $a07C = $a07C + 1 } }
     if ($a07C -gt 1) { $a07AnchorDup = $a07AnchorDup + 1 }
   }
-  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the ten exclusions, and no exclusion certifies two lines (65 = 55 + 10)' (
-    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 65) -and (@($script:StCommandExclusions).Count -eq 10) -and
+  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the ten exclusions, and no exclusion certifies two lines (69 = 59 + 10)' (
+    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 69) -and (@($script:StCommandExclusions).Count -eq 10) -and
     ($a07AnchorDup -eq 0) -and (($a07SiteCount + 10) -eq $a07Mentions))
   if ($a07MentionGap -ne '') { Write-Output ('      mention gap: ' + $a07MentionGap) }
   $a07FtKeys = @()
@@ -13682,7 +15801,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07LtCount = @($a07LtSplit).Count
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 102) -and (@($script:StLoadTimeNames).Count -eq 80) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 108) -and (@($script:StLoadTimeNames).Count -eq 86) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -13722,8 +15841,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the three sources account for all fifty-five (none left reading caller scope)' (
-    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 55) -and (@($script:StCommandNameArgs).Count -eq 3))
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the three sources account for all fifty-nine (none left reading caller scope)' (
+    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 59) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
   ST-Check 'lint (A-08): the five helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all five are actually on the list' (
     (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 5))
@@ -13807,7 +15926,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09DAbsent = Get-FunctionDeclaresParameter $a09PlantParsed 'F-No-Such' 'Cmd'
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, and the registered owners account for every use of the dispatcher variable (the count is in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 83) -and (@($script:StCmdVarUses).Count -eq 42))
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 87) -and (@($script:StCmdVarUses).Count -eq 46))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
     ' bare-reads-in-audited-body=' + $a09Bare + ' own-param-uses=' + $a09OwnUses + ' undeclared=[' + $a09Undeclared + ']')
@@ -14280,11 +16399,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (30/23/24/8 = all 85)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (30/23/24/8 = all 85)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +
@@ -14300,11 +16419,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a23OtherKeys = @($a23Keys | Where-Object { ([string]$_).StartsWith('fn:') -or ($_ -ceq '<script>') })
   $a23GapHandler = Get-InventoryDiscrepancy ((@($a23CaseKeys) -join ';')) $script:StHandlerExitAllowList
   $a23GapEntry = Get-InventoryDiscrepancy ((@($a23OtherKeys) -join ';')) $script:StEntryExitAllowList
-  ST-Check 'lint (A-23): every exit inside a moved handler body is named by its case, the seven registered cases account for exactly thirteen, and a fourteenth is red' (
-    ($a23GapHandler -ceq '') -and (@($a23CaseKeys).Count -eq 13) -and (@($script:StHandlerExitAllowList).Count -eq 7))
+  ST-Check 'lint (A-23): every exit inside a moved handler body is named by its case, the eight registered cases account for exactly fourteen, and a fifteenth is red' (
+    ($a23GapHandler -ceq '') -and (@($a23CaseKeys).Count -eq 14) -and (@($script:StHandlerExitAllowList).Count -eq 8))
   if ($a23GapHandler -ne '') { Write-Output ('      handler exits: ' + $a23GapHandler) }
-  ST-Check 'lint (A-23): the eleven exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the thirteen above' (
-    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 11) -and (@($a23Keys).Count -eq 24) -and (@($a23CaseKeys).Count -eq 13))
+  ST-Check 'lint (A-23): the eleven exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the fourteen above' (
+    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 11) -and (@($a23Keys).Count -eq 25) -and (@($a23CaseKeys).Count -eq 14))
   if ($a23GapEntry -ne '') { Write-Output ('      entry exits: ' + $a23GapEntry) }
   # positive control for the predicate itself: a clean fixture counted by case, a planted handler named
   # as an owner nobody declared, a count that moved named, an entry that is gone named, and '-no-parse'
@@ -14797,6 +16916,72 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   ST-Check 'unit: clipboard kind - text alone' ((Resolve-ClipboardKind $true $false) -ceq 'text')
   ST-Check 'unit: clipboard kind - FileDrop alone' ((Resolve-ClipboardKind $false $true) -ceq 'files')
   ST-Check 'unit: clipboard kind - neither' ((Resolve-ClipboardKind $false $false) -ceq 'other')
+  # CU-OPS package G: the image carrier and the write gate. The clipboard itself is never
+  # touched here (red line: this process must not read or write the shared clipboard), so
+  # the BRANCH and the VERDICT are pinned as pure functions.
+  ST-Check 'unit (G): clipboard kind - image alone / image+text / image+FileDrop are distinct' (
+    ((Resolve-ClipboardKind $false $false $true) -ceq 'image') -and
+    ((Resolve-ClipboardKind $true $false $true) -ceq 'text+image') -and
+    ((Resolve-ClipboardKind $false $true $true) -ceq 'files+image') -and
+    ((Resolve-ClipboardKind $true $true $true) -ceq 'text+files+image'))
+  ST-Check 'unit (G): every restorable kind answers yes and unknown formats answer no with the flag named' (
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'none' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'text' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'files' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'both' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'image'; ImagePath = 'x'; ImageSaveError = $false }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'other' }) -like 'no - unknown formats*--replace-clipboard*'))
+  ST-Check 'unit (G): an image whose PNG could not be saved is its OWN no, not "no image"' (
+    (Get-ClipboardRestorableVerdict @{ Kind = 'image'; ImagePath = ''; ImageSaveError = $true }) -like 'no - an image is present but its PNG could not be saved*')
+  $gGateNo = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'other' } $false 'paste' } catch { $gGateNo = $_.Exception.Message }
+  $gGateOk = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'other' } $true 'paste'; $gGateOk = 'passed' } catch { $gGateOk = 'threw: ' + $_.Exception.Message }
+  ST-Check 'unit (G): the write gate refuses unknown formats BEFORE any write and --replace-clipboard is the explicit override' (
+    $gGateNo -like "paste : the clipboard holds formats this tool cannot restore*--replace-clipboard*" -and $gGateOk -ceq 'passed')
+  # v4.6.1 (CU-OPS package G): the FORMAT LIST decides the branch, not ContainsText/ContainsImage.
+  # A clipboard that carries text AND something this tool cannot put back (HTML Format, Rich Text
+  # Format, PNG, any app-private format) must NOT be written over on the strength of the text
+  # coming back - "the text hash matches" is not "every format is preserved". Pure synthetic
+  # arrays only: the shared clipboard is never read here.
+  $gPlanOther = Get-ClipboardFormatPlan @('UnicodeText', 'HTML Format')
+  $gPlanPure = Get-ClipboardFormatPlan @('UnicodeText', 'Locale')
+  $gPlanImg = Get-ClipboardFormatPlan @('FileDrop', 'Bitmap')
+  ST-Check 'unit (G): a format list carrying any non-pure format is kind=other and names the extra (text+HTML is not restorable as text)' (
+    ($gPlanOther.Kind -ceq 'other') -and ((@($gPlanOther.Extras) -join ',') -ceq 'HTML Format') -and ($gPlanOther.HasText -eq $true))
+  ST-Check 'unit (G): pure lists keep their kind and report no extras (text / FileDrop+image)' (
+    ($gPlanPure.Kind -ceq 'text') -and (@($gPlanPure.Extras).Count -eq 0) -and
+    ($gPlanImg.Kind -ceq 'files+image') -and (@($gPlanImg.Extras).Count -eq 0))
+  $gGateHtml = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'other'; Extras = @('HTML Format', 'Rich Text Format') } $false 'paste' } catch { $gGateHtml = $_.Exception.Message }
+  ST-Check 'unit (G): the write gate names the extra formats so --replace-clipboard is an informed choice' (
+    $gGateHtml -like 'paste : the clipboard holds formats this tool cannot restore (HTML Format, Rich Text Format)*--replace-clipboard*')
+  # The restore note is the only thing paste sees; partial/failed must be mechanically readable so
+  # the command can exit non-zero when the previous clipboard did not come back.
+  ST-Check 'unit (G): a restore note maps to ok/partial/failed/skipped/unknown without guessing' (
+    ((Get-ClipboardRestoreOutcome 'clipboard restored (previous content was text, 3 chars)') -ceq 'ok') -and
+    ((Get-ClipboardRestoreOutcome 'clipboard PARTIALLY restored (wanted text 3 chars; read back 0)') -ceq 'partial') -and
+    ((Get-ClipboardRestoreOutcome 'clipboard restore failed (text)') -ceq 'failed') -and
+    ((Get-ClipboardRestoreOutcome 'skipped clipboard restore (empty)') -ceq 'skipped') -and
+    ((Get-ClipboardRestoreOutcome 'something else') -ceq 'unknown'))
+  # clip-info's "metadata only" promise is now structural: read its body and require that it reads
+  # the FORMAT LIST and nothing else. Comment lines are excluded from the scan (this very block's
+  # rationale is written in the body's header comment).
+  $ciStart = -1
+  for ($gci = 0; $gci -lt $codeLines.Count; $gci++) { if ($codeLines[$gci] -match '^function Invoke-Handler-clip-info') { $ciStart = $gci; break } }
+  $ciCode = @()
+  if ($ciStart -ge 0) {
+    for ($gci = $ciStart + 1; $gci -lt $codeLines.Count; $gci++) {
+      if ($codeLines[$gci] -match '^function ') { break }
+      if ($codeLines[$gci] -notmatch '^\s*#') { $ciCode += $codeLines[$gci] }
+    }
+  }
+  $ciText = $ciCode -join "`n"
+  ST-Check 'lint (G): clip-info reads the format list only - no saved snapshot, no content read, no carrier file' (
+    ($ciStart -ge 0) -and ($ciText.Contains('Get-ClipboardFormatPlan')) -and
+    (-not $ciText.Contains('Save-ClipboardState')) -and (-not $ciText.Contains('GetText(')) -and
+    (-not $ciText.Contains('GetImage(')) -and (-not $ciText.Contains('Remove-Item')) -and
+    (-not $ciText.Contains('Set-Clipboard')))
 
   # ---------- unit: v1.5.2 WP-5 confusable fold is a marked SECOND pass --------
   # audit R-10: OCR reads 'QXHELLO123' as 'QXHELL01231' and 'DTX-AuditInput' as
@@ -15829,6 +18014,80 @@ function Invoke-SelftestFamily-CaptureOcr($Ctx) {
   ST-Check 'lint: --aim-line has its table entry, handler read, usage flag and echo note (exactly 4 code sites; help text is the D-1 lint''s source, not this scan)' (@($aimFlagSites).Count -eq 4)
   if (@($aimFlagSites).Count -ne 4) { Write-Output "      aim-line sites: $(Format-SourceLineList @($aimFlagSites))" }
 
+  # -------------------------------------------------------------------------
+  # CU-OPS-COMPLETE-20261026-01 package F: the template matcher. tpl-find's scan
+  # runs the compiled [TPL] loop (the PowerShell loop costs ~6ms/position, which
+  # would make the advertised pixel bound unreachable), so the CRITICAL property
+  # is that both implementations agree. A 40x30 synthetic canvas pins that by
+  # brute force: every offset is tested in both, and the hit sets must be equal.
+  # -------------------------------------------------------------------------
+  Add-Type -AssemblyName System.Drawing
+  $curFHay = New-Object System.Drawing.Bitmap(40, 30, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $curFTpl = New-Object System.Drawing.Bitmap(6, 4, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $curFG = [System.Drawing.Graphics]::FromImage($curFHay)
+  try {
+    $curFG.Clear([System.Drawing.Color]::White)
+    $curFRed = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 200, 10, 10))
+    $curFBlue = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 10, 10, 200))
+    try {
+      $curFG.FillRectangle($curFRed, 10, 8, 3, 2)
+      $curFG.FillRectangle($curFBlue, 13, 8, 3, 2)
+      $curFG.FillRectangle($curFBlue, 10, 10, 3, 2)
+      $curFG.FillRectangle($curFRed, 13, 10, 3, 2)
+    } finally { $curFRed.Dispose(); $curFBlue.Dispose() }
+  } finally { $curFG.Dispose() }
+  $curFG2 = [System.Drawing.Graphics]::FromImage($curFTpl)
+  try {
+    $curFG2.Clear([System.Drawing.Color]::White)
+    $curFRed2 = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 200, 10, 10))
+    $curFBlue2 = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 10, 10, 200))
+    try {
+      $curFG2.FillRectangle($curFRed2, 0, 0, 3, 2)
+      $curFG2.FillRectangle($curFBlue2, 3, 0, 3, 2)
+      $curFG2.FillRectangle($curFBlue2, 0, 2, 3, 2)
+      $curFG2.FillRectangle($curFRed2, 3, 2, 3, 2)
+    } finally { $curFRed2.Dispose(); $curFBlue2.Dispose() }
+  } finally { $curFG2.Dispose() }
+  $curFHayB = Get-Bitmap32Bytes $curFHay
+  $curFTplB = Get-Bitmap32Bytes $curFTpl
+  $curFAgree = $true
+  $curFHitCount = 0
+  $curFHitList = @()
+  foreach ($curFTol in @(0, 12)) {
+    $curFPos = [int64]0
+    $curFOver = $false
+    $curFCompiled = @([TPL]::Find($curFHayB.Bytes, $curFHayB.Stride, $curFHayB.W, $curFHayB.H, $curFTplB.Bytes, $curFTplB.Stride, $curFTplB.W, $curFTplB.H, $curFTol, 60000, [ref]$curFPos, [ref]$curFOver))
+    $curFPosSet = @()
+    for ($curFY = 0; $curFY -le ($curFHayB.H - $curFTplB.H); $curFY++) {
+      for ($curFX = 0; $curFX -le ($curFHayB.W - $curFTplB.W); $curFX++) {
+        if (Test-TemplateAt $curFHayB $curFTplB $curFX $curFY $curFTol) { $curFPosSet += ($curFX + $curFY * 1000) }
+      }
+    }
+    $curFCompiledPacked = @($curFCompiled | ForEach-Object { [int]($_ -shr 32) + [int]($_ -band 0xFFFFFFFFL) * 1000 } | Sort-Object)
+    $curFPosSet = @($curFPosSet | Sort-Object)
+    if (($curFCompiledPacked -join ',') -cne ($curFPosSet -join ',')) { $curFAgree = $false }
+    if ($curFTol -eq 0) {
+      $curFHitCount = @($curFCompiledPacked).Count
+      $curFHitList = @($curFCompiledPacked)
+    }
+    if ($curFOver -or $curFPos -lt 1) { $curFAgree = $false }
+  }
+  ST-Check 'unit (F-01): the compiled scanner and the PowerShell twin agree on EVERY offset (tolerance 0 and 12), so the fast path cannot drift from the pinned semantics' (
+    $curFAgree)
+  ST-Check 'unit (F-02): the planted 6x4 four-quadrant pattern is found exactly once, at its drawn offset (10,8)' (
+    ($curFHitCount -eq 1) -and ($curFHitList -contains 8010))
+  if (-not ($curFHitCount -eq 1 -and $curFHitList -contains 8010)) { Write-Output ('      F-02 hits: ' + ($curFHitList -join ', ')) }
+  $curFTolEdgeA = Test-TemplateAt $curFHayB @{ Bytes = [byte[]]$curFTplB.Bytes.Clone(); Stride = $curFTplB.Stride; W = $curFTplB.W; H = $curFTplB.H } 10 8 0
+  # one channel moved 12 away: tolerance 12 is inclusive, 11 is not
+  $curFShift = Get-Bitmap32Bytes $curFTpl
+  $curFShift.Bytes[0] = [byte]([math]::Min(255, [int]$curFShift.Bytes[0] + 12))
+  $curFTolIn = Test-TemplateAt $curFHayB $curFShift 10 8 12
+  $curFTolOut = Test-TemplateAt $curFHayB $curFShift 10 8 11
+  ST-Check 'unit (F-03): the per-channel tolerance is INCLUSIVE (a 12-off channel passes at 12 and fails at 11)' (
+    $curFTolEdgeA -and $curFTolIn -and (-not $curFTolOut))
+  $curFHay.Dispose()
+  $curFTpl.Dispose()
+
 }
 
 # lib/selftest-flags-grammar.ps1 - family flags-grammar of the selftest section, lifted out of
@@ -16165,10 +18424,10 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
     $sfE4 -like "*'--dwell' needs a value*" -and $sfE4 -notlike '*valid here*')
   $sfE5 = ''
   try { [void](Strip-OwnFlags @('10', '20', '--index', '1') 'hover') } catch { $sfE5 = $_.Exception.Message }
-  # --index belongs to find-click AND (since J-06) menu-pick: the message must name every
-  # owner, in sorted order, so it cannot change between runs.
+  # --index belongs to find-click, menu-pick and (CU-OPS package F) tpl-find: the message
+  # must name every owner, in sorted order, so it cannot change between runs.
   ST-Check 'unit: another command private flag names every owner of it, not as a typo' (
-    $sfE5.Contains("'--index' is a flag of find-click, menu-pick, not of this command") -and $sfE5.Contains('valid here:') -and $sfE5.Contains('--dwell'))
+    $sfE5.Contains("'--index' is a flag of find-click, menu-pick, tpl-find, not of this command") -and $sfE5.Contains('valid here:') -and $sfE5.Contains('--dwell'))
   # the D-5 wording: coordinate-only commands must not be sent hunting for a needle.
   # The test is on the ADVICE SENTENCE, not on the word --needle - --needle is a shared
   # flag that genuinely reaches hover's parser, so it must appear in its "valid here"
@@ -16268,8 +18527,8 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
       (@($bad).Count -eq 0) -and (@(Get-HashKeys $csMap).Count -ge 4)
     ))
   # the flag-reachability lint must now cover the migrated commands, not just three
-  ST-Check 'unit: the private-flag table covers 13 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; EXPECTATION RAISED 12->13, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
-    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 13)
+  ST-Check 'unit: the private-flag table covers 24 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; CU-OPS adds click/rclick/dblclick for their --mods/--button/space guards, key and key-release for the native-keyboard bounds, the three process entries (proc-wait, proc-start, proc-kill), uia-state for its opt-in --text, and tpl-find/wait-cond for their bounded locator and wait values; EXPECTATION RAISED 13->21->22->24, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
+    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 24)
 
   # the escape route must survive the strip: everything after a value-taking flag is DATA.
   # J-06's central unknown-flag refusal nearly ate `--needle <--payload>` and only a --live
@@ -16500,17 +18759,17 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
 
   # ---------- v4.4.0 (A-15): the case shape is judged from the AST, and a shape break names the case ----------
   # Design gate 12, landed BEFORE any case body moves. Measured on this tree (a15-probe.ps1): the
-  # dispatcher holds ONE switch with 79 clauses; 76 of them begin on a line the strict 76-case regex
+  # dispatcher holds ONE switch with 94 clauses; 91 of them begin on a line the strict case regex
   # sees; the other 3 are single-line cases and they are exactly selftest / script / replay; 0 clauses
-  # begin on a line that is neither. The unscoped file-wide count of the same regex is 90 - 14 more
+  # begin on a line that is neither. The unscoped file-wide count of the same regex is 105 - 11 more
   # lines live in OTHER switches - which is why this gate (and the three older scans) must be scoped
   # to the dispatcher, and why the difference is asserted rather than a number being trusted.
-  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 77 80
+  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 91 94
   $a15Unscoped = 0
   foreach ($a15l in $srcLines) { if ([regex]::IsMatch([string]$a15l, '^    ''[a-z0-9-]+'' \{$')) { $a15Unscoped = $a15Unscoped + 1 } }
-  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 77 and 80, and the unscoped count is larger, so the scope is what is being measured' (
-    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 77) -and ($hCaseStarts.Count -eq 77) -and
-    ($gaCasesCount -eq 80) -and ($a15Unscoped -gt 77))
+  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 91 and 94, and the unscoped count is larger, so the scope is what is being measured' (
+    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 91) -and ($hCaseStarts.Count -eq 91) -and
+    ($gaCasesCount -eq 94) -and ($a15Unscoped -gt 91))
   Write-Output ('      A-15 case shape: gap=[' + $a15Gap + '] flag-scan=' + $d1CaseStarts.Count + ' help-index=' + $hCaseStarts.Count +
     ' f-00-a=' + $gaCasesCount + ' unscoped-file-wide=' + $a15Unscoped)
   # the teeth: every note this predicate can emit is planted, on text - not on the tree. The clean
@@ -17747,6 +20006,95 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   ST-Check 'lint (CU-REL-01): the help page states both new contracts - relclick re-reads the rect after raising, focus re-reads the same handle, and the pointing set now polices the landing identity' (
     ($curelUsage.Contains('re-read AFTER it is raised')) -and ($curelUsage.Contains('the SAME handle')) -and
     ($curelUsage.Contains('is not the resolved target itself')))
+
+  # -------------------------------------------------------------------------
+  # CU-OPS-COMPLETE-20261026-01 packages A + D: target identity and coordinate
+  # spaces, pinned offline. Nothing here sends input or looks at the screen: the
+  # window branch uses an INJECTED rect (Get-TargetRect trusts cached fields when
+  # they are live geometry), and the identity checks only read process metadata.
+  # -------------------------------------------------------------------------
+  $curD1 = @(Test-PointSpaceArg '' )
+  $curDBad = ''
+  try { [void](Test-PointSpaceArg 'vstual') } catch { $curDBad = $_.Exception.Message }
+  ST-Check 'unit (D-01): an absent --space means screen (legacy path), the three names pass through, anything else is refused by name' (
+    ($curD1[0] -ceq 'screen') -and ((Test-PointSpaceArg 'screen') -ceq 'screen') -and ((Test-PointSpaceArg 'window') -ceq 'window') -and
+    ((Test-PointSpaceArg 'client') -ceq 'client') -and ($curDBad.Contains('screen|window|client')) -and ($curDBad.Contains('no input was sent')))
+
+  $curDWinTgt = [pscustomobject]@{ Handle = [IntPtr]1; Left = 100; Top = 200; W = 300; H = 200 }
+  $curDWinOrg = Get-PointSpaceOrigin 'window' $curDWinTgt
+  $curDWinPt = Convert-PointSpace 5 7 $curDWinOrg
+  $curDScrOrg = Get-PointSpaceOrigin 'screen' $null
+  $curDScrPt = Convert-PointSpace 900 700 $curDScrOrg
+  ST-Check 'unit (D-02): window space adds the rect read at action time, screen space is the identity, and screen needs no window' (
+    ($curDWinOrg.X -eq 100) -and ($curDWinOrg.Y -eq 200) -and ($curDWinOrg.W -eq 300) -and ($curDWinOrg.H -eq 200) -and
+    ($curDWinPt.X -eq 105) -and ($curDWinPt.Y -eq 207) -and ($curDScrOrg.Space -ceq 'screen') -and
+    ($curDScrPt.X -eq 900) -and ($curDScrPt.Y -eq 700))
+
+  $curDOorHigh = ''
+  try { [void](Convert-PointSpace 300 0 $curDWinOrg) } catch { $curDOorHigh = $_.Exception.Message }
+  $curDOorNeg = ''
+  try { [void](Convert-PointSpace -1 0 $curDWinOrg) } catch { $curDOorNeg = $_.Exception.Message }
+  ST-Check 'unit (D-03): a point outside the area is REFUSED (both edges, 0-based) and never clamped to the edge' (
+    $curDOorHigh.Contains('outside the target area 300x200') -and $curDOorHigh.Contains('no input was sent') -and
+    $curDOorNeg.Contains('outside the target area') -and $curDOorNeg.Contains('no input was sent'))
+
+  $curDNoWin = ''
+  try { [void](Get-PointSpaceOrigin 'client' $null) } catch { $curDNoWin = $_.Exception.Message }
+  ST-Check 'unit (D-04): a relative space without a resolved window is refused instead of defaulting to (0,0)' (
+    $curDNoWin.Contains('--space client needs a resolved window') -and $curDNoWin.Contains('no input was sent'))
+
+  $curDReceipt = Format-PointSpaceReceipt $curDScrOrg 5 7
+  $curDReceiptWin = Format-PointSpaceReceipt $curDWinOrg 5 7
+  ST-Check 'unit (D-05): the receipt tail is EMPTY for screen (every pre-existing echo stays byte-identical) and names the space+offset otherwise' (
+    ($curDReceipt -ceq '') -and ($curDReceiptWin -ceq ' space=window rel=5,7'))
+
+  # The client origin cannot be faked offline (ClientToScreen needs a live hwnd), so what is
+  # pinned is that the client branch measures the origin from the HANDLE at call time - both
+  # Win32 calls sit inside the client branch. (codeLines is the stitched source set, so a
+  # definition may appear once per contributing file; the floor is what matters here.)
+  $curDClientSrc = @($codeLines | Where-Object { $_ -notmatch '^\s*#' })
+  $curDClientSite = @($curDClientSrc | Where-Object { $_.Contains('ClientToScreen') })
+  $curDClientRect = @($curDClientSrc | Where-Object { $_.Contains('GetClientRect') })
+  ST-Check 'unit (D-06): client space is measured from the handle at action time (ClientToScreen + GetClientRect inside the client branch) and the conversion is produced once per source set' (
+    ($curDClientSite.Count -ge 2) -and ($curDClientRect.Count -ge 2) -and
+    (@($curDClientSrc | Where-Object { $_.Contains('function Convert-PointSpace') }).Count -ge 1) -and
+    (@($curDClientSrc | Where-Object { $_.Contains('function Get-PointSpaceOrigin') }).Count -ge 1))
+
+  # A lifted family may not read the caller's plain variables (A-14b), so the own-pid
+  # comes from the runtime handle rather than the automatic variable.
+  $curAOwn = [int][System.Diagnostics.Process]::GetCurrentProcess().Id
+  $curA1 = Test-ProcIdentity 999999999 ''
+  $curA2 = Test-ProcIdentity $curAOwn ''
+  $curA3 = Test-ProcIdentity $curAOwn '2000-01-01T00:00:00'
+  $curA4 = Test-ProcIdentity $curAOwn ([string]$curA2.Snap.start)
+  ST-Check 'unit (A-01): process identity answers in four honest shapes - dead pid, no pin, wrong creation time, matching creation time' (
+    (-not $curA1.Ok) -and ($curA1.Why -ceq 'process-not-running') -and
+    ($curA2.Ok) -and ($curA2.Why -ceq 'no-created-pin') -and
+    (-not $curA3.Ok) -and ($curA3.Why.Contains('creation time mismatch')) -and
+    ($curA4.Ok))
+  if (-not ($curA2.Ok -and $curA4.Ok -and (-not $curA3.Ok))) { Write-Output ('      A-01: ' + $curA1.Why + ' / ' + $curA2.Why + ' / ' + $curA3.Why + ' / ' + $curA4.Why + ' start=' + $curA2.Snap.start) }
+
+  $curATolEdge = Test-ProcIdentity $curAOwn (([datetime]$curA2.Snap.start).AddSeconds(1).ToString('o'))
+  $curATolOut = Test-ProcIdentity $curAOwn (([datetime]$curA2.Snap.start).AddSeconds(5).ToString('o'))
+  # CU-OPS-ADJ-01: the old 2s window accepted a process created one second after the pin.
+  # Exactness is the contract now: 1s off is refused exactly like 5s off.
+  ST-Check 'unit (A-02): identity is EXACT - a pin 1s off is refused like one 5s off (no tolerance window, CU-OPS-ADJ-01)' (
+    (-not $curATolEdge.Ok) -and $curATolEdge.Why.Contains('creation time mismatch') -and
+    (-not $curATolOut.Ok) -and $curATolOut.Why.Contains('creation time mismatch'))
+  if (-not ((-not $curATolEdge.Ok) -and (-not $curATolOut.Ok))) { Write-Output ('      A-02: 1s=' + $curATolEdge.Why + ' / 5s=' + $curATolOut.Why) }
+
+  $curAKillSrc = @($codeLines | Where-Object { $_ -notmatch '^\s*#' })
+  $curAGoGate = @($curAKillSrc | Where-Object { $_.Contains(' --go') -or $_.Contains("'--go'") })
+  ST-Check 'unit (A-03): proc-kill is preview-by-default (the --go branch is the only one that terminates) and it re-checks the same object before killing' (
+    ($curAGoGate.Count -ge 1) -and (@($curAKillSrc | Where-Object { $_.Contains('TerminateProcess') }).Count -ge 1) -and
+    (@($curAKillSrc | Where-Object { $_.Contains('WaitForExit') }).Count -ge 1))
+
+  # CU-OPS-ADJ-02: one pinned handle, released last. A shared .NET Process object alone is
+  # not a proof that the check and the terminate travelled through the same native handle.
+  ST-Check 'unit (A-04): proc-kill pins ONE native handle (Process.Handle) and releases it in finally (CU-OPS-ADJ-02)' (
+    (@($curAKillSrc | Where-Object { $_.Contains('$pr.Handle') }).Count -ge 1) -and
+    (@($curAKillSrc | Where-Object { $_.Contains('$pr.Dispose()') }).Count -ge 1) -and
+    (@($curAKillSrc | Where-Object { $_.Contains('handle-pinned=yes') }).Count -ge 1))
 
 }
 
@@ -20987,7 +23335,11 @@ function Invoke-SelftestFamily-DragPress($Ctx) {
   foreach ($dgRg in @(Get-CommandCodeRanges $codeLines 'drag')) {
     for ($dgi = [int]$dgRg[0]; $dgi -lt [int]$dgRg[1]; $dgi++) {
       if ($codeLines[$dgi] -match '^\s*#') { continue }
-      if (($codeLines[$dgi].Contains('MOUSE_LDOWN')) -and ($dgLdown -lt 0)) { $dgLdown = $dgi }
+      # CU-OPS package B: the press moved behind Invoke-MouseButtonEvent (one owned press/release
+      # for every button), so the boundary is either the raw MOUSE_LDOWN line or a call that
+      # asks that helper for a button DOWN. Both shapes count; the ORDER claim is unchanged.
+      if ((($codeLines[$dgi].Contains('MOUSE_LDOWN')) -or
+          ([regex]::IsMatch([string]$codeLines[$dgi], 'Invoke-MouseButtonEvent\s+\$\w+\s+\$true'))) -and ($dgLdown -lt 0)) { $dgLdown = $dgi }
       if ($codeLines[$dgi].Contains('Invoke-HitWindowCheck')) { $dgHits += $dgi }
     }
   }
@@ -21420,20 +23772,21 @@ $f.Controls.Add($lbl)
       }
 
       # ---------- live: v1.9.0 popup survival guard end-to-end (T-1..T-4) ----------
-      # Fixture: DTX-PGMain spawns an OWNED popup DTX-PGPopup when clicked (real window,
-      # tool-owned - never a real app's flaky popup). mode=fuse destroys the popup 800ms
-      # after it opens (the synthetic self-closing popup the task order demands); mode=keep
-      # leaves it alive for the control run and the win-close dismissal path.
+      # Fixture: a per-run owned window (DTXP-M-<tag>) spawns an OWNED popup (DTXP-P-<tag>)
+      # when clicked - real windows, tool-owned, never a real app's flaky popup. mode=fuse
+      # closes the popup only when THIS test writes a marker file, and only after the test
+      # has seen the guard's arming line; mode=keep leaves it alive for the control run and
+      # the win-close dismissal path.
       # X-02 residual (v4.1.1): see the chProc note - this block reads $script:pgProc in its
       # finally (and the inner finally re-reads it), while the real initialiser sat INSIDE the
       # try, so a throw before it left the outer finally reading an unassigned variable.
       $script:pgProc = $null
       $pgTmp = New-Object System.Collections.ArrayList
       try {
-        foreach ($pgStale in @('DTX-PGMain', 'DTX-PGPopup')) {
-          $pgOld = Resolve-Window $pgStale
-          if ($pgOld) { try { Stop-Process -Id $pgOld.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 400 }
-        }
+        # OPS-7: every fixture window now carries a PER-RUN tag in its title, so
+        # the old "kill whatever is named DTX-PGMain/DTX-PGPopup" sweep is gone - it could
+        # take another run's fixture down and made cleanup a claim about OTHER processes.
+        # Identity is the fixture's own PID, and the only thing finally may stop is that PID.
         $pgScript = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.ps1')
         [void]$pgTmp.Add($pgScript)
         $pgSrc = @'
@@ -21447,30 +23800,47 @@ public class HXPG {
 }
 "@
 [void][HXPG]::SetProcessDPIAware()
-$mode = if ($args.Count -ge 1) { $args[0] } else { 'keep' }
+$mode = if ($args.Count -ge 1) { [string]$args[0] } else { 'keep' }
+$mainTitle = if ($args.Count -ge 2) { [string]$args[1] } else { 'DTXP-M' }
+$popupTitle = if ($args.Count -ge 3) { [string]$args[2] } else { 'DTXP-P' }
+$closeFlag = if ($args.Count -ge 4) { [string]$args[3] } else { '' }
+$wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $main = New-Object System.Windows.Forms.Form
-$main.Text = 'DTX-PGMain'
+$main.Text = $mainTitle
 $main.ClientSize = New-Object System.Drawing.Size(300, 180)
 $main.StartPosition = 'Manual'
-$main.Location = New-Object System.Drawing.Point(160, 1500)
+$main.Location = New-Object System.Drawing.Point(80, [int]($wa.Height - 260))
 $main.TopMost = $true
 $script:popup = $null
+$script:waited = 0
 $main.Add_MouseClick({
   param($s, $e)
   if ($null -ne $script:popup) { return }
   $p = New-Object System.Windows.Forms.Form
-  $p.Text = 'DTX-PGPopup'
+  $p.Text = $popupTitle
   $p.ClientSize = New-Object System.Drawing.Size(220, 120)
   $p.StartPosition = 'Manual'
-  $p.Location = New-Object System.Drawing.Point($s.Location.X + 330, $s.Location.Y)
+  $p.Location = New-Object System.Drawing.Point(($s.Location.X + 330), $s.Location.Y)
   $p.TopMost = $true
   $s.AddOwnedForm($p)
   $p.Show()
   $script:popup = $p
-  if ($mode -eq 'fuse') {
+  if ($mode -eq 'fuse' -and $closeFlag -ne '') {
+    # OPS-7: the popup closes ONLY on the test's marker file, and the wait is
+    # bounded (200 ticks x 100ms). No wall-clock self-destruct: the close cannot beat the
+    # arming step, so "gone before require-popup" is not a timing accident any more.
     $t = New-Object System.Windows.Forms.Timer
-    $t.Interval = 800
-    $t.Add_Tick({ param($ts, $te) $ts.Stop(); if ($null -ne $script:popup) { $script:popup.Close(); $script:popup = $null } })
+    $t.Interval = 100
+    $t.Add_Tick({
+      param($ts, $te)
+      $script:waited++
+      if ([System.IO.File]::Exists($closeFlag)) {
+        $ts.Stop()
+        if ($null -ne $script:popup) { $script:popup.Close(); $script:popup = $null }
+        return
+      }
+      if ($script:waited -ge 200) { $ts.Stop() }
+    })
     $t.Start()
   }
 })
@@ -21484,18 +23854,24 @@ $main.Add_MouseClick({
         $script:pgProc = $null
         $pgSpawn = {
           param($mode, $tag)
-          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode)
+          $pgMainTitle = 'DTXP-M-' + $tag
+          $pgPopupTitle = 'DTXP-P-' + $tag
+          $pgFlag = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.close')
+          [void]$pgTmp.Add($pgFlag)
+          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode, $pgMainTitle, $pgPopupTitle, $pgFlag)
           $script:pgProc = Start-Process powershell -ArgumentList $pgArgs -PassThru
+          $pgWantPid = $script:pgProc.Id
           $pgMain = $null
           $swPg = [System.Diagnostics.Stopwatch]::StartNew()
           while ($swPg.Elapsed.TotalSeconds -lt 15) {
-            $pgMain = Resolve-Window 'DTX-PGMain'
-            if ($pgMain) { break }
-            Start-Sleep -Milliseconds 400
+            $pgMain = Resolve-Window $pgMainTitle
+            if ($pgMain -and ($pgMain.Pid -eq $pgWantPid)) { break }
+            Start-Sleep -Milliseconds 300
           }
           if ($null -eq $pgMain) { throw "popup-guard fixture ($tag) did not appear within 15s" }
-          Start-Sleep -Milliseconds 500
-          return $pgMain
+          if ($pgMain.Pid -ne $pgWantPid) { throw "popup-guard fixture ($tag): resolved pid=$($pgMain.Pid) is not the fixture pid=$pgWantPid" }
+          Start-Sleep -Milliseconds 400
+          return @{ Main = $pgMain; Popup = $pgPopupTitle; Flag = $pgFlag; Pid = $pgWantPid }
         }
         $pgStop = {
           if ($script:pgProc -and -not $script:pgProc.HasExited) { try { Stop-Process -Id $script:pgProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
@@ -21509,21 +23885,71 @@ $main.Add_MouseClick({
           $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath script $pgSteps 2>&1 | Out-String
           return @{ Out = $out; Code = $LASTEXITCODE }
         }
-        # T-1: the popup opens, is guarded alive, then self-closes - a later step must
-        # hit the guard and abort the REST of the script with measured values.
-        $pgMain1 = & $pgSpawn 'fuse' 'T-1'
-        $cx = [int]($pgMain1.Left + $pgMain1.W / 2)
-        $cy = [int]($pgMain1.Top + $pgMain1.H / 2)
-        $t1Json = '[{"click":[' + $cx + ',' + $cy + ']},{"sleep":150},{"require-popup":"DTX-PGPopup","tolerance":3},{"sleep":1500},{"assert-window":"DTX-PGPopup"}]'
-        $t1 = & $pgScriptRun $t1Json
+        # OPS-7: T-1's close has to be written by THIS process while the child script
+        # is still running, so that run is started in the background and its stdout/stderr are
+        # read back from files. The exit code is the child's own, never $LASTEXITCODE of a pipe.
+        $pgScriptRunAsync = {
+          param($stepsJson)
+          $pgSteps = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.json')
+          [void]$pgTmp.Add($pgSteps)
+          [System.IO.File]::WriteAllText($pgSteps, $stepsJson, (New-Object System.Text.UTF8Encoding($false)))
+          $pgSo = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.out')
+          $pgSe = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.err')
+          [void]$pgTmp.Add($pgSo)
+          [void]$pgTmp.Add($pgSe)
+          # The child runs under cmd with delayed expansion so its own ERRORLEVEL is echoed
+          # into the capture file: a bounded WaitForExit on a redirected child can surface
+          # 0 even when the child ended with exit 1 (measured on the popup-abort path).
+          # The echo is the ground truth here; the process object is only the fallback.
+          $pgLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" script "' + $pgSteps + '" & echo EXITCODE=!ERRORLEVEL!'
+          $pgPr = Start-Process cmd -ArgumentList @('/v:on', '/c', $pgLine) -RedirectStandardOutput $pgSo -RedirectStandardError $pgSe -PassThru -WindowStyle Hidden
+          return @{ Proc = $pgPr; OutFile = $pgSo; ErrFile = $pgSe }
+        }
+        $pgAwaitAsync = {
+          param($a, $boundSec)
+          if (-not $a.Proc.WaitForExit([int]($boundSec * 1000))) {
+            try { Stop-Process -Id $a.Proc.Id -Force -ErrorAction SilentlyContinue } catch { }
+            return @{ TimedOut = $true; Code = -1; Out = '' }
+          }
+          # A bounded WaitForExit returns once the process has exited, but with redirected
+          # streams the exit code is only guaranteed after the unbounded call (which also
+          # drains the async readers). Read it only after that, and refresh the handle.
+          try { $a.Proc.WaitForExit() } catch { }
+          try { $a.Proc.Refresh() } catch { }
+          $pgO = if (Test-Path -LiteralPath $a.OutFile) { [System.IO.File]::ReadAllText($a.OutFile) } else { '' }
+          $pgE = if (Test-Path -LiteralPath $a.ErrFile) { [System.IO.File]::ReadAllText($a.ErrFile) } else { '' }
+          $pgCode = [int]$a.Proc.ExitCode
+          if ($pgO -match 'EXITCODE=(\d+)') { $pgCode = [int]$Matches[1] }
+          return @{ TimedOut = $false; Code = $pgCode; Out = ($pgO + $pgE) }
+        }
+        # T-1: the popup opens, is guarded alive, and THIS test closes it only after it has
+        # SEEN the arming line in actions.log (bounded poll, 15s). The close is armed->close
+        # by evidence, not by a wall clock: a slow arm cannot be outrun, and the marker is
+        # never written before the guard exists.
+        $fi1 = & $pgSpawn 'fuse' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $cx = [int]($fi1.Main.Left + $fi1.Main.W / 2)
+        $cy = [int]($fi1.Main.Top + $fi1.Main.H / 2)
+        $t1Json = '[{"click":[' + $cx + ',' + $cy + ']},{"sleep":150},{"require-popup":"' + $fi1.Popup + '","tolerance":3},{"sleep":1500},{"assert-window":"' + $fi1.Popup + '"}]'
+        $t1a = & $pgScriptRunAsync $t1Json
+        $t1Armed = $false
+        $swArm = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($swArm.Elapsed.TotalSeconds -lt 15) {
+          if (Test-Path -LiteralPath $ActionLog) {
+            $lg = [System.IO.File]::ReadAllText($ActionLog)
+            if ($lg.Contains("popup guard armed at step 3 (pid=$($fi1.Pid) ")) { $t1Armed = $true; break }
+          }
+          Start-Sleep -Milliseconds 100
+        }
+        if ($t1Armed) { [System.IO.File]::WriteAllText($fi1.Flag, 'close', (New-Object System.Text.UTF8Encoding($false))) }
+        $t1 = & $pgAwaitAsync $t1a 20
         & $pgStop
-        $t1Shape = ($t1.Out -match 'popup guard: popup GONE') -and ($t1.Out -match 'before step 5 of 5') -and
+        $t1Shape = $t1Armed -and ($t1.Out -match 'popup guard: popup GONE') -and ($t1.Out -match 'before step 5 of 5') -and
           ($t1.Out -match '  baseline: pid=') -and ($t1.Out -match '  now     : ') -and ($t1.Out -match '  delta   : ') -and
           ($t1.Out -match 'script aborted: popup guard failed \(nothing after this step ran\)') -and
           ($t1.Out -match 'armed at step 3 ') -and (-not ($t1.Out -match '#5 assert-window FAIL'))
         ST-Check 'live: T-1 a self-closing popup aborts the rest of the script with baseline/now/delta echoed, nothing after it runs' (
           ($t1.Code -eq 1) -and $t1Shape)
-        Write-Output "      T-1 exit=$($t1.Code) shape=$t1Shape"
+        Write-Output "      T-1 exit=$($t1.Code) shape=$t1Shape armed-observed=$t1Armed timedout=$($t1.TimedOut)"
         Write-Output ("      T-1 output: " + (($t1.Out.Trim() -split "`r?`n" | Where-Object { $_ -match 'popup guard|baseline|now|delta|aborted' } | Select-Object -First 6) -join ' | '))
         # T-4: the aborted run left its marker in actions.log - replay must refuse the
         # slice that carries it (dry run included; no --force backdoor exists).
@@ -21534,10 +23960,10 @@ $main.Add_MouseClick({
         Write-Output "      T-4 exit=$t4Code refused=$($t4Out -match 'refusing to replay')"
         # T-2 (control): the same shape with a popup that STAYS - the script must run to
         # completion, arm at step 3 and release at step 5, exit 0 (no false red).
-        $pgMain2 = & $pgSpawn 'keep' 'T-2'
-        $cx2 = [int]($pgMain2.Left + $pgMain2.W / 2)
-        $cy2 = [int]($pgMain2.Top + $pgMain2.H / 2)
-        $t2Json = '[{"click":[' + $cx2 + ',' + $cy2 + ']},{"sleep":150},{"require-popup":"DTX-PGPopup","tolerance":3},{"assert-window":"DTX-PGPopup"},{"release-popup":""},{"assert-window":"DTX-PGMain"}]'
+        $fi2 = & $pgSpawn 'keep' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $cx2 = [int]($fi2.Main.Left + $fi2.Main.W / 2)
+        $cy2 = [int]($fi2.Main.Top + $fi2.Main.H / 2)
+        $t2Json = '[{"click":[' + $cx2 + ',' + $cy2 + ']},{"sleep":150},{"require-popup":"' + $fi2.Popup + '","tolerance":3},{"assert-window":"' + $fi2.Popup + '"},{"release-popup":""},{"assert-window":"' + $fi2.Main.Title + '"}]'
         $t2 = & $pgScriptRun $t2Json
         & $pgStop
         $t2Ok = ($t2.Code -eq 0) -and ($t2.Out -match 'armed at step 3 ') -and ($t2.Out -match 'popup guard: released at step 5') -and ($t2.Out -match '6 steps, all ok')
@@ -21554,10 +23980,10 @@ $main.Add_MouseClick({
         Write-Output "      T-4n exit=$t4bCode would-list=$($t4bOut -match 'WOULD')"
         # T-3: the script's OWN win-close of the guarded popup is a legal dismissal -
         # auto-release with a notice, then later steps keep running (exit 0).
-        $pgMain3 = & $pgSpawn 'keep' 'T-3'
-        $cx3 = [int]($pgMain3.Left + $pgMain3.W / 2)
-        $cy3 = [int]($pgMain3.Top + $pgMain3.H / 2)
-        $t3Json = '[{"click":[' + $cx3 + ',' + $cy3 + ']},{"sleep":150},{"require-popup":"DTX-PGPopup","tolerance":3},{"win-close":"DTX-PGPopup"},{"assert-window":"DTX-PGMain"}]'
+        $fi3 = & $pgSpawn 'keep' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $cx3 = [int]($fi3.Main.Left + $fi3.Main.W / 2)
+        $cy3 = [int]($fi3.Main.Top + $fi3.Main.H / 2)
+        $t3Json = '[{"click":[' + $cx3 + ',' + $cy3 + ']},{"sleep":150},{"require-popup":"' + $fi3.Popup + '","tolerance":3},{"win-close":"' + $fi3.Popup + '"},{"assert-window":"' + $fi3.Main.Title + '"}]'
         $t3 = & $pgScriptRun $t3Json
         & $pgStop
         $t3Ok = ($t3.Code -eq 0) -and ($t3.Out -match 'popup guard: released at step 4 \(win-close closed the guarded popup\)') -and ($t3.Out -match '5 steps, all ok')
@@ -21568,13 +23994,10 @@ $main.Add_MouseClick({
         ST-Check 'live: popup guard setup+run' $false
         Write-Output "      popup guard error: $($_.Exception.Message)"
       } finally {
-        # belt and suspenders: the runs stop their own fixture, a crashed run leaves
-        # nothing (both windows belong to the fixture process)
+        # OPS-7: cleanup is identity-based only. The fixture windows die with the
+        # fixture PID, so this stops that PID and nothing else - there is no title sweep left
+        # that could kill another run's fixture.
         if ($script:pgProc -and -not $script:pgProc.HasExited) { try { Stop-Process -Id $script:pgProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
-        foreach ($pgTitle in @('DTX-PGMain', 'DTX-PGPopup')) {
-          $pgLeft = Resolve-Window $pgTitle
-          if ($pgLeft) { try { Stop-Process -Id $pgLeft.Pid -Force -ErrorAction SilentlyContinue } catch { } }
-        }
         foreach ($f in $pgTmp) { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } }
       }
 
@@ -26898,7 +29321,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -27119,15 +29542,84 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
           window) report their owners instead. Switches: --occlude
           off|warn|strict overrides the per-command default; --occlude-grid n
           (default 5); --allow-occluded downgrades a strict fail to a warning. 
+  process (PID identity and lifecycle; observation is read-only, termination previews)
+    proc-list [name-filter]         every process, visible window or not. A background
+                                    process is listed too - "not in wins" is an absence
+                                    of a window, not of the process. Read-only.
+    proc-info <pid>                 one identity: name/path/start time/responding/window/
+                                    session/threads/working set, plus every top-level
+                                    window the PID owns. Unreadable fields print as
+                                    denied/unknown instead of disappearing.
+    proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]
+                                    bounded wait (default 20s) bound to the PID and,
+                                    with --created, to that process's creation time.
+                                    Process exit and window appearance are separate
+                                    predicates on purpose. A timeout never escalates
+                                    to a kill.
+    proc-start [--cwd <dir>] [--wait-window s] <exe> [argv...]
+                                    start a local exe with structured argv (each
+                                    operand quoted here - no shell string, no
+                                    elevation, no restart). Prints pid + creation
+                                    time; --wait-window polls for a top-level window
+                                    and reports a timeout as such (the started
+                                    process is NOT stopped).
+    proc-kill <pid> [--created <iso>] [--timeout s] [--go]
+                                    PREVIEW by default. --go additionally requires
+                                    --created (the start time from proc-info) and is
+                                    checked again through the very handle that is
+                                    terminated, so a reused PID is refused. Never
+                                    kills a subtree, never targets a protected
+                                    system/session process, this tool, or its own
+                                    ancestor chain. A terminate request is not an
+                                    exit: success is reported only when the same
+                                    process object ends. Unsaved work in the target
+                                    can be lost - prefer win-close / dialog-cancel.
+  locate / clipboard / surface (read-only)
+    tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen|window|client]
+             [--tolerance n] [--scales 1|1,1.25] [--index n] [--max-ms ms] [--created <iso>]
+                                    deterministic template locator: one nearest-neighbour
+                                    resample per requested scale (0.5..2.0, at most 3),
+                                    integer per-channel tolerance (0..255), a bounded
+                                    region (<= 3,000,000 px) and a bounded time budget.
+                                    Multi-hit is a REFUSAL unless --index names one -
+                                    picking the first would be a guess. It reports
+                                    points and NEVER clicks; --space says which origin
+                                    the printed coordinates are expressed in.
+    clip-info                       clipboard METADATA only: kind, format count and names,
+                                    character count, file count, image availability,
+                                    and whether this tool can restore it. No text is
+                                    printed, no image is decoded, nothing is written.
+    wait-cond <sel> [--win] [--gone] [--foreground] [--text <needle>]
+                     [--uia <nameSub>] [--state On|Off|Expanded|Collapsed|Selected|NotSelected]
+                     [--timeout s] [--interval ms]
+                                    ONE bounded wait with exactly ONE predicate, and
+                                    three outcomes kept apart: matched, timed out, and
+                                    every poll failing to read (a read failure is never
+                                    reported as "the condition stayed false").
+    capabilities [--json]           the command surface DERIVED from this dispatcher's
+                                    own registry: per-command group, private/shared
+                                    flags, --json support, plus the entry path + SHA256
+                                    and the environment. It recomputes the registry's
+                                    total, so a command registered but unreachable is
+                                    visible rather than silently missing.
   act (absolute coords)
     move <x> <y>                    move cursor
     hover <x> <y> [--dwell ms]      move and STAY - tooltips need the dwell to
                                     render; pointer popups become screenshotable.
                                     dwell default 800, whole ms, 0..60000
-    click <x> <y>                   left click; optionally --to <sel> activates
-    rclick <x> <y>                    + verifies a window first, --guard-text /
-    dblclick <x> <y>                  --guard-region x,y,w,h=s asserts context
+    click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift|ctrl,shift]
+                                    [--space screen|window|client] [--created <iso>]
+                                    click; optionally --to <sel> activates
+    rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>]  + verifies a window first, --guard-text /
+    dblclick <x> <y> [--mods ...] [--space screen|window|client] [--created <iso>]  --guard-region x,y,w,h=s asserts context
                                       BEFORE the click (like the text commands).
+                                      --mods holds ctrl/shift/alt for the ONE call
+                                      only (press -> click -> release); an existing
+                                      user-held key is refused, never toggled.
+                                      --button covers middle (canvas pan) and the
+                                      back/forward side buttons. The Windows key is
+                                      refused: OS-reserved combinations are not
+                                      synthesised here.
                                       v1.5.0: all pointing commands (move /
                                       hover / click family / find-click) print
                                       hit-window = the window really under the
@@ -27140,11 +29632,31 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                       same path, and relclick additionally
                                       refuses when the window under the point
                                       is not the resolved target itself
-    drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--to <sel>] [--guard-text <s>]
+                                      --space screen|window|client picks the
+                                      coordinate space: screen (default,
+                                      physical pixels), window (0-based offset
+                                      inside the target's visible frame) or
+                                      client (0-based offset inside its client
+                                      area). window/client need --to and read the
+                                      origin at ACTION time, so a move/resize/DPI
+                                      change cannot leave a stale point in use; an
+                                      offset outside the area is refused, never
+                                      clamped or silently sent.
+                                      --created <iso> pins the target PROCESS to
+                                      its creation time (start= from proc-info),
+                                      so a reused PID is refused before any
+                                      activation - the handle pin and the process
+                                      pin answer different questions.
+    drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left|middle|right|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>]
                                     press, interpolate, release (windows,
                                     sliders, scrollbars); guards like click.
                                     steps default 14 (1..200), hold default 120
-                                    (0..10000) - the press time before moving
+                                    (0..10000) - the press time before moving.
+                                    --button middle = canvas pan; --mods holds the
+                                    modifiers for this one drag only. The cross-call
+                                    press-down/press-up pair stays LEFT-button and
+                                    modifier-free on purpose: a held key between two
+                                    calls is state the user may have to clean up.
     press-down <x> <y> [--max-hold ms] [--to <sel>] [--guard-text <s>] [--force]
                                     v2.0.1 (P-3) MID-STATE: press and LET IT STAY
                                     DOWN so you can look before letting go - the
@@ -27171,8 +29683,10 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     here; refuses when nothing is down (say so,
                                     never report a release that did not happen)
     wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>] [--at <sel>]
+                                    [--space screen|window|client] [--created <iso>]
                                     [--focus-first] [--expect-change [x,y,w,h]]
                                     [--verify-scroll] [--expect-visible-text <needle>]
+                                    [--mods ctrl|shift|alt[+...]]
                                     scroll (raw delta is the default; notches
                                     multiply by 120; vertical + = up / - = down,
                                     horizontal + = right / - = left); no target keeps
@@ -27189,6 +29703,15 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     if unavailable, only an explicit local rect enables a
                                     pixel-only fallback. --expect-visible-text checks a new
                                     visible UIA name. Polling is bounded; no automatic retry.
+                                    --mods presses ctrl/shift/alt for THIS ONE wheel event
+                                    and releases them in the same call (the same ownership
+                                    as click --mods; a key someone else holds is refused).
+                                    What a modified wheel does is the application's
+                                    decision: Ctrl+wheel may zoom in one app and pan in
+                                    another. A changed scroll position is therefore NOT
+                                    accepted as proof of zoom: --verify-scroll is refused
+                                    together with --mods, and the receipt says
+                                    gesture-scope=application-defined.
     relclick <sel> <dx> <dy>        click inside the window, from a rect
                                     re-read AFTER it is raised: a window that
                                     moved or restored is measured again, and a
@@ -27353,10 +29876,46 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     raw SendKeys spec, e.g. ^s  ^a  %{F4}  {ENTER};
                                     use `type` for literal text, not key syntax
                                     (SendKeys still honours the IME - see README)
-    paste [--to <sel>] <file> [--expect <s>|--no-expect] [--force]
+    key [--to <sel>] <combo> [--repeat n] [--interval ms] [--hold ms] [--guard-text <s>] [--expect <needle>] [--force]
+                                    NATIVE key gesture (SendInput), separate from
+                                    keys: combo = ctrl/shift/alt/win + one base key,
+                                    e.g. 'key ctrl+shift+t', 'key alt+f4',
+                                    'key f5 --repeat 3', 'key enter --hold 800'.
+                                    Base names: a-z 0-9 F1..F24 numpad0..9 enter tab
+                                    esc space backspace delete insert home end
+                                    pageup pagedown left up right down capslock
+                                    numlock scrolllock printscreen pause apps
+                                    minus equal comma period slash semicolon quote
+                                    backslash grave add subtract multiply divide
+                                    decimal. --repeat 1..50, --interval 0..5000,
+                                    --hold 0..20000 (one bounded hold of the BASE
+                                    key). Every key is released inside this call;
+                                    a modifier someone else already holds is
+                                    REFUSED, never pressed or released. Refused by
+                                    design: Ctrl+Alt+Del (the Secure Attention
+                                    Sequence belongs to the OS) and Win+l/d/u/r
+                                    (they act on the whole session, not a window).
+                                    Chinese body text still goes through `type`
+                                    (Unicode SendInput), never through a keystroke
+                                    table or the clipboard.
+    key-state                       READ-ONLY: which modifiers/lock keys and
+                                    mouse buttons are down right now, plus what
+                                    this tool has on record as held. Nothing is
+                                    pressed or released.
+    key-release [--go]              release ONLY keys this tool recorded as held
+                                    (the ledger an interrupted call leaves behind).
+                                    DRY RUN by default; keys held by anyone else
+                                    are reported, never touched. 'Release all
+                                    physical keys' is deliberately not a mode:
+                                    an unknown holder is reported, not reset.
+    paste [--to <sel>] <file> [--expect <s>|--no-expect] [--replace-clipboard] [--force]
                                     read UTF-8 file, put on clipboard, Ctrl+V;
-                                    previous clipboard (text or FileDrop) is
-                                    saved and restored afterwards. v1.5.9: with
+                                    previous clipboard (text, FileDrop or image) is
+                                    saved and restored afterwards. CU-OPS G: when
+                                    the clipboard holds formats this tool cannot
+                                    put back (custom data), the write is REFUSED
+                                    unless --replace-clipboard says losing it is
+                                    intended. v1.5.9: with
                                     NO expect flag given, the payload tail (last
                                     non-empty line, <= 24 chars) is OCR-read back
                                     from the target - not visible = WARN + exit 1
@@ -27383,10 +29942,12 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
   clipboard
     copy-file <path>                put a local file on the clipboard as FileDrop,
                                     self-verified; deliberately keeps it there
-    paste-file [--to <sel>] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--force]
+    paste-file [--to <sel>] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--replace-clipboard] [--force]
                                     copy-file + foreground guard + content guard
                                     + Ctrl+V, then restore the previous clipboard;
-                                    v1.5.9: default-on readback like paste (it
+                                    CU-OPS G: unknown clipboard formats are refused
+                                    before the write unless --replace-clipboard is
+                                    given; v1.5.9: default-on readback like paste (it
                                     looks for the FILE NAME; --no-expect is the
                                     send-only escape; --expect family honoured)
 
@@ -27489,6 +30050,33 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     readback-verified (no keyboard, no clipboard).
                                     @path form: uia-settext <sel> @/0/2/1 <file>
                                     "T|n|X,Y,WxH"
+    uia-state <sel> <nameSub> [--text]
+                                    READ-ONLY: one line per UIA pattern this
+                                    element exposes right now - toggle / selection /
+                                    expand / range (value,min,max,readonly) /
+                                    value (length + writable) / text / scrollItem -
+                                    and an explicit "no XPattern" when absent.
+                                    Values and text are NOT printed unless --text
+                                    is passed, and a password field is never read.
+                                    Nothing is activated and nothing is logged.
+    uia-do <action> <sel> <nameSub> [value]
+                                    semantic action through ONE named pattern,
+                                    then a read-back of the resulting state:
+                                    toggle|toggle-on|toggle-off (TogglePattern),
+                                    select|add-select|remove-select
+                                    (SelectionItemPattern; add/remove are the
+                                    multi-select calls, since Select on a second
+                                    item replaces the selection), expand|collapse
+                                    (ExpandCollapsePattern), scroll-into-view
+                                    (ScrollItemPattern, verified by IsOffscreen
+                                    going true -> false), range-set
+                                    (RangeValuePattern, refused when readonly or
+                                    outside min..max - no
+                                    clamping). A disabled element, a missing
+                                    pattern, a stale element or a failed
+                                    read-back is an error that changed
+                                    nothing; there is no fallback click.
+                                    uia-do logs one audit line; uia-state does not.
     a11y-probe <sel> [bigDepth]     READ-ONLY: control counts at default vs big
                                     depth + interactive controls in the page
                                     area -> page-tree=exposed|collapsed, i.e.
@@ -27651,8 +30239,12 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                                    the negative conclusion.
                                     0 = off. Hint only: never changes an exit code.
                                     Passing this flag overrides the default above.
-  <sel> = numeric pid | title substring | proc:<name> | class:<substr>
+  <sel> = numeric pid | title substring | proc:<name> | class:<substr> | hwnd:<0xhex|decimal>
           | t:<digits> to force title matching for digit-only strings.
+          hwnd: matches ONE top-level window by exact handle (from the hwnd=
+          column of wins/info); a non-numeric value is refused, and a handle
+          that no longer exists reports "no window matching" - it never falls
+          back to a title that looks similar.
           Numeric <sel> prefers the pid's window currently in the foreground
           (pick=fg), else the largest (pick=largest). A MINIMIZED window of that
           pid is picked the same way but labelled pick=parked, and assert-window
@@ -27855,8 +30447,8 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
 # v3.1.0 (X-01): the action family joins it through ONE table of its own (below), so the
 # capable set is the union - a caller asking for JSON on an action gets the action envelope.
 function Get-JsonCapableCommandSet {
-  return (@('chrome-tabs', 'color-at', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'wait-stable', 'wins') +
+  return (@('chrome-tabs', 'color-at', 'capabilities', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
+    'clip-info', 'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
     @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
@@ -27880,8 +30472,12 @@ function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableComman
 # on record saying so); this round ships it on the Y position because the X position is the
 # owner's to call, and that conflict is registered as an open adjudication, not silently eaten.
 function Get-ActionJsonCommandSet {
+  # CU-OPS package C: the native-keyboard commands take/observe/release physical keys, so their
+  # product is the same receipt sentence the rest of this family prints - they belong in the
+  # envelope for the same reason click does (the output must be readable, not greppable).
   return @('click', 'copy-file', 'dialog-cancel', 'drag', 'drag-to', 'dblclick',
-    'find-click', 'focus', 'hover', 'imgclick', 'keys', 'menu-pick', 'move', 'open-and-pick',
+    'find-click', 'focus', 'hover', 'imgclick', 'key', 'key-release', 'key-state', 'keys',
+    'menu-pick', 'move', 'open-and-pick',
     'paste', 'paste-file', 'press-down', 'press-up', 'rclick', 'relclick', 'type', 'type-in',
     'unmap', 'wheel', 'win-close', 'win-max', 'win-min', 'win-move', 'win-restore', 'win-resize')
 }
@@ -28000,7 +30596,11 @@ function Test-UntrustedTextCommand([string]$cmd) { return (@(Get-UntrustedTextCo
 function Get-OwnFlagTable {
   return @{
     'hover' = @{ '--dwell' = @{ Min = 0; Max = 60000; Default = 800 } }
-    'drag' = @{ '--steps' = @{ Min = 1; Max = 200; Default = 14 }; '--hold' = @{ Min = 0; Max = 10000; Default = 120 } }
+    # CU-OPS package B: drag carries the same gesture flags as click (button and
+    # modifiers). The handler already reads both; before this entry existed the
+    # parser refused them, so a right-drag or a ctrl-drag was documented but
+    # unreachable.
+    'drag' = @{ '--steps' = @{ Min = 1; Max = 200; Default = 14 }; '--hold' = @{ Min = 0; Max = 10000; Default = 120 }; '--button' = @{ Raw = $true }; '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
     # v2.0.1 (P-3): the drag mid-state. --max-hold is watchdog 1 and the bounds are the
     # promise the echo makes, so they live in this table (handler, error text and the
     # reachability lint all read it) rather than being hardcoded in the handler.
@@ -28023,9 +30623,36 @@ function Get-OwnFlagTable {
     'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true } }
     'unmap' = @{ '--stale-ok' = @{ Bool = $true } }
     'type-in' = @{ '--tab' = @{ Min = 0; Max = 20; Default = 0 } }
+    # CU-OPS-COMPLETE-20261026-01 (package B): gesture flags. --mods is a verbatim spec
+    # ('ctrl+shift'); --button names the button. Both are validated by the handler BEFORE
+    # the pointer moves, and both are stripped before Split-Target (the reachability lint
+    # keys on that strip site).
+    'click' = @{ '--mods' = @{ Raw = $true }; '--button' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    'rclick' = @{ '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    'dblclick' = @{ '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    # CU-OPS package C: the native key gesture's bounded knobs. Bounds live here so the
+    # handler, its refusal text and the reachability lint all read the same numbers.
+    'key' = @{ '--repeat' = @{ Min = 1; Max = 50; Default = 1 }; '--interval' = @{ Min = 0; Max = 5000; Default = 80 }; '--hold' = @{ Min = 0; Max = 20000; Default = 0 } }
+    'key-release' = @{ '--go' = @{ Bool = $true } }
+    # CU-OPS package A: process identity + lifecycle. --exit/--window are the two DIFFERENT
+    # wait predicates; --created is the creation-time pin (verbatim ISO string); proc-kill's
+    # --go is the explicit execution switch (absent = preview).
+    'proc-wait' = @{ '--exit' = @{ Bool = $true }; '--window' = @{ Bool = $true }; '--created' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 20 }; '--interval' = @{ Min = 50; Max = 5000; Default = 400 } }
+    'proc-start' = @{ '--cwd' = @{ Raw = $true }; '--wait-window' = @{ Min = 0; Max = 600; Default = 0 } }
+    'proc-kill' = @{ '--created' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 5 }; '--go' = @{ Bool = $true } }
     # CU-REL-02..04: wheel's private modifiers. Enum/text values are checked by its handler;
     # the two verification routes are opt-in and require a concrete selected target.
-    'wheel' = @{ '--focus-first' = @{ Bool = $true }; '--at' = @{ Raw = $true }; '--unit' = @{ Raw = $true }; '--axis' = @{ Raw = $true }; '--verify-scroll' = @{ Bool = $true }; '--expect-visible-text' = @{ Raw = $true } }
+    'wheel' = @{ '--focus-first' = @{ Bool = $true }; '--at' = @{ Raw = $true }; '--unit' = @{ Raw = $true }; '--axis' = @{ Raw = $true }; '--verify-scroll' = @{ Bool = $true }; '--expect-visible-text' = @{ Raw = $true }; '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    # CU-OPS package E: --text is the ONLY way uia-state prints a control's value/text
+    # (default is length + writability), so a password field or a private note is not
+    # echoed by accident.
+    'uia-state' = @{ '--text' = @{ Bool = $true } }
+    # CU-OPS packages D/F/H: the three new surface commands with their own values.
+    # tpl-find's --index is "absent = refuse ambiguity", so the handler keys on Present
+    # rather than a sentinel default; --scales/--region/--space/--created are verbatim.
+    'tpl-find' = @{ '--region' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true }; '--scales' = @{ Raw = $true }; '--tolerance' = @{ Min = 0; Max = 255; Default = 0 }; '--index' = @{ Min = 0; Max = 999; Default = 0 }; '--max-ms' = @{ Min = 50; Max = 60000; Default = 5000 } }
+    # wait-cond: exactly one predicate is allowed; the handler counts them and refuses 0 or 2.
+    'wait-cond' = @{ '--win' = @{ Bool = $true }; '--gone' = @{ Bool = $true }; '--foreground' = @{ Bool = $true }; '--text' = @{ Raw = $true }; '--uia' = @{ Raw = $true }; '--state' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 20 }; '--interval' = @{ Min = 50; Max = 5000; Default = 400 } }
   }
 }
 
@@ -28046,6 +30673,31 @@ function Get-CommandSharedMap {
     # CU-REL-03..04: wheel accepts only flags it actually consumes. In particular,
     # --allow-outside and unrelated shared readback flags do not silently disappear.
     'wheel' = @('--to', '--force', '--expect-handle', '--always-activate', '--expect-change')
+    # CU-OPS package A: the process commands hand-parse (they never call Split-Target - a
+    # proc command must not activate anything), so they route none of the shared flags.
+    'proc-list' = @()
+    'proc-info' = @()
+    'proc-wait' = @()
+    'proc-start' = @()
+    'proc-kill' = @()
+    # CU-OPS package E: uia-state/uia-do hand-parse (a read or a semantic action must not
+    # activate the window or imply a target), so they route none of the shared flags.
+    'uia-state' = @()
+    'uia-do' = @()
+    # CU-OPS packages D/F/H: tpl-find really routes only the target-binding quartet
+    # (it locates, it does not act), and the other three hand-parse with no target at all.
+    'tpl-find' = @('--to', '--force', '--expect-handle', '--always-activate')
+    'clip-info' = @()
+    'wait-cond' = @()
+    'capabilities' = @()
+    # CU-OPS package C: the native-keyboard commands parse their own arguments. key
+    # takes repeat/interval/hold (privately tabled) plus the target-binding and readback
+    # flags it really routes through Split-Target/Resolve-Target/expect; key-state and
+    # key-release take nothing shared at all - releasing what the ledger names must not
+    # imply a target or a wait.
+    'key' = @('--to', '--force', '--expect-handle', '--always-activate', '--guard-text', '--guard-region', '--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-change', '--no-expect', '--log-payload')
+    'key-state' = @()
+    'key-release' = @()
   }
 }
 
@@ -28067,7 +30719,8 @@ function Get-SharedFlagSet {
   return @('--to', '--force', '--verify', '--verify-timeout', '--log-payload', '--guard-text', '--guard-region',
     '--needle', '--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-handle', '--expect-region', '--expect-change', '--always-activate',
     '--no-expect', '--timeout', '--interval', '--min-line-density',
-    '--scale', '--max-tiles', '--no-tile', '--allow-outside', '--occlude', '--occlude-grid', '--allow-occluded')
+    '--scale', '--max-tiles', '--no-tile', '--allow-outside', '--occlude', '--occlude-grid', '--allow-occluded',
+    '--replace-clipboard')
 }
 
 # The shared flags that CONSUME the token after them. Needed by Strip-OwnFlags: whatever
@@ -28300,10 +30953,10 @@ function Get-IntArgSpec([string]$cmd) {
     'find-color'  { return @{ Indices = @(0, 1, 2, 3); Usage = 'find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n]' } }
     'assert-color' { return @{ Indices = @(0, 1); Usage = 'assert-color <x> <y> <#RRGGBB> [tol]' } }
     'move'        { return @{ Indices = @(0, 1); Usage = 'move <x> <y>' } }
-    'click'       { return @{ Indices = @(0, 1); Usage = 'click <x> <y> [--to <sel>] [--guard-text <s>] [--expect <needle>]' } }
-    'rclick'      { return @{ Indices = @(0, 1); Usage = 'rclick <x> <y> [--to <sel>] [--expect <needle>]' } }
-    'dblclick'    { return @{ Indices = @(0, 1); Usage = 'dblclick <x> <y> [--to <sel>] [--expect <needle>]' } }
-    'drag'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms]' } }
+    'click'       { return @{ Indices = @(0, 1); Usage = 'click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>] [--expect <needle>]' } }
+    'rclick'      { return @{ Indices = @(0, 1); Usage = 'rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--expect <needle>]' } }
+    'dblclick'    { return @{ Indices = @(0, 1); Usage = 'dblclick <x> <y> [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--expect <needle>]' } }
+    'drag'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left|middle|right|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>]' } }
     # v2.0.1 (P-3): the mid-state trio. All three are coordinate-first, so the
     # positional gate must see them or a `press-down abc 20` reaches the handler.
     'press-down'  { return @{ Indices = @(0, 1); Usage = 'press-down <x> <y> [--max-hold ms] [--to <sel>]' } }
@@ -28704,6 +31357,28 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       Invoke-Handler-open-and-pick 'open-and-pick' $Rest
     }
 
+    # CU-OPS package A: observation (read file) and the two act-side commands. proc-kill
+    # previews unless --go, and is deliberately absent from the replay whitelist.
+    'proc-list' {
+      Invoke-Handler-proc-list 'proc-list' $Rest
+    }
+
+    'proc-info' {
+      Invoke-Handler-proc-info 'proc-info' $Rest
+    }
+
+    'proc-wait' {
+      Invoke-Handler-proc-wait 'proc-wait' $Rest
+    }
+
+    'proc-start' {
+      Invoke-Handler-proc-start 'proc-start' $Rest
+    }
+
+    'proc-kill' {
+      Invoke-Handler-proc-kill 'proc-kill' $Rest
+    }
+
     'imgclick' {
       Invoke-Handler-imgclick 'imgclick' $Rest
     }
@@ -28756,6 +31431,48 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 
     'keys' {
       Invoke-Handler-keys 'keys' $Rest
+    }
+
+    # CU-OPS package C: native key gestures. `keys` above keeps its SendKeys grammar
+    # untouched; these three are a separate, explicitly native surface.
+    'key' {
+      Invoke-Handler-key 'key' $Rest
+    }
+
+    'key-state' {
+      Invoke-Handler-key-state 'key-state' $Rest
+    }
+
+    'key-release' {
+      Invoke-Handler-key-release 'key-release' $Rest
+    }
+
+    'uia-state' {
+      Invoke-Handler-uia-state 'uia-state' $Rest
+    }
+
+    'uia-do' {
+      Invoke-Handler-uia-do 'uia-do' $Rest
+    }
+
+    # CU-OPS packages D/F/H: read-only additions. tpl-find locates and never clicks,
+    # clip-info reports clipboard metadata without printing content, wait-cond is one
+    # bounded wait with matched/timed-out/unreadable kept apart, and capabilities derives
+    # the command surface from this dispatcher's registry.
+    'tpl-find' {
+      Invoke-Handler-tpl-find 'tpl-find' $Rest
+    }
+
+    'clip-info' {
+      Invoke-Handler-clip-info 'clip-info' $Rest
+    }
+
+    'wait-cond' {
+      Invoke-Handler-wait-cond 'wait-cond' $Rest
+    }
+
+    'capabilities' {
+      Invoke-Handler-capabilities 'capabilities' $Rest
     }
 
     'paste' {

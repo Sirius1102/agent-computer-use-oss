@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.5.7  (version sync list lives in the project overview doc)
+# version: 4.6.1  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.5.7'
+$script:ToolVersion = '4.6.1'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -437,7 +437,15 @@ Set-StrictMode -Version Latest
 # family tables above were registered against their own line only; this candidate re-measures everything on the
 # merged tree - the declared value below is provisional until the first gate run prints this-run-would-be, and every
 # registered tally moves to that printed value, not to arithmetic (no 1011+979, no max).
-$script:DeclaredCheckTotal = 1020
+# CU-OPS-COMPLETE-20261026-01: 1020 -> 1022. The four mouse/keyboard handlers gained their
+# modifier and button guards and package A added the five process commands; the two new checks
+# are the private-flag table's raised expectation (13 -> 18 entries) and the action --json table
+# now closing over the three native-keyboard commands. Measured, not computed: this is the value
+# the gate printed for this tree.
+# v4.6.1: +5 for package G's format-list branch, the named-extra gate, the restore-outcome map and
+# the clip-info metadata-only body lint (1038 -> 1043). Measured again on the 13:41 clean-host run:
+# the offline run emits 1044 checks, so the declaration is the measured total (1043 -> 1044).
+$script:DeclaredCheckTotal = 1044
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -1035,7 +1043,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 77) { $notes += ('names-total=' + $total + '-want77') }
+  if ($total -ne 91) { $notes += ('names-total=' + $total + '-want91') }
   return ($notes -join ';')
 }
 
@@ -2302,17 +2310,17 @@ $script:StFamilyCounts = @{
   'repo-contract' = 'banners=5,lines=322'
   'gate-meta' = 'banners=30,lines=2793'
   'flags-grammar' = 'banners=16,lines=882'
-  'capture-ocr' = 'banners=8,lines=683'
+  'capture-ocr' = 'banners=8,lines=757'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=992'
+  'window-targeting' = 'banners=11,lines=1081'
   'expect-family' = 'banners=9,lines=705'
-  'clipboard-input' = 'banners=4,lines=115'
+  'clipboard-input' = 'banners=4,lines=181'
   'docs-contract' = 'banners=11,lines=524'
   'chrome-cdp' = 'banners=6,lines=475'
-  'drag-press' = 'banners=3,lines=195'
+  'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
-  'live-suite' = 'banners=20,lines=3144'
+  'live-suite' = 'banners=20,lines=3215'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2345,7 +2353,21 @@ $script:StHandlerUnwrapped = 0
 #    half alone (a file with no entry-side removal, or a removal with no declared file). The design fixes
 #    the sizes and the category labels, not the name list, so the assignment is written down here rather
 #    than re-derived differently by the next hand.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'type', 'type-in', 'keys', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
+# CU-OPS-COMPLETE-20261026-01 (package C) moved the ui group from 21 to 24: 'key', 'key-state' and
+#    'key-release' are three new native-keyboard cases in the same file, and the gate below now expects
+#    80 names in total (27 read + 21 act + 24 ui + 8 batch).
+# CU-OPS-COMPLETE-20261026-01 (package A) added the five process commands: 'proc-list'/'proc-info'/
+#    'proc-wait' observe (read file) and 'proc-start'/'proc-kill' act (act file) - 30 read + 23 act
+#    + 24 ui + 8 batch = 85 names. proc-kill is preview-by-default and is NOT in the replay whitelist.
+# CU-OPS-COMPLETE-20261026-01 (package E) moved the ui group from 24 to 26: 'uia-state'
+#    (read-only pattern report) and 'uia-do' (semantic action + readback) join the same
+#    file - 30 read + 23 act + 26 ui + 8 batch = 87 names. uia-do logs one audit line;
+#    uia-state is read-only and logs nothing.
+# CU-OPS-COMPLETE-20261026-01 (packages D/F/H) moved read from 30 to 34: 'tpl-find'
+#    (locates, never clicks), 'clip-info' (metadata only), 'wait-cond' (one bounded wait)
+#    and 'capabilities' (surface derived from THIS table) - 34 read + 23 act + 26 ui
+#    + 8 batch = 91 names.
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2354,13 +2376,13 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # card has to update in the same commit says so.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
-  'Invoke-SelftestFamily-CaptureOcr=98',
+  'Invoke-SelftestFamily-CaptureOcr=101',
   'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=141',
+  'Invoke-SelftestFamily-WindowTargeting=151',
   'Invoke-SelftestFamily-DocsContract=51',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
-  'Invoke-SelftestFamily-ClipboardInput=21',
+  'Invoke-SelftestFamily-ClipboardInput=30',
   'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
@@ -2374,14 +2396,16 @@ $script:StFamilyCheckCounts = @(
 # A-23 (criterion-5): every `exit` this tree can execute, named by the owner that holds it. Registered by CASE
 # name, never by line or file: a line number moves with every card and a case name does not, and a
 # stitched artifact has no files to name at all - so the same list has to read the same on both sides of
-# the stitch. The handler cohort is the thirteen the design whitelists (shots-cleanup 5, challenge-probe 3,
-# one each for ime-en / keys / paste / paste-file / type = seven cases); the entry cohort is the eleven
+# the stitch. The handler cohort is the fourteen the design whitelists (shots-cleanup 5, challenge-probe 3,
+# one each for ime-en / key / keys / paste / paste-file / type = eight cases); the entry cohort is the eleven
 # that were never inside a moved body (Invoke-ScriptBatch 5, Invoke-ReplayLog 4, top level 2). A
-# fourteenth handler exit is red, a new owner outside both cohorts is red, and so is any entry here that
+# fifteenth handler exit is red, a new owner outside both cohorts is red, and so is any entry here that
 # has gone stale. Both cohorts were measured from the AST on 2026-10-19 with both engines agreeing, and
 # re-measured on 2026-10-23 when TB-3 gave shots-cleanup its fifth exit (the moved-without-a-record
-# refusal) - key by key, again with both engines agreeing.
-$script:StHandlerExitAllowList = @('challenge-probe=3', 'ime-en=1', 'keys=1', 'paste=1', 'paste-file=1', 'shots-cleanup=5', 'type=1')
+# refusal) - key by key, again with both engines agreeing. CU-OPS package C added 'key=1': the native
+# combination handler reuses the same post-send foreground guard as type/keys, which exits 1 so a script
+# step records FAIL instead of dying.
+$script:StHandlerExitAllowList = @('challenge-probe=3', 'ime-en=1', 'key=1', 'keys=1', 'paste=1', 'paste-file=1', 'shots-cleanup=5', 'type=1')
 $script:StEntryExitAllowList = @('<script>=2', 'fn:Invoke-ReplayLog=4', 'fn:Invoke-ScriptBatch=5')
 
 # '$script:' targets are keyed without the dollar (script:CdpPort), because the AST's left extent
@@ -2403,17 +2427,23 @@ $script:StCommandOwners = @(
   'fn:Invoke-Handler-hover=1',
   'fn:Invoke-Handler-imgclick=1',
   'fn:Invoke-Handler-keys=1',
+  # CU-OPS package C: `key` names the command when it logs its one gesture receipt.
+  'fn:Invoke-Handler-key=1',
   'fn:Invoke-Handler-menu-pick=1',
   'fn:Invoke-Handler-move=1',
   'fn:Invoke-Handler-open-and-pick=2',
   'fn:Invoke-Handler-paste=2',
   'fn:Invoke-Handler-paste-file=2',
   'fn:Invoke-Handler-press-down=2',
+  # CU-OPS package A: proc-start logs its start, proc-kill logs only a real --go termination.
+  'fn:Invoke-Handler-proc-kill=1',
+  'fn:Invoke-Handler-proc-start=1',
   'fn:Invoke-Handler-rclick=1',
   'fn:Invoke-Handler-relclick=1',
   'fn:Invoke-Handler-shots-cleanup=1',
   'fn:Invoke-Handler-type=1',
   'fn:Invoke-Handler-type-in=1',
+  'fn:Invoke-Handler-uia-do=1',
   'fn:Invoke-Handler-wheel=1',
   'fn:Invoke-Handler-win-close=1',
   'fn:Invoke-Handler-win-max=1',
@@ -2488,6 +2518,9 @@ $script:StLoadTimeNames = @(
   'script:AsTaskM=1',
   'script:CallLease=2',
   'script:CdpPort=1',
+  # CU-OPS package G (v4.6.1): the pure-format allowlist that decides whether a clipboard
+  # can be put back. Load-time state, so it is registered here by name in the same write.
+  'script:ClipboardPureFormats=1',
   'script:DeclaredCheckTotal=1',
   'script:DumpPath=2',
   'script:EnvDedupError=2',
@@ -2505,6 +2538,13 @@ $script:StLoadTimeNames = @(
   'script:PressId=1',
   'script:PressSeq=1',
   'script:PressTopLevel=1',
+  # CU-OPS-COMPLETE-20261026-01: load-time tables added by packages A/B/C - the mouse button
+  # and modifier maps plus the receipt slot, the protected-process name list and the key map.
+  'script:KeyVk=1',
+  'script:LastMouseReceipt=1',
+  'script:ModifierVk=1',
+  'script:MouseButtonNames=1',
+  'script:ProcSystemNames=1',
   'script:ProcNameCache=1',
   'script:ResolveNote=1',
   'script:StCommandExclusions=1',
@@ -2547,11 +2587,12 @@ $script:StLoadTimeNames = @(
 )
 
 # '$Cmd' travels by argument now, so the shape of that argument is what has to be accounted for:
-# fifty calls take the name from the dispatcher parameter, four from a formal the helper received,
-# one from the watchdog's lower-case formal. 'ABSENT' has no row here, so a call that still reads
-# caller scope fails the lint by name instead of writing a column that only looks like a command.
+# fifty-three calls take the name from the dispatcher parameter, four from a formal the helper
+# received, one from the watchdog's lower-case formal. 'ABSENT' has no row here, so a call that
+# still reads caller scope fails the lint by name instead of writing a column that only looks
+# like a command.
 $script:StCommandNameArgs = @(
-  '3|$Cmd=50',
+  '3|$Cmd=54',
   '3|$CmdName=4',
   '3|$cmdName=1'
 )
@@ -2584,6 +2625,7 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-hover=1',
   'fn:Invoke-Handler-imgclick=1',
   'fn:Invoke-Handler-keys=1',
+  'fn:Invoke-Handler-key=1',
   'fn:Invoke-Handler-menu-pick=1',
   'fn:Invoke-Handler-move=1',
   'fn:Invoke-Handler-open-and-pick=2',
@@ -2591,11 +2633,14 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-paste-file=2',
   'fn:Invoke-Handler-press-down=5',
   'fn:Invoke-Handler-press-up=2',
+  'fn:Invoke-Handler-proc-kill=1',
+  'fn:Invoke-Handler-proc-start=1',
   'fn:Invoke-Handler-rclick=1',
   'fn:Invoke-Handler-relclick=1',
   'fn:Invoke-Handler-shots-cleanup=1',
   'fn:Invoke-Handler-type=1',
   'fn:Invoke-Handler-type-in=1',
+  'fn:Invoke-Handler-uia-do=1',
   'fn:Invoke-Handler-wheel=1',
   'fn:Invoke-Handler-win-close=1',
   'fn:Invoke-Handler-win-max=1',
@@ -2683,6 +2728,32 @@ public class DT {
   public delegate bool EnumProc(IntPtr h, IntPtr l);
   public struct RECT { public int Left, Top, Right, Bottom; }
   public struct POINT { public int X, Y; }
+  // CU-OPS-COMPLETE-20261026-01: one mouse BUTTON event per call with the exact inserted count
+  // returned. mouse_event() returns void, so a caller cannot tell whether the system took the
+  // event; SendInput returns how many of the requested events it inserted, which is the receipt
+  // the modifiers/buttons work needs. mouseData carries the XBUTTON id (1 = back, 2 = forward).
+  public static uint SendMouseButtonInput(uint flag, uint data) {
+    uint[] allowed = new uint[] { 0x0002u, 0x0004u, 0x0008u, 0x0010u, 0x0020u, 0x0040u, 0x0080u, 0x0100u };
+    bool ok = false;
+    for (int k = 0; k < allowed.Length; k++) { if (allowed[k] == flag) { ok = true; } }
+    if (!ok) { throw new ArgumentOutOfRangeException("flag", "mouse button input accepts the eight button flags only"); }
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 0;
+    inputs[0].u.mi = new MOUSEINPUT { dx = 0, dy = 0, mouseData = data, dwFlags = flag, time = 0, dwExtraInfo = IntPtr.Zero };
+    return SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+  }
+  // CU-OPS: one keyboard event (keydown unless up) with its exact inserted count. SendInput does
+  // NOT reset a key state that was already held, so the caller must check before pressing and
+  // release only what it pressed itself.
+  public static uint SendKeyInput(int vk, bool up, bool extended) {
+    if (vk <= 0 || vk > 0xFF) { throw new ArgumentOutOfRangeException("vk", "virtual key must be 1..255"); }
+    uint flags = (up ? 0x0002u : 0u) | (extended ? 0x0001u : 0u);
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 1;
+    inputs[0].u.ki = new KEYBDINPUT { wVk = (ushort)vk, wScan = 0, dwFlags = flags, time = 0, dwExtraInfo = IntPtr.Zero };
+    return SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+  }
+  public static int IsVkDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000); }
   public static string Text(IntPtr h) { var sb = new StringBuilder(512); GetWindowText(h, sb, 512); return sb.ToString(); }
   // Types text via SendInput with KEYEVENTF_UNICODE: each char arrives as a
   // VK_PACKET keystroke that the system converts straight to WM_CHAR, so the
@@ -2749,6 +2820,57 @@ public class DT {
       }
     } finally { FreeEnvironmentStringsW(p); }
     return names.ToArray();
+  }
+}
+"@
+
+# CU-OPS package F (v4.6.0): the template matcher's inner loop, compiled once.
+# Why compiled: the same comparison written in PowerShell costs ~6ms per position
+# (measured 2026-10-27 on this tree: 3326 positions in 20s), so the 3,000,000-pixel
+# bound the command advertises could never be met. The semantics are deliberately
+# the same in both places: 32bpp BGRA, alpha-0 template pixels are skipped, and the
+# per-channel tolerance is inclusive. It returns flattened (x,y) pairs and reports
+# the positions actually tested, so the caller's numbers stay honest.
+Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+public class TPL {
+  public static long[] Find(byte[] hay, int hs, int hw, int hh, byte[] need, int ns, int nw, int nh, int tol, int maxMs, out long positions, out bool overBudget) {
+    List<long> hits = new List<long>();
+    positions = 0;
+    overBudget = false;
+    Stopwatch sw = Stopwatch.StartNew();
+    int maxX = hw - nw;
+    int maxY = hh - nh;
+    if (maxX < 0 || maxY < 0) { return hits.ToArray(); }
+    for (int y = 0; y <= maxY; y++) {
+      for (int x = 0; x <= maxX; x++) {
+        positions++;
+        if ((positions & 0xFFF) == 0 && sw.ElapsedMilliseconds > maxMs) { overBudget = true; return hits.ToArray(); }
+        bool ok = true;
+        for (int ty = 0; ty < nh && ok; ty++) {
+          int nrow = ty * ns;
+          int hrow = (y + ty) * hs;
+          for (int tx = 0; tx < nw; tx++) {
+            int no = nrow + tx * 4;
+            if (need[no + 3] == 0) { continue; }
+            int ho = hrow + (x + tx) * 4;
+            int db = hay[ho] - need[no];
+            if (db < 0) { db = -db; }
+            if (db > tol) { ok = false; break; }
+            int dg = hay[ho + 1] - need[no + 1];
+            if (dg < 0) { dg = -dg; }
+            if (dg > tol) { ok = false; break; }
+            int dr = hay[ho + 2] - need[no + 2];
+            if (dr < 0) { dr = -dr; }
+            if (dr > tol) { ok = false; break; }
+          }
+        }
+        if (ok) { hits.Add(((long)x << 32) | (long)(uint)y); }
+      }
+    }
+    return hits.ToArray();
   }
 }
 "@
@@ -3359,7 +3481,9 @@ function Get-WinList {
 # selector: a numeric pid, a case-insensitive title substring, "t:<substr>" /
 # "title:<substr>" to force title matching (needed when the substring itself
 # is all digits), "proc:<name>" for an exact process name match (case-insensitive),
-# or "class:<substr>" for a window class substring match. Among matches the
+# "hwnd:<0xhex|decimal>" for one exact top-level window handle (CU-OPS package D:
+# a title can change or be duplicated, a handle cannot - a value that is not a
+# number is refused, never degraded into a title substring), or "class:<substr>" for a window class substring match. Among matches the
 # largest non-minimized window wins (usually the app's main window). Minimized
 # windows stay "visible" to EnumWindows but sit at (-32000,-32000), so they are
 # only used when nothing else matches.
@@ -3398,6 +3522,18 @@ function Select-WindowsBySelector($all, [string]$sel) {
     $sub = $Matches[1]
     if (-not ("$sub".Trim())) { throw 'class selector must not be empty' }
     $selHits = @($all | Where-Object { Test-NameSubstring $_.Class $sub })
+  } elseif ($sel -match '^hwnd:(.*)$') {
+    # CU-OPS package D: the handle IS the identity. A window that was retitled keeps its
+    # handle, and a handle that is gone must NOT be approximated by the closest title -
+    # that is how "the same window" turns into a different window. Accepts 0x-hex or
+    # decimal; anything else is refused here rather than falling through to a title match.
+    $raw = "$($Matches[1])".Trim()
+    $hv = [int64]0
+    $okNum = $false
+    if ($raw -match '^0x[0-9a-fA-F]+$') { $okNum = [int64]::TryParse($raw.Substring(2), [System.Globalization.NumberStyles]::HexNumber, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$hv) }
+    elseif ($raw -match '^\d+$') { $okNum = [int64]::TryParse($raw, [ref]$hv) }
+    if (-not $okNum -or $hv -le 0) { throw "hwnd selector needs a handle like hwnd:0x00120A34 or hwnd:1182260 - got: $raw" }
+    $selHits = @($all | Where-Object { [int64]([IntPtr]$(Get-OptValue $_ 'Handle')).ToInt64() -eq $hv })
   } elseif ([int]::TryParse($sel, [ref]$asPid)) {
     $byPid = $true
     $selHits = @($all | Where-Object { $_.Pid -eq $asPid })
@@ -5034,6 +5170,69 @@ function Get-TargetRect($target) {
   return $null
 }
 
+# ---------------------------------------------------------------------------
+# CU-OPS package D (v4.6.0): explicit coordinate spaces.
+# A bare x,y has always meant SCREEN pixels. `--space window` and `--space client`
+# are the two relative spaces callers actually have on hand: an offset inside the
+# window's visible frame, and an offset inside its client area. What they must NOT
+# become is a stored point: the origin is read at ACTION time, after the target has
+# been resolved and activated, so a move/resize/DPI change between "I looked" and
+# "I clicked" cannot leave an old origin in use. `screen` keeps the legacy path
+# bit-for-bit and needs no window at all.
+# ---------------------------------------------------------------------------
+function Test-PointSpaceArg([string]$space) {
+  $sp = "$space"
+  if ($sp -eq '') { return 'screen' }
+  if ($sp -notin @('screen', 'window', 'client')) { throw "--space must be screen|window|client, got '$sp'; no input was sent" }
+  return $sp
+}
+
+# One origin for one space, measured NOW. Returns the screen-space origin plus the
+# area bounds used to refuse a point that cannot exist in that space (a negative
+# offset or one past the edge is a caller mistake, not a point to clamp).
+function Get-PointSpaceOrigin([string]$space, $target) {
+  $sp = Test-PointSpaceArg $space
+  if ($sp -eq 'screen') { return @{ Space = 'screen'; X = 0; Y = 0; W = 0; H = 0 } }
+  if ($null -eq $target) {
+    throw ("--space $sp needs a resolved window (--to <sel>, or wheel --at <sel>): there is no window origin to convert the coordinates against; no input was sent")
+  }
+  $h = [IntPtr]$target.Handle
+  if ($sp -eq 'window') {
+    $r = Get-TargetRect $target
+    if ($null -eq $r) { throw "--space window: the target's visible rect could not be read now (closed, hidden or minimized?) - refusing to reuse an old origin; no input was sent" }
+    if ([int]$r.W -le 0 -or [int]$r.H -le 0) { throw ('--space window: the target visible rect is ' + $r.W + 'x' + $r.H + ' - no usable origin; no input was sent') }
+    return @{ Space = 'window'; X = [int]$r.X; Y = [int]$r.Y; W = [int]$r.W; H = [int]$r.H }
+  }
+  $cr = New-Object DT+RECT
+  if (-not [DT]::GetClientRect($h, [ref]$cr)) {
+    throw ("--space client: GetClientRect failed for hwnd=$(([int64]$h).ToString('X')) - the window may have closed; no input was sent")
+  }
+  $origin = New-Object DT+POINT
+  $origin.X = 0; $origin.Y = 0
+  if (-not [DT]::ClientToScreen($h, [ref]$origin)) {
+    throw ("--space client: ClientToScreen failed for hwnd=$(([int64]$h).ToString('X')); no input was sent")
+  }
+  $cw = [int]($cr.Right - $cr.Left)
+  $chh = [int]($cr.Bottom - $cr.Top)
+  if ($cw -le 0 -or $chh -le 0) { throw ('--space client: the target client area is ' + $cw + 'x' + $chh + ' - no usable origin; no input was sent') }
+  return @{ Space = 'client'; X = [int]$origin.X; Y = [int]$origin.Y; W = $cw; H = $chh }
+}
+
+function Convert-PointSpace([int]$x, [int]$y, $origin) {
+  if ($origin.Space -eq 'screen') { return @{ X = $x; Y = $y } }
+  if ($x -lt 0 -or $y -lt 0 -or $x -ge $origin.W -or $y -ge $origin.H) {
+    throw ('--space ' + $origin.Space + ': point ' + $x + ',' + $y + ' is outside the target area ' + $origin.W + 'x' + $origin.H + ' (offsets are 0-based inside that area); no input was sent')
+  }
+  return @{ X = ($origin.X + $x); Y = ($origin.Y + $y) }
+}
+
+# Receipt tail for the pointer echoes: empty for the legacy screen space (so every
+# pre-existing caller sees the same line), explicit otherwise.
+function Format-PointSpaceReceipt($origin, [int]$rx, [int]$ry) {
+  if ($origin.Space -eq 'screen') { return '' }
+  return (' space=' + $origin.Space + ' rel=' + $rx + ',' + $ry)
+}
+
 # After-send foreground recheck: the pre-send guard verifies the target BEFORE
 # v1.5.3 (audit R-06): the same-process popup hole.
 # EnumWindows returns top-level windows in Z-ORDER (topmost first), so "is there
@@ -6469,17 +6668,47 @@ function Format-Hkl([IntPtr]$hkl) {
 # Pure branch of Save-ClipboardState: which kind is this clipboard? Extracted
 # because a faithful text+FileDrop clipboard CANNOT be synthesized from PS (see
 # the note on Save-ClipboardState), so the branch itself has to be unit-tested.
-function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles) {
+# CU-OPS package G (v4.6.0): the image carrier joins the branch. The two-argument form is
+# unchanged for every existing caller; hasImage is an OPTIONAL third argument, and the image
+# kinds are named text+image / files+image / text+files+image so a restore can tell which
+# parts it must verify and which part is genuinely missing.
+function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles, [bool]$hasImage = $false) {
+  if ($hasImage) {
+    $parts = @()
+    if ($hasText) { $parts += 'text' }
+    if ($hasFiles) { $parts += 'files' }
+    if ($parts.Count -eq 0) { return 'image' }
+    return (($parts + @('image')) -join '+')
+  }
   if ($hasText -and $hasFiles) { return 'both' }
   if ($hasText) { return 'text' }
   if ($hasFiles) { return 'files' }
   return 'other'
 }
 
+# CU-OPS package G (v4.6.1): the formats a restore branch can faithfully reproduce.
+# Everything outside this set (HTML Format, Rich Text Format, PNG, Preferred DropEffect,
+# any private/app format) is content this tool cannot put back. A clipboard carrying text
+# AND one of those must NOT be written over on the strength of the text coming back:
+# "the text hash matches" is not "every format is preserved".
+$script:ClipboardPureFormats = @('UnicodeText', 'Text', 'Locale', 'OEMText', 'FileDrop', 'Bitmap', 'DIB')
+function Get-ClipboardFormatPlan([string[]]$formats) {
+  $list = @($formats | Where-Object { $_ -ne '' } | Sort-Object -Unique)
+  $extras = @($list | Where-Object { $script:ClipboardPureFormats -notcontains $_ })
+  $hasText = @($list | Where-Object { $_ -in @('UnicodeText', 'Text', 'Locale', 'OEMText') }).Count -gt 0
+  $hasFiles = $list -contains 'FileDrop'
+  $hasImage = @($list | Where-Object { $_ -in @('Bitmap', 'DIB') }).Count -gt 0
+  $kind = if ($list.Count -eq 0) { 'none' } else { Resolve-ClipboardKind $hasText $hasFiles $hasImage }
+  if (@($extras).Count -gt 0) { $kind = 'other' }
+  return [pscustomobject]@{ Kind = $kind; Formats = $list; Extras = $extras; HasText = $hasText; HasFiles = $hasFiles; HasImage = $hasImage }
+}
+
 # Snapshot of the current clipboard so commands that overwrite it can put the
-# old content back afterwards. Supported kinds: text and FileDrop (file list).
-# Anything else (images, custom formats) is reported as unsupported and left
-# alone; an empty clipboard is reported as empty.
+# old content back afterwards. Supported kinds: text, FileDrop (file list) and the
+# image carrier (Bitmap/DIB, saved to a PNG for the restore), plus their combinations.
+# v4.6.1: the FORMAT LIST decides first - any format outside $script:ClipboardPureFormats
+# makes the snapshot kind=other and its content is deliberately NOT read, because this
+# tool cannot put it back; an empty clipboard is reported as 'none'.
 # v1.5.2 WP-4 (audit R-05, code-level): text and FileDrop are NO LONGER
 # exclusive branches - the old `if ContainsText ... elseif ContainsFileDropList`
 # saved only the text, so a clipboard carrying both lost the file list on
@@ -6499,47 +6728,182 @@ function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles) {
 # means the clipboard held a file list when this paste started (e.g. left there
 # on purpose by an earlier copy-file) - restoring it is the correct behaviour.
 function Save-ClipboardState {
-  $st = @{ Kind = 'other'; Text = ''; Files = @() }
+  $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() }
   try {
-    $hasText = [System.Windows.Forms.Clipboard]::ContainsText()
-    $hasFiles = [System.Windows.Forms.Clipboard]::ContainsFileDropList()
+    # The FORMAT LIST decides first. A clipboard with formats outside the pure set is not
+    # restorable as a whole, so its content is deliberately not read either - nothing this
+    # tool could put back is lost by not opening it.
+    $formats = @()
+    try {
+      $do = [System.Windows.Forms.Clipboard]::GetDataObject()
+      if ($null -ne $do) { $formats = @($do.GetFormats()) }
+    } catch { $formats = @() }
+    $plan = Get-ClipboardFormatPlan $formats
+    $st.Formats = @($plan.Formats)
+    $st.Extras = @($plan.Extras)
+    $st.Kind = $plan.Kind
+    if ($plan.Kind -eq 'other' -or $plan.Kind -eq 'none') { return $st }
+    $hasText = [bool]$plan.HasText
+    $hasFiles = [bool]$plan.HasFiles
+    $hasImage = [bool]$plan.HasImage
     $txt = ''
     if ($hasText) { $txt = [System.Windows.Forms.Clipboard]::GetText() }
     $files = @()
     if ($hasFiles) { $files = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
-    $kind = Resolve-ClipboardKind $hasText $hasFiles
-    if ($kind -eq 'other') {
-      # keep the distinct "(empty)" echo: a clipboard with no formats at all is
-      # not the same message as "has formats we cannot restore" (images etc.)
-      $g = [System.Windows.Forms.Clipboard]::GetDataObject()
-      if ($null -eq $g -or @($g.GetFormats()).Count -eq 0) { $kind = 'none' }
+    $imgPath = ''
+    $imgErr = $false
+    if ($hasImage) {
+      # CU-OPS package G: the image is carried as a PNG on disk, because a restore happens
+      # in the same process but the DataObject form does not survive a re-save reliably.
+      # "detected but could not be saved" is its OWN answer (ImageSaveError), never folded
+      # into "no image" - a restore that silently drops it must say so.
+      try {
+        $img = [System.Windows.Forms.Clipboard]::GetImage()
+        if ($null -eq $img) { $imgErr = $true } else {
+          try {
+            $p = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('desktop-clip-' + [guid]::NewGuid().ToString('N') + '.png'))
+            $img.Save($p, [System.Drawing.Imaging.ImageFormat]::Png)
+            if (Test-Path -LiteralPath $p -PathType Leaf) { $imgPath = $p } else { $imgErr = $true }
+          } finally { $img.Dispose() }
+        }
+      } catch { $imgErr = $true }
     }
-    $st = @{ Kind = $kind; Text = $txt; Files = $files }
-  } catch { $st = @{ Kind = 'other'; Text = ''; Files = @() } }
+    $st = @{ Kind = $plan.Kind; Text = $txt; Files = $files; ImagePath = $imgPath; ImageSaveError = $imgErr; Formats = @($plan.Formats); Extras = @($plan.Extras) }
+  } catch { $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() } }
   return $st
 }
 
-# Returns a human readable note for the command echo. Never throws: a failed
-# restore must not flip the command exit code. The 'both' path writes ONE
-# DataObject carrying FileDrop + UnicodeText - two successive Clipboard setters
-# would replace each other, which is exactly how the old code lost the files.
+# CU-OPS package G (v4.6.1): content identity for the image carrier. Width/Height
+# equality is NOT content equality - two different pictures share a size - so a
+# restore that printed "restored" after a size match could put back the wrong
+# picture and still look green. Both sides are normalized to 24bpp RGB and hashed
+# over the raw scan lines; the answer is one digest, not a resemblance heuristic.
+function Get-BitmapRgbHash($bmp) {
+  $clone = $null
+  $locked = $null
+  $gr = $null
+  try {
+    $w = [int]$bmp.Width
+    $h = [int]$bmp.Height
+    $clone = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $gr = [System.Drawing.Graphics]::FromImage($clone)
+    $gr.DrawImage($bmp, 0, 0, $w, $h)
+    $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $h
+    $locked = $clone.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $bytes = New-Object byte[] ([int]$locked.Stride * $h)
+    [System.Runtime.InteropServices.Marshal]::Copy($locked.Scan0, $bytes, 0, $bytes.Length)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $digest = $sha.ComputeHash($bytes) } finally { $sha.Dispose() }
+    $hex = (@($digest | ForEach-Object { $_.ToString('x2') }) -join '')
+    return @{ W = $w; H = $h; Hash = $hex }
+  } finally {
+    if ($null -ne $gr) { try { $gr.Dispose() } catch { } }
+    if ($null -ne $locked -and $null -ne $clone) { try { $clone.UnlockBits($locked) } catch { } }
+    if ($null -ne $clone) { try { $clone.Dispose() } catch { } }
+  }
+}
+
+# CU-OPS package G (v4.6.1): the restore note is the ONLY thing the caller sees, so
+# "did it really come back" has to be readable from it mechanically. paste/paste-file
+# turn partial/failed into a non-zero exit - a restore that lost the user's clipboard
+# must never end with the same code as one that put it back.
+function Get-ClipboardRestoreOutcome([string]$note) {
+  if ($note -like 'clipboard PARTIALLY restored*') { return 'partial' }
+  if ($note -like 'clipboard restore failed*') { return 'failed' }
+  if ($note -like 'skipped clipboard restore*') { return 'skipped' }
+  if ($note -like 'clipboard restored*') { return 'ok' }
+  return 'unknown'
+}
+
+# Returns a human readable note for the command echo. Never throws. The 'both' path
+# writes ONE DataObject carrying FileDrop + UnicodeText - two successive Clipboard
+# setters would replace each other, which is exactly how the old code lost the files.
 # Images and other formats are still NOT restored (verified limitation: they are
 # reported as skipped, never claimed as supported).
+# v4.6.1 (CU-OPS package G): EVERY branch now reads the content back before claiming
+# success - text and FileDrop by exact comparison, the image by RGB digest. A branch
+# that only wrote and returned "restored" could not tell a lost clipboard from a
+# put-back one, which is the same false-green class this command exists to kill.
 function Restore-ClipboardState($st) {
   if ($null -eq $st) { return 'skipped clipboard restore (nothing saved)' }
   $kind = "$($st.Kind)"
+  # CU-OPS package G: an image-bearing clipboard is restored through ONE DataObject so
+  # text/FileDrop/Bitmap travel together, then EVERY requested part is verified by
+  # CONTENT. A part that did not come back makes the answer PARTIALLY, named part by part.
+  if ($kind -like '*image*') {
+    $path = [string]$st.ImagePath
+    if ($path -eq '' -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+      return 'clipboard restore failed (the image was detected but its PNG could not be saved - the missing part is NOT recoverable)'
+    }
+    $bmp = $null
+    try {
+      $bmp = New-Object System.Drawing.Bitmap($path)
+      $wantFiles = @($st.Files)
+      $wantText = [string]$st.Text
+      $sc = New-Object System.Collections.Specialized.StringCollection
+      foreach ($f in $wantFiles) { [void]$sc.Add($f) }
+      $db = New-Object System.Windows.Forms.DataObject
+      if ($wantFiles.Count -gt 0) { [void]$db.SetData([System.Windows.Forms.DataFormats]::FileDrop, $sc) }
+      if ($wantText -ne '') { [void]$db.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $wantText) }
+      [void]$db.SetData([System.Windows.Forms.DataFormats]::Bitmap, $bmp)
+      [System.Windows.Forms.Clipboard]::SetDataObject($db, $true)
+      Start-Sleep -Milliseconds 200
+      $gotT = ''
+      if ([System.Windows.Forms.Clipboard]::ContainsText()) { $gotT = [System.Windows.Forms.Clipboard]::GetText() }
+      $gotF = @()
+      if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) { $gotF = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
+      $gotImg = $null
+      if ([System.Windows.Forms.Clipboard]::ContainsImage()) { $gotImg = [System.Windows.Forms.Clipboard]::GetImage() }
+      $textOk = ($wantText -eq '' -or $gotT -ceq $wantText)
+      $filesOk = ($wantFiles.Count -eq 0 -or ($gotF.Count -eq $wantFiles.Count -and (($gotF -join '|') -ceq ($wantFiles -join '|'))))
+      # v4.6.1: equal Width/Height was never evidence of equal pixels - the digest is.
+      $hWant = Get-BitmapRgbHash $bmp
+      $hGot = $null
+      if ($null -ne $gotImg) { $hGot = Get-BitmapRgbHash $gotImg }
+      $imgOk = ($null -ne $hGot -and ($hWant.Hash -ceq $hGot.Hash))
+      $imgNote = if ($null -ne $hGot) {
+        if ($imgOk) { "rgb-sha256=$($hWant.Hash.Substring(0, 12))" } else { "different pixels (wanted rgb-sha256=$($hWant.Hash.Substring(0, 12)), got $($hGot.Hash.Substring(0, 12)))" }
+      } else { 'no image' }
+      if ($null -ne $gotImg) { $gotImg.Dispose() }
+      if ($textOk -and $filesOk -and $imgOk) {
+        return "clipboard restored (previous content was ${kind}: $($wantText.Length) chars, $(@($wantFiles).Count) file(s), image $($bmp.Width)x$($bmp.Height))"
+      }
+      return "clipboard PARTIALLY restored (kind=$kind; wanted text=$($wantText.Length) chars / FileDrop=$(@($wantFiles).Count) / image $($bmp.Width)x$($bmp.Height); got text=$($gotT.Length) chars / FileDrop=$($gotF.Count) / $imgNote) - the missing part is NOT recoverable by this tool"
+    } catch {
+      return 'clipboard restore failed (' + $kind + ')'
+    } finally {
+      if ($null -ne $bmp) { $bmp.Dispose() }
+      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    }
+  }
   switch ($kind) {
     'text' {
-      try { Set-Clipboard -Value $st.Text; return "clipboard restored (previous content was text, $($st.Text.Length) chars)" }
-      catch { return 'clipboard restore failed' }
+      try {
+        Set-Clipboard -Value $st.Text
+        Start-Sleep -Milliseconds 200
+        $gotT = ''
+        if ([System.Windows.Forms.Clipboard]::ContainsText()) { $gotT = [System.Windows.Forms.Clipboard]::GetText() }
+        if ($gotT -ceq $st.Text) {
+          return "clipboard restored (previous content was text, $($st.Text.Length) chars)"
+        }
+        return "clipboard PARTIALLY restored (wanted text $($st.Text.Length) chars; read back $($gotT.Length) chars that do not match - the text did not come back verbatim)"
+      } catch { return 'clipboard restore failed (text)' }
     }
     'files' {
       try {
+        $wantF = @($st.Files)
         $sc = New-Object System.Collections.Specialized.StringCollection
-        foreach ($f in @($st.Files)) { [void]$sc.Add($f) }
+        foreach ($f in $wantF) { [void]$sc.Add($f) }
         [System.Windows.Forms.Clipboard]::SetFileDropList($sc)
-        return "clipboard restored (previous content was FileDrop, $($st.Files.Count) file(s))"
-      } catch { return 'clipboard restore failed' }
+        Start-Sleep -Milliseconds 200
+        $gotF = @()
+        if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) { $gotF = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
+        $filesOk = ($wantF.Count -gt 0 -and $gotF.Count -eq $wantF.Count -and (($gotF -join '|') -ceq ($wantF -join '|')))
+        if ($filesOk) {
+          return "clipboard restored (previous content was FileDrop, $($wantF.Count) file(s))"
+        }
+        return "clipboard PARTIALLY restored (wanted FileDrop $($wantF.Count) file(s); got $($gotF.Count) from the read-back - the list did not come back verbatim)"
+      } catch { return 'clipboard restore failed (FileDrop)' }
     }
     'both' {
       try {
@@ -6569,6 +6933,60 @@ function Restore-ClipboardState($st) {
     }
     'none' { return 'skipped clipboard restore (empty)' }
     default { return 'skipped clipboard restore (non-text)' }
+  }
+}
+
+# CU-OPS package G (v4.6.1): name the formats that made a clipboard 'other'. A refusal
+# that only says "unknown formats" tells the user nothing they can act on; the names are
+# what make --replace-clipboard an informed choice. Short list, bounded length.
+function Format-ClipboardFormatNames($formats) {
+  $list = @($formats | Where-Object { "$_" -ne '' })
+  if ($list.Count -eq 0) { return '' }
+  $shown = @($list | Select-Object -First 6)
+  $tail = if ($list.Count -gt 6) { ' +' + ($list.Count - 6) + ' more' } else { '' }
+  return (($shown -join ', ') + $tail)
+}
+
+# CU-OPS package G (v4.6.0): ONE verdict, read by both the write gate and clip-info.
+# "Restorable" means this tool has a restore branch that can verify the content back:
+# empty, text, FileDrop, both, and the image kinds (whose PNG was actually saved).
+# Anything else - custom/unknown formats (Kind=other) - is NOT restorable, and writing
+# over it destroys data the tool cannot put back.
+function Get-ClipboardStateExtras($st) {
+  # StrictMode-safe: callers hand in the plan object (has Extras), the Save-ClipboardState
+  # hashtable (has Extras) and unit-test hashtables that may not. A missing key must read as
+  # "no extras", not as a property error that kills the caller (measured 2026-10-27 13:22:
+  # the property error aborted the whole offline selftest at the clipboard family).
+  if ($null -eq $st) { return @() }
+  try { return @($st.Extras | Where-Object { "$_" -ne '' }) } catch { return @() }
+}
+
+function Get-ClipboardRestorableVerdict($st) {
+  if ($null -eq $st) { return 'unknown - nothing was read' }
+  $kind = "$($st.Kind)"
+  if ($kind -eq 'other') {
+    $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
+    if ($names -eq '') { return 'no - unknown formats; a write would need --replace-clipboard' }
+    return ('no - unknown formats (' + $names + '); a write would need --replace-clipboard')
+  }
+  if ($kind -like '*image*' -and [bool]$st.ImageSaveError) { return 'no - an image is present but its PNG could not be saved' }
+  # clip-info never attempts the PNG save (read-only), so it can only say the image is
+  # restorable IF the writing command manages to carry it; the write gate refuses otherwise.
+  if ($kind -like '*image*' -and ([string]$st.ImagePath -eq '')) { return 'yes - if the writing command can save the image carrier (this read did not try; the write gate refuses when that save fails)' }
+  return 'yes'
+}
+
+function Assert-ClipboardReplaceable($st, [bool]$replace, [string]$cmd) {
+  if ($replace) { return }
+  if ($null -eq $st) { return }
+  $kind = "$($st.Kind)"
+  if ($kind -eq 'other') {
+    $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
+    $detail = if ($names -ne '') { ' (' + $names + ')' } else { '' }
+    throw "$cmd : the clipboard holds formats this tool cannot restore$detail; overwriting them would destroy that content. Pass --replace-clipboard to say that is intended"
+  }
+  if ($kind -like '*image*' -and [bool]$st.ImageSaveError) {
+    throw "$cmd : the clipboard holds an image this tool could not save to a PNG, so it could not be put back; nothing was written. Pass --replace-clipboard to accept losing it"
   }
 }
 
@@ -6650,10 +7068,13 @@ function Format-WindowMissMessage([string]$sel) {
   if ([int]::TryParse($sel, [ref]$missingPid)) {
     return "no window matching pid: $missingPid - re-run 'wins' and choose a current PID; numeric selectors match PIDs only and never fall back to title"
   }
+  if ($sel -match '^hwnd:(.*)$') {
+    return "no window with handle '$($Matches[1])' - that exact handle is not on this desktop any more (closed, recreated, or never existed). Re-read 'wins'; an hwnd: selector never falls back to a title match."
+  }
   return "no window matching: $sel"
 }
 
-function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActivate = $false, [string]$expectHandle = '') {
+function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActivate = $false, [string]$expectHandle = '', [string]$created = '') {
   $script:ActivationLine = ''
   $script:ActivationNotice = ''
   if (-not $sel) {
@@ -6665,6 +7086,15 @@ function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActiva
     $pinFg = Test-HandlePin $expectHandle $h
     if (-not $pinFg.Ok) {
       throw ("handle pin: this call may only act on $($pinFg.Expected) but the FOREGROUND window is pid=$procId hwnd=$($pinFg.Actual) '$([DT]::Text($h))' ($(Format-HandlePinReason $pinFg)) - NOTHING was sent. Re-check with 'wins' / 'focus', then pass --to <sel> --expect-handle <hwnd>.")
+    }
+    # CU-OPS package D: --created turns "a window called X" into "the process that owns
+    # it, as observed at this time". PID reuse is what it kills: a new process with the
+    # old number gets a different creation time and is refused before any activation.
+    if ($created) {
+      $ciFg = Test-ProcIdentity ([int]$procId) $created
+      if (-not $ciFg.Ok) {
+        throw ("process identity: --created '$created' does not match the FOREGROUND window's pid=$procId hwnd=$($pinFg.Actual) ($($ciFg.Why)) - NOTHING was sent and nothing was activated. Re-read the process with 'proc-info <pid>' and pass its start= value.")
+      }
     }
     $script:ActivationLine = 'activated=n/a (no --to)'
     # v3.1.0 (P-02): the same pre-send popup baseline the --to path takes further down. Without
@@ -6685,6 +7115,15 @@ function Resolve-Target([string]$sel, [bool]$force = $false, [bool]$alwaysActiva
   $pin = Test-HandlePin $expectHandle $w.Handle
   if (-not $pin.Ok) {
     throw ("handle pin: this call may only act on $($pin.Expected) but selector '$sel' resolves to pid=$($w.Pid) hwnd=$($pin.Actual) '$($w.Title)' ($(Format-HandlePinReason $pin)) - NOTHING was sent and nothing was activated. A fresh re-resolve can land on a same-named window that appeared since you looked; pass --to <sel> --expect-handle <hwnd> from the same 'wins' reading, or drop the pin to accept the new target.")  }
+  # CU-OPS package D: the creation-time pin sits beside the handle pin, for the same
+  # reason and in the same place - before activation. A reused PID (or a same-title
+  # restart) is refused while the desktop is still untouched.
+  if ($created) {
+    $ci = Test-ProcIdentity ([int]$w.Pid) $created
+    if (-not $ci.Ok) {
+      throw ("process identity: --created '$created' does not match selector '$sel' (pid=$($w.Pid) hwnd=$($w.Handle) '$($w.Title)'): $($ci.Why) - NOTHING was sent and nothing was activated. Re-read with 'proc-info <pid>' and pass that start= value.")
+    }
+  }
   # v1.5.6 (D-2/A-2, J-01 option A). Activate-Win used to run BringWindowToTop +
   # SetForegroundWindow on EVERY --to, even when the window already was the foreground
   # one. Those two calls are not no-ops: they re-raise the main window ABOVE a
@@ -6783,6 +7222,9 @@ function Split-Target([string[]]$words, [string]$cmd = '') {
   $occlude = ''
   $occlGrid = 5
   $allowOccluded = $false
+  # CU-OPS package G: the explicit permission to overwrite clipboard content this tool
+  # cannot restore. Absent = a clipboard holding unknown formats is refused BEFORE writing.
+  $replaceClipboard = $false
   $out = New-Object System.Collections.ArrayList
   $i = 0
   while ($i -lt $words.Count) {
@@ -6802,6 +7244,14 @@ function Split-Target([string[]]$words, [string]$cmd = '') {
       $occlGrid = Resolve-OcclGridArg $words[$i]
     } elseif ($t -eq '--allow-occluded') {
       $allowOccluded = $true
+    } elseif ($t -eq '--replace-clipboard') {
+      # CU-OPS package G: the permission belongs to the two commands that WRITE the
+      # clipboard. Anywhere else it is refused by name rather than accepted and ignored -
+      # a permission that does nothing is worse than no permission.
+      if ($cmd -ne 'paste' -and $cmd -ne 'paste-file') {
+        throw "--replace-clipboard belongs to paste and paste-file, the commands that overwrite the clipboard AND restore it; $cmd never restores, so nothing was changed"
+      }
+      $replaceClipboard = $true
     }
     elseif ($t -eq '--no-expect') { $noExpect = $true; $expect = ''; $expectGone = ''; $expectAny = @(); $expectAnyGone = @(); $expectRegion = '' }
     elseif ($t -eq '--expect') {
@@ -6935,7 +7385,7 @@ function Split-Target([string[]]$words, [string]$cmd = '') {
     $i++
   }
   $words = @($out)
-  return @{ Sel = $sel; Words = $words; Force = $force; Verify = $verify; LogPayload = $logPayload; GuardText = $guardText; GuardRegion = $guardRegion; Scale = $scaleMode; MaxTiles = $maxTiles; NoTile = $noTile; Expect = $expect; ExpectGone = $expectGone; ExpectAny = $expectAny; ExpectAnyGone = $expectAnyGone; ExpectHandle = $expectHandle; ExpectRegion = $expectRegion; NoExpect = $noExpect; TimeoutSec = $timeoutSec; IntervalMs = $intervalMs; MinLineDensity = $minLineDensity; VerifyTimeout = $verifyTimeout; AllowOutside = $allowOutside; AlwaysActivate = $alwaysActivate; ExpectChange = $expectChange; Occlude = $occlude; OcclGrid = $occlGrid; AllowOccluded = $allowOccluded }
+  return @{ Sel = $sel; Words = $words; Force = $force; Verify = $verify; LogPayload = $logPayload; GuardText = $guardText; GuardRegion = $guardRegion; Scale = $scaleMode; MaxTiles = $maxTiles; NoTile = $noTile; Expect = $expect; ExpectGone = $expectGone; ExpectAny = $expectAny; ExpectAnyGone = $expectAnyGone; ExpectHandle = $expectHandle; ExpectRegion = $expectRegion; NoExpect = $noExpect; TimeoutSec = $timeoutSec; IntervalMs = $intervalMs; MinLineDensity = $minLineDensity; VerifyTimeout = $verifyTimeout; AllowOutside = $allowOutside; AlwaysActivate = $alwaysActivate; ExpectChange = $expectChange; Occlude = $occlude; OcclGrid = $occlGrid; AllowOccluded = $allowOccluded; ReplaceClipboard = $replaceClipboard }
 }
 
 # ---------------------------------------------------------------------------
@@ -7938,19 +8388,193 @@ function Restart-ChromeWithFlags([string[]]$flags, [string]$base, [int]$timeoutM
   return $r
 }
 
-function Move-Click([int]$x, [int]$y, [string]$button) {
-  [void][DT]::SetCursorPos($x, $y)
-  Start-Sleep -Milliseconds 150
-  if ($button -eq 'right') {
-    [DT]::mouse_event($MOUSE_RDOWN, 0, 0, 0, [IntPtr]::Zero)
-    Start-Sleep -Milliseconds 60
-    [DT]::mouse_event($MOUSE_RUP, 0, 0, 0, [IntPtr]::Zero)
-  } else {
-    [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-    Start-Sleep -Milliseconds 60
-    [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+# ---------------------------------------------------------------------------
+# CU-OPS-COMPLETE-20261026-01 (package B): modifier-owned mouse gestures.
+#
+# The rules this block exists to enforce, all of them from SendInput's documented
+# behaviour (SendInput returns how many events it INSERTED and does NOT reset a key
+# state that was already down):
+#   * a modifier this call did not press is never released - if the caller (or the
+#     user) already holds Ctrl, the gesture refuses instead of toggling their key;
+#   * press -> act -> release happens inside ONE call, and the release runs in a
+#     finally block, so a refusal or a failed event still cleans up this call's keys;
+#   * every event carries its inserted count; 0 is a failure, never a success;
+#   * a button that this family does not offer is refused BEFORE any input.
+# finally is not a guarantee against a hard process kill: a killed process leaves its
+# keys down like any other writer, which is why the same-call bound is the default and
+# there is no "leave Ctrl down for later" mode.
+$script:MouseButtonNames = @('left', 'right', 'middle', 'back', 'forward')
+$script:ModifierVk = @{ 'ctrl' = 0x11; 'shift' = 0x10; 'alt' = 0x12 }
+$script:LastMouseReceipt = ''
+
+# Pure: 'ctrl+shift' / 'ctrl,shift' -> ordered, de-duplicated list of known names.
+# An empty/absent spec yields an empty list (no modifiers), which is the unchanged
+# pre-CU-OPS path. Unknown names and the Windows key are refused here, before input.
+function Resolve-MouseModifiers([string]$spec) {
+  $list = @()
+  foreach ($raw in @("$spec" -split '[+,]')) {
+    $n = ("$raw").Trim().ToLowerInvariant()
+    if (-not $n) { continue }
+    if ($n -eq 'control') { $n = 'ctrl' }
+    if ($n -eq 'windows' -or $n -eq 'win') {
+      throw "mouse gestures do not drive the Windows key: OS-reserved combinations cannot be verified from a fixture and this tool does not pretend to synthesise them; accepted modifiers are ctrl, shift, alt"
+    }
+    if (-not $script:ModifierVk.ContainsKey($n)) { throw "unknown mouse modifier '$raw' - accepted: ctrl, shift, alt (combine with + or ,)" }
+    if ($list -notcontains $n) { $list += $n }
   }
-  Start-Sleep -Milliseconds 200
+  # Plain output on purpose: returning the array with a leading comma would emit an
+  # EMPTY array as ONE item, so an empty spec would arrive as a one-element list whose
+  # element is '' and the gesture would then look up a modifier that does not exist.
+  return $list
+}
+
+# Pure: button name -> the two input flags plus the XBUTTON id SendInput expects.
+function Get-MouseButtonSpec([string]$name) {
+  switch (("$name").Trim().ToLowerInvariant()) {
+    'left'    { return @{ Name = 'left'; Down = 0x0002; Up = 0x0004; Data = 0 } }
+    'right'   { return @{ Name = 'right'; Down = 0x0008; Up = 0x0010; Data = 0 } }
+    'middle'  { return @{ Name = 'middle'; Down = 0x0020; Up = 0x0040; Data = 0 } }
+    'back'    { return @{ Name = 'back'; Down = 0x0080; Up = 0x0100; Data = 1 } }
+    'x1'      { return @{ Name = 'back'; Down = 0x0080; Up = 0x0100; Data = 1 } }
+    'forward' { return @{ Name = 'forward'; Down = 0x0080; Up = 0x0100; Data = 2 } }
+    'x2'      { return @{ Name = 'forward'; Down = 0x0080; Up = 0x0100; Data = 2 } }
+  }
+  throw "unknown mouse button '$name' - accepted: left, right, middle, back/x1, forward/x2"
+}
+
+# Measured state of a button, so a press/release claim can be checked instead of
+# trusted. GetAsyncKeyState covers every button; the left one keeps the older
+# Control.MouseButtons reading for the existing press-pair contract.
+function Get-MouseButtonDown([string]$name) {
+  if (("$name").Trim().ToLowerInvariant() -eq 'left') { return (Get-LeftButtonDown) }
+  $vk = switch (("$name").Trim().ToLowerInvariant()) {
+    'right'   { 0x02 }
+    'middle'  { 0x04 }
+    'back'    { 0x05 }
+    'x1'      { 0x05 }
+    'forward' { 0x06 }
+    'x2'      { 0x06 }
+    default   { 0 }
+  }
+  if ($vk -eq 0) { throw "unknown mouse button '$name'" }
+  return (([DT]::IsVkDown([int]$vk)) -ne 0)
+}
+
+# One button DOWN or UP with its inserted count checked. $data is the XBUTTON id.
+function Invoke-MouseButtonEvent([string]$button, [bool]$down) {
+  $mb = Get-MouseButtonSpec $button
+  $flag = if ($down) { [uint32]$mb.Down } else { [uint32]$mb.Up }
+  $n = [uint32][DT]::SendMouseButtonInput($flag, [uint32]$mb.Data)
+  if ($n -ne 1) {
+    $win32 = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    throw "mouse button $($mb.Name) $(if ($down) { 'DOWN' } else { 'UP' }): SendInput inserted $n of 1 (win32 error $win32) - the button state is not what the caller asked for"
+  }
+  return $n
+}
+
+# Press the requested modifiers, run the action, and release ONLY the keys this call
+# pressed. Refuses when one of them is already down: that state belongs to someone
+# else, and neither pressing nor releasing it would be this tool's to do.
+function Invoke-ModifierGesture([string[]]$mods, [scriptblock]$action) {
+  $rc = @{ Mods = @($mods); Pressed = @(); Released = @(); Inserted = 0; Error = ''; ReleaseError = '' }
+  if (@($mods).Count -eq 0) { & $action; return $rc }
+  foreach ($m in @($mods)) {
+    $vk = [int]$script:ModifierVk[$m]
+    if (([DT]::IsVkDown($vk)) -ne 0) {
+      throw "modifier '$m' is already held down (not by this call); this tool will not press or release a key it does not own - let go of it first, then retry"
+    }
+  }
+  try {
+    foreach ($m in @($mods)) {
+      $vk = [int]$script:ModifierVk[$m]
+      $n = [uint32][DT]::SendKeyInput($vk, $false, $false)
+      if ($n -ne 1) { throw "modifier '$m' DOWN: SendInput inserted $n of 1; no gesture was performed" }
+      $rc.Inserted = [int]$rc.Inserted + 1
+      $rc.Pressed = @($rc.Pressed) + $m
+      Start-Sleep -Milliseconds 30
+    }
+  } catch {
+    $rc.Error = $_.Exception.Message
+    $rf = @()
+    foreach ($m in @($rc.Pressed)) {
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$script:ModifierVk[$m], $true, $false)
+        if ($n -eq 1) { $rc.Released = @($rc.Released) + $m } else { $rf += "$m(inserted $n/1)" }
+      } catch { $rf += "$m($($_.Exception.Message))" }
+    }
+    if (@($rf).Count) { throw ($rc.Error + ' | modifier UP failed for: ' + ($rf -join ', ') + ' - those keys may still be down; run key-state / key-release') }
+    throw $rc.Error
+  }
+  $actionErr = $null
+  try {
+    & $action
+  } catch {
+    $actionErr = $_
+  } finally {
+    # CU-OPS-ADJ-03: every modifier UP is verified. The old code ignored SendKeyInput's
+    # return and swallowed exceptions, so a failed UP was still receipted as released.
+    $rf = @()
+    foreach ($m in @($rc.Pressed)) {
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$script:ModifierVk[$m], $true, $false)
+        if ($n -eq 1) { $rc.Released = @($rc.Released) + $m } else { $rf += "$m(inserted $n/1)" }
+      } catch { $rf += "$m($($_.Exception.Message))" }
+    }
+    Start-Sleep -Milliseconds 40
+    if (@($rf).Count) { $rc.ReleaseError = 'modifier UP failed for: ' + ($rf -join ', ') + ' - those keys may still be down; run key-state / key-release' }
+  }
+  if ($null -ne $actionErr) {
+    $msg = $actionErr.Exception.Message
+    if ($rc.ReleaseError) { throw ($msg + ' | ' + $rc.ReleaseError) }
+    throw $msg
+  }
+  if ($rc.ReleaseError) { throw $rc.ReleaseError }
+  return $rc
+}
+
+function Format-ModifierReceipt($rc) {
+  if ($null -eq $rc -or @($rc.Mods).Count -eq 0) { return '' }
+  return (" mods=" + (@($rc.Mods) -join '+') + " mods-pressed-inserted=" + $rc.Inserted + "/" + @($rc.Mods).Count + " mods-released=" + (@($rc.Released) -join '+'))
+}
+
+# The one producer of a button click. Left/right without modifiers keep the exact
+# pre-CU-OPS event shape and pace; every other case goes through SendInput with a
+# counted receipt. $mods is a '+'-separated spec ('' = none).
+function Move-Click([int]$x, [int]$y, [string]$button, [string]$mods = '') {
+  $modList = @(Resolve-MouseModifiers $mods)
+  $mb = Get-MouseButtonSpec $button
+  $script:LastMouseReceipt = ''
+  $act = {
+    [void][DT]::SetCursorPos($x, $y)
+    Start-Sleep -Milliseconds 150
+    if ($modList.Count -eq 0 -and $mb.Name -eq 'left') {
+      [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
+      Start-Sleep -Milliseconds 60
+      [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+    } elseif ($modList.Count -eq 0 -and $mb.Name -eq 'right') {
+      [DT]::mouse_event($MOUSE_RDOWN, 0, 0, 0, [IntPtr]::Zero)
+      Start-Sleep -Milliseconds 60
+      [DT]::mouse_event($MOUSE_RUP, 0, 0, 0, [IntPtr]::Zero)
+    } else {
+      # CU-OPS-ADJ-06: a new button (middle/side) is DOWN only for the span of this
+      # block, and the UP runs in a finally - a failure between the two must not leave
+      # the button held down with a receipt that claims a completed click.
+      [void](Invoke-MouseButtonEvent $mb.Name $true)
+      try {
+        Start-Sleep -Milliseconds 60
+      } finally {
+        [void](Invoke-MouseButtonEvent $mb.Name $false)
+      }
+    }
+    Start-Sleep -Milliseconds 200
+  }
+  if ($modList.Count -gt 0) {
+    $rc = Invoke-ModifierGesture $modList $act
+    $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+  } else {
+    & $act
+    $script:LastMouseReceipt = ''
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -9083,7 +9707,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -9304,15 +9928,84 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
           window) report their owners instead. Switches: --occlude
           off|warn|strict overrides the per-command default; --occlude-grid n
           (default 5); --allow-occluded downgrades a strict fail to a warning. 
+  process (PID identity and lifecycle; observation is read-only, termination previews)
+    proc-list [name-filter]         every process, visible window or not. A background
+                                    process is listed too - "not in wins" is an absence
+                                    of a window, not of the process. Read-only.
+    proc-info <pid>                 one identity: name/path/start time/responding/window/
+                                    session/threads/working set, plus every top-level
+                                    window the PID owns. Unreadable fields print as
+                                    denied/unknown instead of disappearing.
+    proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]
+                                    bounded wait (default 20s) bound to the PID and,
+                                    with --created, to that process's creation time.
+                                    Process exit and window appearance are separate
+                                    predicates on purpose. A timeout never escalates
+                                    to a kill.
+    proc-start [--cwd <dir>] [--wait-window s] <exe> [argv...]
+                                    start a local exe with structured argv (each
+                                    operand quoted here - no shell string, no
+                                    elevation, no restart). Prints pid + creation
+                                    time; --wait-window polls for a top-level window
+                                    and reports a timeout as such (the started
+                                    process is NOT stopped).
+    proc-kill <pid> [--created <iso>] [--timeout s] [--go]
+                                    PREVIEW by default. --go additionally requires
+                                    --created (the start time from proc-info) and is
+                                    checked again through the very handle that is
+                                    terminated, so a reused PID is refused. Never
+                                    kills a subtree, never targets a protected
+                                    system/session process, this tool, or its own
+                                    ancestor chain. A terminate request is not an
+                                    exit: success is reported only when the same
+                                    process object ends. Unsaved work in the target
+                                    can be lost - prefer win-close / dialog-cancel.
+  locate / clipboard / surface (read-only)
+    tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen|window|client]
+             [--tolerance n] [--scales 1|1,1.25] [--index n] [--max-ms ms] [--created <iso>]
+                                    deterministic template locator: one nearest-neighbour
+                                    resample per requested scale (0.5..2.0, at most 3),
+                                    integer per-channel tolerance (0..255), a bounded
+                                    region (<= 3,000,000 px) and a bounded time budget.
+                                    Multi-hit is a REFUSAL unless --index names one -
+                                    picking the first would be a guess. It reports
+                                    points and NEVER clicks; --space says which origin
+                                    the printed coordinates are expressed in.
+    clip-info                       clipboard METADATA only: kind, format count and names,
+                                    character count, file count, image availability,
+                                    and whether this tool can restore it. No text is
+                                    printed, no image is decoded, nothing is written.
+    wait-cond <sel> [--win] [--gone] [--foreground] [--text <needle>]
+                     [--uia <nameSub>] [--state On|Off|Expanded|Collapsed|Selected|NotSelected]
+                     [--timeout s] [--interval ms]
+                                    ONE bounded wait with exactly ONE predicate, and
+                                    three outcomes kept apart: matched, timed out, and
+                                    every poll failing to read (a read failure is never
+                                    reported as "the condition stayed false").
+    capabilities [--json]           the command surface DERIVED from this dispatcher's
+                                    own registry: per-command group, private/shared
+                                    flags, --json support, plus the entry path + SHA256
+                                    and the environment. It recomputes the registry's
+                                    total, so a command registered but unreachable is
+                                    visible rather than silently missing.
   act (absolute coords)
     move <x> <y>                    move cursor
     hover <x> <y> [--dwell ms]      move and STAY - tooltips need the dwell to
                                     render; pointer popups become screenshotable.
                                     dwell default 800, whole ms, 0..60000
-    click <x> <y>                   left click; optionally --to <sel> activates
-    rclick <x> <y>                    + verifies a window first, --guard-text /
-    dblclick <x> <y>                  --guard-region x,y,w,h=s asserts context
+    click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift|ctrl,shift]
+                                    [--space screen|window|client] [--created <iso>]
+                                    click; optionally --to <sel> activates
+    rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>]  + verifies a window first, --guard-text /
+    dblclick <x> <y> [--mods ...] [--space screen|window|client] [--created <iso>]  --guard-region x,y,w,h=s asserts context
                                       BEFORE the click (like the text commands).
+                                      --mods holds ctrl/shift/alt for the ONE call
+                                      only (press -> click -> release); an existing
+                                      user-held key is refused, never toggled.
+                                      --button covers middle (canvas pan) and the
+                                      back/forward side buttons. The Windows key is
+                                      refused: OS-reserved combinations are not
+                                      synthesised here.
                                       v1.5.0: all pointing commands (move /
                                       hover / click family / find-click) print
                                       hit-window = the window really under the
@@ -9325,11 +10018,31 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                       same path, and relclick additionally
                                       refuses when the window under the point
                                       is not the resolved target itself
-    drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--to <sel>] [--guard-text <s>]
+                                      --space screen|window|client picks the
+                                      coordinate space: screen (default,
+                                      physical pixels), window (0-based offset
+                                      inside the target's visible frame) or
+                                      client (0-based offset inside its client
+                                      area). window/client need --to and read the
+                                      origin at ACTION time, so a move/resize/DPI
+                                      change cannot leave a stale point in use; an
+                                      offset outside the area is refused, never
+                                      clamped or silently sent.
+                                      --created <iso> pins the target PROCESS to
+                                      its creation time (start= from proc-info),
+                                      so a reused PID is refused before any
+                                      activation - the handle pin and the process
+                                      pin answer different questions.
+    drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left|middle|right|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>]
                                     press, interpolate, release (windows,
                                     sliders, scrollbars); guards like click.
                                     steps default 14 (1..200), hold default 120
-                                    (0..10000) - the press time before moving
+                                    (0..10000) - the press time before moving.
+                                    --button middle = canvas pan; --mods holds the
+                                    modifiers for this one drag only. The cross-call
+                                    press-down/press-up pair stays LEFT-button and
+                                    modifier-free on purpose: a held key between two
+                                    calls is state the user may have to clean up.
     press-down <x> <y> [--max-hold ms] [--to <sel>] [--guard-text <s>] [--force]
                                     v2.0.1 (P-3) MID-STATE: press and LET IT STAY
                                     DOWN so you can look before letting go - the
@@ -9356,8 +10069,10 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     here; refuses when nothing is down (say so,
                                     never report a release that did not happen)
     wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>] [--at <sel>]
+                                    [--space screen|window|client] [--created <iso>]
                                     [--focus-first] [--expect-change [x,y,w,h]]
                                     [--verify-scroll] [--expect-visible-text <needle>]
+                                    [--mods ctrl|shift|alt[+...]]
                                     scroll (raw delta is the default; notches
                                     multiply by 120; vertical + = up / - = down,
                                     horizontal + = right / - = left); no target keeps
@@ -9374,6 +10089,15 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     if unavailable, only an explicit local rect enables a
                                     pixel-only fallback. --expect-visible-text checks a new
                                     visible UIA name. Polling is bounded; no automatic retry.
+                                    --mods presses ctrl/shift/alt for THIS ONE wheel event
+                                    and releases them in the same call (the same ownership
+                                    as click --mods; a key someone else holds is refused).
+                                    What a modified wheel does is the application's
+                                    decision: Ctrl+wheel may zoom in one app and pan in
+                                    another. A changed scroll position is therefore NOT
+                                    accepted as proof of zoom: --verify-scroll is refused
+                                    together with --mods, and the receipt says
+                                    gesture-scope=application-defined.
     relclick <sel> <dx> <dy>        click inside the window, from a rect
                                     re-read AFTER it is raised: a window that
                                     moved or restored is measured again, and a
@@ -9538,10 +10262,46 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     raw SendKeys spec, e.g. ^s  ^a  %{F4}  {ENTER};
                                     use `type` for literal text, not key syntax
                                     (SendKeys still honours the IME - see README)
-    paste [--to <sel>] <file> [--expect <s>|--no-expect] [--force]
+    key [--to <sel>] <combo> [--repeat n] [--interval ms] [--hold ms] [--guard-text <s>] [--expect <needle>] [--force]
+                                    NATIVE key gesture (SendInput), separate from
+                                    keys: combo = ctrl/shift/alt/win + one base key,
+                                    e.g. 'key ctrl+shift+t', 'key alt+f4',
+                                    'key f5 --repeat 3', 'key enter --hold 800'.
+                                    Base names: a-z 0-9 F1..F24 numpad0..9 enter tab
+                                    esc space backspace delete insert home end
+                                    pageup pagedown left up right down capslock
+                                    numlock scrolllock printscreen pause apps
+                                    minus equal comma period slash semicolon quote
+                                    backslash grave add subtract multiply divide
+                                    decimal. --repeat 1..50, --interval 0..5000,
+                                    --hold 0..20000 (one bounded hold of the BASE
+                                    key). Every key is released inside this call;
+                                    a modifier someone else already holds is
+                                    REFUSED, never pressed or released. Refused by
+                                    design: Ctrl+Alt+Del (the Secure Attention
+                                    Sequence belongs to the OS) and Win+l/d/u/r
+                                    (they act on the whole session, not a window).
+                                    Chinese body text still goes through `type`
+                                    (Unicode SendInput), never through a keystroke
+                                    table or the clipboard.
+    key-state                       READ-ONLY: which modifiers/lock keys and
+                                    mouse buttons are down right now, plus what
+                                    this tool has on record as held. Nothing is
+                                    pressed or released.
+    key-release [--go]              release ONLY keys this tool recorded as held
+                                    (the ledger an interrupted call leaves behind).
+                                    DRY RUN by default; keys held by anyone else
+                                    are reported, never touched. 'Release all
+                                    physical keys' is deliberately not a mode:
+                                    an unknown holder is reported, not reset.
+    paste [--to <sel>] <file> [--expect <s>|--no-expect] [--replace-clipboard] [--force]
                                     read UTF-8 file, put on clipboard, Ctrl+V;
-                                    previous clipboard (text or FileDrop) is
-                                    saved and restored afterwards. v1.5.9: with
+                                    previous clipboard (text, FileDrop or image) is
+                                    saved and restored afterwards. CU-OPS G: when
+                                    the clipboard holds formats this tool cannot
+                                    put back (custom data), the write is REFUSED
+                                    unless --replace-clipboard says losing it is
+                                    intended. v1.5.9: with
                                     NO expect flag given, the payload tail (last
                                     non-empty line, <= 24 chars) is OCR-read back
                                     from the target - not visible = WARN + exit 1
@@ -9568,10 +10328,12 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
   clipboard
     copy-file <path>                put a local file on the clipboard as FileDrop,
                                     self-verified; deliberately keeps it there
-    paste-file [--to <sel>] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--force]
+    paste-file [--to <sel>] <path> [--guard-text <s>] [--expect <s>|--no-expect] [--replace-clipboard] [--force]
                                     copy-file + foreground guard + content guard
                                     + Ctrl+V, then restore the previous clipboard;
-                                    v1.5.9: default-on readback like paste (it
+                                    CU-OPS G: unknown clipboard formats are refused
+                                    before the write unless --replace-clipboard is
+                                    given; v1.5.9: default-on readback like paste (it
                                     looks for the FILE NAME; --no-expect is the
                                     send-only escape; --expect family honoured)
 
@@ -9674,6 +10436,33 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     readback-verified (no keyboard, no clipboard).
                                     @path form: uia-settext <sel> @/0/2/1 <file>
                                     "T|n|X,Y,WxH"
+    uia-state <sel> <nameSub> [--text]
+                                    READ-ONLY: one line per UIA pattern this
+                                    element exposes right now - toggle / selection /
+                                    expand / range (value,min,max,readonly) /
+                                    value (length + writable) / text / scrollItem -
+                                    and an explicit "no XPattern" when absent.
+                                    Values and text are NOT printed unless --text
+                                    is passed, and a password field is never read.
+                                    Nothing is activated and nothing is logged.
+    uia-do <action> <sel> <nameSub> [value]
+                                    semantic action through ONE named pattern,
+                                    then a read-back of the resulting state:
+                                    toggle|toggle-on|toggle-off (TogglePattern),
+                                    select|add-select|remove-select
+                                    (SelectionItemPattern; add/remove are the
+                                    multi-select calls, since Select on a second
+                                    item replaces the selection), expand|collapse
+                                    (ExpandCollapsePattern), scroll-into-view
+                                    (ScrollItemPattern, verified by IsOffscreen
+                                    going true -> false), range-set
+                                    (RangeValuePattern, refused when readonly or
+                                    outside min..max - no
+                                    clamping). A disabled element, a missing
+                                    pattern, a stale element or a failed
+                                    read-back is an error that changed
+                                    nothing; there is no fallback click.
+                                    uia-do logs one audit line; uia-state does not.
     a11y-probe <sel> [bigDepth]     READ-ONLY: control counts at default vs big
                                     depth + interactive controls in the page
                                     area -> page-tree=exposed|collapsed, i.e.
@@ -9836,8 +10625,12 @@ desktop.ps1 v4.5.7 - Windows desktop automation (DPI-aware, absolute screen pixe
                                                    the negative conclusion.
                                     0 = off. Hint only: never changes an exit code.
                                     Passing this flag overrides the default above.
-  <sel> = numeric pid | title substring | proc:<name> | class:<substr>
+  <sel> = numeric pid | title substring | proc:<name> | class:<substr> | hwnd:<0xhex|decimal>
           | t:<digits> to force title matching for digit-only strings.
+          hwnd: matches ONE top-level window by exact handle (from the hwnd=
+          column of wins/info); a non-numeric value is refused, and a handle
+          that no longer exists reports "no window matching" - it never falls
+          back to a title that looks similar.
           Numeric <sel> prefers the pid's window currently in the foreground
           (pick=fg), else the largest (pick=largest). A MINIMIZED window of that
           pid is picked the same way but labelled pick=parked, and assert-window
@@ -10081,6 +10874,28 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       Invoke-Handler-open-and-pick 'open-and-pick' $Rest
     }
 
+    # CU-OPS package A: observation (read file) and the two act-side commands. proc-kill
+    # previews unless --go, and is deliberately absent from the replay whitelist.
+    'proc-list' {
+      Invoke-Handler-proc-list 'proc-list' $Rest
+    }
+
+    'proc-info' {
+      Invoke-Handler-proc-info 'proc-info' $Rest
+    }
+
+    'proc-wait' {
+      Invoke-Handler-proc-wait 'proc-wait' $Rest
+    }
+
+    'proc-start' {
+      Invoke-Handler-proc-start 'proc-start' $Rest
+    }
+
+    'proc-kill' {
+      Invoke-Handler-proc-kill 'proc-kill' $Rest
+    }
+
     'imgclick' {
       Invoke-Handler-imgclick 'imgclick' $Rest
     }
@@ -10133,6 +10948,48 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 
     'keys' {
       Invoke-Handler-keys 'keys' $Rest
+    }
+
+    # CU-OPS package C: native key gestures. `keys` above keeps its SendKeys grammar
+    # untouched; these three are a separate, explicitly native surface.
+    'key' {
+      Invoke-Handler-key 'key' $Rest
+    }
+
+    'key-state' {
+      Invoke-Handler-key-state 'key-state' $Rest
+    }
+
+    'key-release' {
+      Invoke-Handler-key-release 'key-release' $Rest
+    }
+
+    'uia-state' {
+      Invoke-Handler-uia-state 'uia-state' $Rest
+    }
+
+    'uia-do' {
+      Invoke-Handler-uia-do 'uia-do' $Rest
+    }
+
+    # CU-OPS packages D/F/H: read-only additions. tpl-find locates and never clicks,
+    # clip-info reports clipboard metadata without printing content, wait-cond is one
+    # bounded wait with matched/timed-out/unreadable kept apart, and capabilities derives
+    # the command surface from this dispatcher's registry.
+    'tpl-find' {
+      Invoke-Handler-tpl-find 'tpl-find' $Rest
+    }
+
+    'clip-info' {
+      Invoke-Handler-clip-info 'clip-info' $Rest
+    }
+
+    'wait-cond' {
+      Invoke-Handler-wait-cond 'wait-cond' $Rest
+    }
+
+    'capabilities' {
+      Invoke-Handler-capabilities 'capabilities' $Rest
     }
 
     'paste' {

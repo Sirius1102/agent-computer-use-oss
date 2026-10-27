@@ -332,10 +332,10 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
     $sfE4 -like "*'--dwell' needs a value*" -and $sfE4 -notlike '*valid here*')
   $sfE5 = ''
   try { [void](Strip-OwnFlags @('10', '20', '--index', '1') 'hover') } catch { $sfE5 = $_.Exception.Message }
-  # --index belongs to find-click AND (since J-06) menu-pick: the message must name every
-  # owner, in sorted order, so it cannot change between runs.
+  # --index belongs to find-click, menu-pick and (CU-OPS package F) tpl-find: the message
+  # must name every owner, in sorted order, so it cannot change between runs.
   ST-Check 'unit: another command private flag names every owner of it, not as a typo' (
-    $sfE5.Contains("'--index' is a flag of find-click, menu-pick, not of this command") -and $sfE5.Contains('valid here:') -and $sfE5.Contains('--dwell'))
+    $sfE5.Contains("'--index' is a flag of find-click, menu-pick, tpl-find, not of this command") -and $sfE5.Contains('valid here:') -and $sfE5.Contains('--dwell'))
   # the D-5 wording: coordinate-only commands must not be sent hunting for a needle.
   # The test is on the ADVICE SENTENCE, not on the word --needle - --needle is a shared
   # flag that genuinely reaches hover's parser, so it must appear in its "valid here"
@@ -435,8 +435,8 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
       (@($bad).Count -eq 0) -and (@(Get-HashKeys $csMap).Count -ge 4)
     ))
   # the flag-reachability lint must now cover the migrated commands, not just three
-  ST-Check 'unit: the private-flag table covers 13 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; EXPECTATION RAISED 12->13, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
-    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 13)
+  ST-Check 'unit: the private-flag table covers 24 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; CU-OPS adds click/rclick/dblclick for their --mods/--button/space guards, key and key-release for the native-keyboard bounds, the three process entries (proc-wait, proc-start, proc-kill), uia-state for its opt-in --text, and tpl-find/wait-cond for their bounded locator and wait values; EXPECTATION RAISED 13->21->22->24, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
+    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 24)
 
   # the escape route must survive the strip: everything after a value-taking flag is DATA.
   # J-06's central unknown-flag refusal nearly ate `--needle <--payload>` and only a --live
@@ -667,17 +667,17 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
 
   # ---------- v4.4.0 (A-15): the case shape is judged from the AST, and a shape break names the case ----------
   # Design gate 12, landed BEFORE any case body moves. Measured on this tree (a15-probe.ps1): the
-  # dispatcher holds ONE switch with 79 clauses; 76 of them begin on a line the strict 76-case regex
+  # dispatcher holds ONE switch with 94 clauses; 91 of them begin on a line the strict case regex
   # sees; the other 3 are single-line cases and they are exactly selftest / script / replay; 0 clauses
-  # begin on a line that is neither. The unscoped file-wide count of the same regex is 90 - 14 more
+  # begin on a line that is neither. The unscoped file-wide count of the same regex is 105 - 11 more
   # lines live in OTHER switches - which is why this gate (and the three older scans) must be scoped
   # to the dispatcher, and why the difference is asserted rather than a number being trusted.
-  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 77 80
+  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 91 94
   $a15Unscoped = 0
   foreach ($a15l in $srcLines) { if ([regex]::IsMatch([string]$a15l, '^    ''[a-z0-9-]+'' \{$')) { $a15Unscoped = $a15Unscoped + 1 } }
-  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 77 and 80, and the unscoped count is larger, so the scope is what is being measured' (
-    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 77) -and ($hCaseStarts.Count -eq 77) -and
-    ($gaCasesCount -eq 80) -and ($a15Unscoped -gt 77))
+  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 91 and 94, and the unscoped count is larger, so the scope is what is being measured' (
+    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 91) -and ($hCaseStarts.Count -eq 91) -and
+    ($gaCasesCount -eq 94) -and ($a15Unscoped -gt 91))
   Write-Output ('      A-15 case shape: gap=[' + $a15Gap + '] flag-scan=' + $d1CaseStarts.Count + ' help-index=' + $hCaseStarts.Count +
     ' f-00-a=' + $gaCasesCount + ' unscoped-file-wide=' + $a15Unscoped)
   # the teeth: every note this predicate can emit is planted, on text - not on the tree. The clean

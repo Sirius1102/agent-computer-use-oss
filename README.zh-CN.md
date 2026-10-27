@@ -1,10 +1,10 @@
-# Agent Computer Use 开源版 v4.5.7
+# Agent Computer Use 开源版 v4.6.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1020%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1044%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -49,7 +49,7 @@
 - **默认带守卫。** 按键物理上永远落在"当前焦点窗口"上，所以 `type` / `keys` / `paste` / `paste-file` 带 `--to <sel>` 时，会**先校验目标确实拿到了前台，才发第一个键**；校验不过直接 `ERROR` + 退出码 1，一个键都不发（`--force` 可跳过，退回旧行为）。发完之后**还会再查一次前台**，中途被抢走焦点同样算失败并告警。这条规则来自真实事故：`SetForegroundWindow` 可能被系统前台锁静默拒绝，盲发的按键落进了别的程序。
 - **知道自己是怎么知道的，并且说出来。** 这是整套功能围绕生长的设计准则：一个数字、一句"没找到"，如果不同时打印它来自哪次测量，就没有价值。于是 `find` 会报 `source=uia|ocr`；落空时会说出两条路各自量到了什么；`hit-window:` 打印你的点击**真实落在**哪个窗口；截图类命令回显图像→屏幕的换算式；`--expect` 的判词会写明实际生效的耐心值与轮询间隔；`paste` 会点名它凭哪种"回执"接受了一个被折叠成附件条的长文本。**0 从来不是"不存在"的证据**，一个只可能通过的检查不算检查。
 - **有审计。** 每条实际执行的 act/text/clipboard/uia-settext 命令向 `shots/actions.log` 追加一行：UTC 时间戳、命令、参数、解析到的目标。键入内容与守卫串以 `<redacted:Nchars>` 存（要原文就显式传 `--log-payload`）；只记文件**路径**，绝不记剪贴板内容和文件正文。日志 512KB 轮转，保留最新 5 个 `actions_*.log` 存档；`replay` 会**拒绝**正文已被脱敏的步骤——把占位符重放出去就等于把占位符打进目标。
-- **自带回归。** `selftest` 跑离线门禁（当前 1020 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
+- **自带回归。** `selftest` 跑离线门禁（当前 1044 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
 - **DPI 安全。** 读取任何坐标前，进程先声明 **Per-Monitor V2** DPI 感知（Windows 10 1703+；更老的系统自动回退 System-aware）。不做这一步，Windows 会按显示缩放比例虚拟化所有数值（150% 缩放下，2100×1350 的窗口会被读成 1400×900），截图裁切、点击偏移。Per-Monitor V2 还额外保证多块显示器**缩放比例不一致**（混合 DPI 多屏）时，副屏上的坐标与截图同样逐像素准确。用 `dpi` 命令可查看实际拿到的感知模式和每块显示器的物理像素边界。
 - **源码纯 ASCII。** PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 误读，所以脚本里没有任何非 ASCII 字面量（文件本身带 UTF-8 BOM，这正是 5.1 按 UTF-8 解码的原因）。中文等非 ASCII 文本一律通过 `paste <file>` 或 `uia-settext <sel> <name> <file>` 从外部 UTF-8 文件进入。
 
@@ -151,7 +151,10 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `rect-of <sel>` | 只输出 `x y w h`，方便算相对坐标 |
 | `cursor` | 当前光标位置 |
 | `dpi` | 启动时实际拿到的 DPI 感知模式 + 每块显示器的物理像素边界 |
-| `dpi` | 启动时实际拿到的 DPI 感知模式 + 每块显示器的物理像素边界 |
+| `capabilities [--json]` | 从分派器**自己的注册表**推导出的命令面（分组、私有/共享 flag、`--json` 支持），外加入口路径 + SHA256 与环境；注册了却走不到的命令会显形，而不是悄悄消失 |
+| `proc-list [name-filter]` | 列出全部进程（有没有可见窗口都列）——只读；"不在 `wins` 里"是**没有窗口**，不是没有进程 |
+| `proc-info <pid>` | 名称／路径／创建时间／是否响应／窗口／会话／线程／工作集；读不到的字段打印 `denied`/`unknown`，不会凭空消失 |
+| `tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen\|window\|client] [--tolerance n] [--scales 1\|1,1.25] [--index n] [--max-ms ms]` | 确定性模板定位：受限的缩放档（≤3）、区域（≤3,000,000 px²）与耗时预算；多命中**默认拒绝**，除非 `--index` 点名一个；只报点，绝不点击 |
 | `color-at <x> <y>` | 取某像素颜色，输出 `#RRGGBB`（指示灯、转圈等没有文字的反馈） |
 | `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]` | 区域内首个（或全部，上限 500）匹配像素 |
 | `hash <sel|x y w h>` | 区域截图的 MD5 —— `assert-hash` 的输入 |
@@ -187,6 +190,15 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `wait-win <sel> <timeoutSec>` | 每 500ms 轮询直到匹配窗口出现 |
 | `wait-gone <sel> <timeoutSec>` | 轮询直到它消失（对话框关闭、操作生效） |
 | `wait-stable <sel|x y w h> <timeoutSec> [--interval ms]` | 轮询直到连续两次截图哈希相同——用来替掉固定 sleep |
+| `wait-cond <sel> [--win\|--gone\|--foreground\|--text <needle>\|--uia <nameSub>\|--state On\|Off\|Expanded\|Collapsed\|Selected\|NotSelected] [--timeout s] [--interval ms]` | **一次有界等待只带一个谓词**，并区分三种结果：命中、超时、以及每次轮询都读不到（读失败**绝不**报成"条件一直为假"） |
+
+### 进程类（身份核对、有界）
+
+| 命令 | 作用 |
+|---|---|
+| `proc-start [--cwd <dir>] [--wait-window s] <exe> [argv...]` | 用结构化 argv 启动本地 exe（不经 shell 拼串、不提权、不重启）；打印 pid + 创建时间；`--wait-window` 超时会如实报超时，**不会**停掉刚启动的进程 |
+| `proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]` | 有界等待（默认 20s），绑定该 PID，带 `--created` 时同时绑创建时间；进程退出与窗口出现是两个独立谓词；超时**永不**升级成 kill |
+| `proc-kill <pid> [--created <iso>] [--timeout s] [--go]` | **默认只预览**；`--go` 额外要求 `--created`，并且在真正被终止的那个句柄上再核一次，PID 复用会被拒；绝不批量杀子树，绝不碰受保护的系统/会话进程、本工具或自己的祖先进程；只有**同一个进程对象确实结束**才算成功（发出终止请求不等于退出） |
 
 ### 操作类（绝对屏幕坐标）
 
@@ -224,6 +236,9 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `type [--to <sel>] <文本...> [--verify] [--force]` | 走 SendInput Unicode，字符完全绕过 IME，中文可直接输入；`--verify` 发送后用 OCR 读目标，看不到这段文本就大声失败（密码框请跳过） |
 | `type-in <x> <y> [--tab <n>] <文本...> [--verify]` | 先点一下、发 n 个 TAB、再输入——为 webview/Electron 表单而设，那里**光点击拿不到键盘焦点** |
 | `keys [--to <sel>] <spec> [--force]` | 原生 SendKeys 语法：`^s`、`%{F4}`、`{ENTER}`（`keys` 仍然经过 IME） |
+| `key [--to <sel>] <组合> [--repeat n] [--interval ms] [--hold ms] [--guard-text <串>] [--expect <needle>]` | **原生** SendInput 按键，与 `keys` 分开：修饰键 + 一个基准键（`key ctrl+shift+t`、`key alt+f4`、`key f5 --repeat 3`、`key enter --hold 800`）。本次按下的键全在这次调用内抬起；别人已经按住的修饰键会被**拒绝**，既不按下也不抬起；Ctrl+Alt+Del 与 Win+l/d/u/r 按设计拒绝 |
+| `key-state` | 只读：当前按下的修饰键／锁定键／鼠标键，以及本工具记录在案的持有状态 |
+| `key-release [--go]` | 默认只预览：只释放**本工具记录**为持有的键（中断的调用留下的 ledger）；别人按住的键只报告、绝不触碰——"释放所有物理按键"刻意不作为模式 |
 | `paste [--to <sel>] <文件> [--expect <串>|--no-expect] [--force]` | UTF-8 文件 → 剪贴板 → Ctrl+V，事后恢复原剪贴板。**回读默认开启**：把正文尾部读回来核对；正文长到显示不出尾部（折叠成了附件条）时改凭一种**具名回执**接受，绝不静默 |
 | `--guard-text <needle>` / `--guard-region x,y,w,h=<needle>` | 文本类命令专用：目标可见才发送——由工具强制"只对这个会话说话"。守卫区域被遮挡时**在 OCR 之前**就失败，守卫不可能读到覆盖层的文字并当成语境 |
 | `--dump <路径>` | 把命令的 stdout 写进文件，只回一个指针（行数／字节／首 5 行／被隐藏的行数）。只开放给 7 条会撑爆调用方上下文的读命令：`find` `find-text` `read-text` `uia-find` `uia-path` `uia-tree` `wins`；其余命令**执行之前**就拒。**永不覆盖已有文件，永不创建目录**；stderr 不进文件 |
@@ -236,6 +251,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 |---|---|
 | `copy-file <路径>` | 把本地文件以 FileDrop 放上剪贴板并自证；**刻意留在**剪贴板上 |
 | `paste-file [--to <sel>] <路径> [--guard-text <串>] [--force]` | copy-file + 前台守卫 + 内容守卫 + Ctrl+V + 恢复剪贴板；默认回读找的是**文件名**。v3.1.0 说明：`paste-file` 不走这条路——弱回执三腿只服务"长正文被折叠成附件 chip、框里永远读不到正文"的输入框；附件卡片渲染的就是文件名，语义与 v1.5.9 一字不动（这是机主批准过的差异，不是漏传参数，判据 `lint (P-06)` 钉住两处调用形状与这句话一致） |
+| `clip-info` | 剪贴板**只报元信息**：类型、格式数量与名称、字符数、文件数、是否有图像、本工具能否恢复。不打印正文、不解码图像、不写任何东西 |
 
 ### 遮挡自证开关（每条读像素的命令都有）
 
@@ -262,6 +278,8 @@ v3.1.0 起 `--json` 不再是只读命令的待遇：`act` / `text` / `clipboard
 | `uia-click <sel> <nameSub>` | InvokePattern，失败则回退为点击该元素的中心。`@path` 形态：`uia-click <sel> @/0/2/1 "T\|n\|X,Y,WxH"`——期望三元组 `Type\|nameSub\|rect` 从 `uia-tree` 行复制，`@` 前缀是唯一分流标记；走完路径**先重验证** ControlType/Name/rect，任一不符打印 `REFUSED: path=... stale` + 期望/实际 + 定位/OCR 回退提示，并 **exit 1 不点**。路径深度超出 maxDepth 自报 `path depth N > walked M`。失效路径绝不静默变成坐标点击 |
 | `uia-focus <sel> <nameSub>` | SetFocus。`@path` 形态同 uia-click：`uia-focus <sel> @/0/2/1 "T\|n\|X,Y,WxH"` |
 | `uia-settext <sel> <nameSub> <文件>` | 用 ValuePattern 写入 UTF-8 文件内容并读回校验——不碰键盘、不碰剪贴板。`@path` 形态：`uia-settext <sel> @/0/2/1 <文件> "T\|n\|X,Y,WxH"`，同样先验证后写入 |
+| `uia-state <sel> <nameSub> [--text]` | **只读**：该元素此刻暴露的每个 pattern 一行——toggle／selection／expand／range（value,min,max,readonly）／value（长度 + 是否可写）／text／scrollItem——没有就显式打印 `no XPattern`。正文与文本不带 `--text` 就不打印，密码框永不读取。不激活、不写日志 |
+| `uia-do <action> <sel> <nameSub> [value]` | 走**一个具名 pattern**，然后**回读**结果态：`toggle\|toggle-on\|toggle-off`、`select\|add-select\|remove-select`（SelectionItemPattern；add/remove 才是多选调用）、`expand\|collapse`、`scroll-into-view`（ScrollItemPattern，用 `IsOffscreen` 由真变假验证）、`range-set`（RangeValuePattern，只读或超出 min..max 一律拒绝，不做截断）。元素被禁用、没有该 pattern、元素失效或回读失败，都算"什么都没改"的错误；**没有回退点击** |
 
 UIA 根节点从**被选中的那个窗口句柄**解析，所以与主窗口共用 PID 的对话框能被精确寻址。
 

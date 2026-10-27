@@ -228,9 +228,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 55 sites, table sums to the same 55)' (
-    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 55) -and
-    ($a07OwnerSum -eq 55) -and (@($script:StCommandOwners).Count -eq 41))
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (45 keys, 59 sites, table sums to the same 59)' (
+    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 59) -and
+    ($a07OwnerSum -eq 59) -and (@($script:StCommandOwners).Count -eq 45))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -241,8 +241,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a07A2 in @($script:StCommandExclusions)) { if ([string]$a07A1 -ceq [string]$a07A2) { $a07C = $a07C + 1 } }
     if ($a07C -gt 1) { $a07AnchorDup = $a07AnchorDup + 1 }
   }
-  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the ten exclusions, and no exclusion certifies two lines (65 = 55 + 10)' (
-    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 65) -and (@($script:StCommandExclusions).Count -eq 10) -and
+  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the ten exclusions, and no exclusion certifies two lines (69 = 59 + 10)' (
+    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 69) -and (@($script:StCommandExclusions).Count -eq 10) -and
     ($a07AnchorDup -eq 0) -and (($a07SiteCount + 10) -eq $a07Mentions))
   if ($a07MentionGap -ne '') { Write-Output ('      mention gap: ' + $a07MentionGap) }
   $a07FtKeys = @()
@@ -269,7 +269,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07LtCount = @($a07LtSplit).Count
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 102) -and (@($script:StLoadTimeNames).Count -eq 80) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 108) -and (@($script:StLoadTimeNames).Count -eq 86) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -309,8 +309,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the three sources account for all fifty-five (none left reading caller scope)' (
-    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 55) -and (@($script:StCommandNameArgs).Count -eq 3))
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the three sources account for all fifty-nine (none left reading caller scope)' (
+    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 59) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
   ST-Check 'lint (A-08): the five helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all five are actually on the list' (
     (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 5))
@@ -394,7 +394,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09DAbsent = Get-FunctionDeclaresParameter $a09PlantParsed 'F-No-Such' 'Cmd'
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, and the registered owners account for every use of the dispatcher variable (the count is in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 83) -and (@($script:StCmdVarUses).Count -eq 42))
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 87) -and (@($script:StCmdVarUses).Count -eq 46))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
     ' bare-reads-in-audited-body=' + $a09Bare + ' own-param-uses=' + $a09OwnUses + ' undeclared=[' + $a09Undeclared + ']')
@@ -867,11 +867,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (30/23/24/8 = all 85)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (27/21/21/8 = all 77)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (30/23/24/8 = all 85)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +
@@ -887,11 +887,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a23OtherKeys = @($a23Keys | Where-Object { ([string]$_).StartsWith('fn:') -or ($_ -ceq '<script>') })
   $a23GapHandler = Get-InventoryDiscrepancy ((@($a23CaseKeys) -join ';')) $script:StHandlerExitAllowList
   $a23GapEntry = Get-InventoryDiscrepancy ((@($a23OtherKeys) -join ';')) $script:StEntryExitAllowList
-  ST-Check 'lint (A-23): every exit inside a moved handler body is named by its case, the seven registered cases account for exactly thirteen, and a fourteenth is red' (
-    ($a23GapHandler -ceq '') -and (@($a23CaseKeys).Count -eq 13) -and (@($script:StHandlerExitAllowList).Count -eq 7))
+  ST-Check 'lint (A-23): every exit inside a moved handler body is named by its case, the eight registered cases account for exactly fourteen, and a fifteenth is red' (
+    ($a23GapHandler -ceq '') -and (@($a23CaseKeys).Count -eq 14) -and (@($script:StHandlerExitAllowList).Count -eq 8))
   if ($a23GapHandler -ne '') { Write-Output ('      handler exits: ' + $a23GapHandler) }
-  ST-Check 'lint (A-23): the eleven exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the thirteen above' (
-    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 11) -and (@($a23Keys).Count -eq 24) -and (@($a23CaseKeys).Count -eq 13))
+  ST-Check 'lint (A-23): the eleven exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the fourteen above' (
+    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 11) -and (@($a23Keys).Count -eq 25) -and (@($a23CaseKeys).Count -eq 14))
   if ($a23GapEntry -ne '') { Write-Output ('      entry exits: ' + $a23GapEntry) }
   # positive control for the predicate itself: a clean fixture counted by case, a planted handler named
   # as an owner nobody declared, a count that moved named, an entry that is gone named, and '-no-parse'

@@ -1,4 +1,4 @@
-# Agent Computer Use (Open Source Edition) v4.5.7
+# Agent Computer Use (Open Source Edition) v4.6.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
@@ -49,7 +49,7 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. The foreground is re-checked *after* sending, so a mid-flight focus steal is a loud failure too. (`--force` opts out, legacy behavior.)
 - **It says how it knows what it knows.** This is the design rule the whole feature set grew around: a number or a "not found" is worthless unless the command also prints the measurement it came from. So `find` reports `source=uia|ocr`; a miss names what *both* roads measured; `hit-window:` prints the window your click actually landed on; capture echoes print the image→screen mapping they used; `--expect` verdicts name the patience and polling interval that were really applied; `paste` names which receipt leg accepted a folded payload. **Zero is never evidence of absence**, and a check that can only pass is not a check.
 - **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives, and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
-- **Self-testing.** `selftest` runs the offline gate (currently 1020 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
+- **Self-testing.** `selftest` runs the offline gate (currently 1044 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
 - **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
@@ -259,7 +259,10 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `rect-of <sel>` | print `x y w h` only — handy for relative math |
 | `cursor` | current cursor position |
 | `dpi` | DPI awareness mode obtained at startup + every monitor's bounds in physical pixels |
-| `dpi` | DPI awareness mode obtained at startup + every monitor's bounds in physical pixels |
+| `capabilities [--json]` | the command surface **derived** from the dispatcher's own registry (group, private/shared flags, `--json` support) plus the entry path + SHA256 and the environment; a registered-but-unreachable command shows up instead of vanishing |
+| `proc-list [name-filter]` | every process, visible window or not — read-only; "not in `wins`" is an absence of a window, not of the process |
+| `proc-info <pid>` | name / path / start time / responding / windows / session / threads / working set; unreadable fields print `denied`/`unknown` instead of disappearing |
+| `tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen\|window\|client] [--tolerance n] [--scales 1\|1,1.25] [--index n] [--max-ms ms]` | deterministic template locator at bounded scales (≤3), region (≤3,000,000 px²) and time budget; multiple hits are a **refusal** unless `--index` names one; reports points and never clicks |
 | `color-at <x> <y>` | pixel colour as `#RRGGBB` (status LEDs, spinners that have no text) |
 | `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]` | first (or all, capped at 500) matching pixels in a region |
 | `hash <sel|x y w h>` | MD5 of a region capture — the input for `assert-hash` |
@@ -295,6 +298,15 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `wait-win <sel> <timeoutSec>` | poll (500 ms) until a matching window appears |
 | `wait-gone <sel> <timeoutSec>` | poll until it disappears (dialog closed, action took effect) |
 | `wait-stable <sel|x y w h> <timeoutSec> [--interval ms]` | poll until two consecutive captures hash identical — replaces fixed sleeps |
+| `wait-cond <sel> [--win\|--gone\|--foreground\|--text <needle>\|--uia <nameSub>\|--state On\|Off\|Expanded\|Collapsed\|Selected\|NotSelected] [--timeout s] [--interval ms]` | ONE bounded wait with exactly ONE predicate, and three outcomes kept apart: matched, timed out, and every poll failing to read (a read failure is never reported as "the condition stayed false") |
+
+### process (identity-checked, bounded)
+
+| command | what it does |
+|---|---|
+| `proc-start [--cwd <dir>] [--wait-window s] <exe> [argv...]` | start a local exe with structured argv (no shell string, no elevation, no restart); prints pid + creation time; a `--wait-window` timeout is reported as such and does **not** stop what it started |
+| `proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]` | bounded wait (default 20 s) bound to the PID and, with `--created`, to that process's creation time; exit and window appearance are separate predicates on purpose; a timeout never escalates to a kill |
+| `proc-kill <pid> [--created <iso>] [--timeout s] [--go]` | **preview by default**; `--go` additionally requires `--created` and re-checks it through the very handle it terminates, so a reused PID is refused; never kills a subtree, a protected system/session process, this tool or its ancestors; success is reported only when the same process object ends (a terminate *request* is not an exit) |
 
 ### act (absolute screen coordinates)
 
@@ -332,6 +344,9 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `type [--to <sel>] <text...> [--verify] [--force]` | SendInput Unicode, so characters bypass the IME entirely and CJK works directly; `--verify` OCR-reads the target afterwards and fails loudly if the text is not visible (skip it for password fields) |
 | `type-in <x> <y> [--tab <n>] <text...> [--verify]` | click a spot, send *n* TABs, type — built for webview/Electron forms where **a click alone never gives keyboard focus** |
 | `keys [--to <sel>] <spec> [--force]` | raw SendKeys spec: `^s`, `%{F4}`, `{ENTER}` (SendKeys still honours the IME) |
+| `key [--to <sel>] <combo> [--repeat n] [--interval ms] [--hold ms] [--guard-text <s>] [--expect <needle>]` | **native** SendInput gesture, separate from `keys`: modifiers + one base key (`key ctrl+shift+t`, `key alt+f4`, `key f5 --repeat 3`, `key enter --hold 800`). Every key it presses is released inside the call; a modifier someone else already holds is **refused**, never pressed or released; Ctrl+Alt+Del and Win+l/d/u/r are refused by design |
+| `key-state` | read-only: which modifiers/lock keys and mouse buttons are down right now, plus what this tool has on record as held |
+| `key-release [--go]` | dry run by default: releases **only** keys this tool recorded as held (the ledger an interrupted call leaves behind); keys held by anyone else are reported, never touched — "release all physical keys" is deliberately not a mode |
 | `paste [--to <sel>] <file> [--expect <s>|--no-expect] [--force]` | UTF-8 file → clipboard → Ctrl+V, previous clipboard restored. Readback is **on by default**: the payload tail is OCR-read back, and a payload too long to show its tail (it folded into an attachment chip) is accepted on a named *receipt* instead — never silently |
 | `--guard-text <needle>` / `--guard-region x,y,w,h=<needle>` | with the text commands: send only if the needle is visible on the target — the tool enforces "only talk to this conversation". An occluded guard region fails *before* the OCR, so a guard can never read a coverer's text |
 | `--dump <path>` | write the command's stdout to a file and print a pointer instead (line count, bytes, first 5 lines, hidden-line count). Accepted only by the seven read commands that can outgrow the caller's context (`find` `find-text` `read-text` `uia-find` `uia-path` `uia-tree` `wins`); every other command is refused BEFORE it runs. Never overwrites an existing file and never creates a directory. stderr is not captured, so cost self-reports still reach the terminal |
@@ -344,6 +359,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 |---|---|
 | `copy-file <path>` | put a file on the clipboard as `FileDrop`, self-verified; deliberately leaves it there |
 | `paste-file [--to <sel>] <path> [--guard-text <s>] [--force]` | copy-file + foreground guard + content guard + Ctrl+V + clipboard restore; default-on readback looks for the **file name** |
+| `clip-info` | clipboard **metadata only**: kind, format count and names, character count, file count, image availability, and whether this tool can restore it. No text is printed, no image is decoded, nothing is written |
 
 ### occlusion switches (every pixel-reading command)
 
@@ -369,6 +385,8 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `uia-click <sel> <nameSub>` | InvokePattern, falling back to clicking the element's centre. `@path` form: `uia-click <sel> @/0/2/1 "Button|OK|123,45,80x24"` — the expected `Type\|nameSub\|rect` token is copied from the `uia-tree` line, the `@` prefix is the only routing mark; the walked node is **re-verified** against ControlType/Name/rect and any mismatch prints `REFUSED: path=... stale` with expected/actual plus the locate/OCR fallback hint and **exits 1 without clicking**. A path deeper than maxDepth self-reports `path depth N > walked M`. A stale path never becomes a silent coordinate click |
 | `uia-focus <sel> <nameSub>` | SetFocus. `@path` form like uia-click: `uia-focus <sel> @/0/2/1 "T\|n\|X,Y,WxH"` |
 | `uia-settext <sel> <nameSub> <file>` | write a UTF-8 file's content via ValuePattern, readback-verified — no keyboard, no clipboard. `@path` form: `uia-settext <sel> @/0/2/1 <file> "T\|n\|X,Y,WxH"`, same verify-then-write contract |
+| `uia-state <sel> <nameSub> [--text]` | **read-only**: one line per pattern this element exposes *right now* — toggle / selection / expand / range (value,min,max,readonly) / value (length + writable) / text / scrollItem — plus an explicit `no XPattern` when absent. Values and text are not printed unless `--text` is passed, and a password field is never read. Nothing is activated or logged |
+| `uia-do <action> <sel> <nameSub> [value]` | one named pattern, then a **read-back** of the resulting state: `toggle\|toggle-on\|toggle-off`, `select\|add-select\|remove-select` (SelectionItemPattern; add/remove are the multi-select calls), `expand\|collapse`, `scroll-into-view` (ScrollItemPattern, verified by `IsOffscreen` going true → false), `range-set` (RangeValuePattern, refused when readonly or outside min..max — no clamping). A disabled element, a missing pattern, a stale element or a failed read-back is an error that changed nothing; there is **no fallback click** |
 
 UIA roots are resolved from the **selected window handle**, so dialogs that share a PID with their main window are addressed precisely.
 

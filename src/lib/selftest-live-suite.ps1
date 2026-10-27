@@ -368,20 +368,21 @@ $f.Controls.Add($lbl)
       }
 
       # ---------- live: v1.9.0 popup survival guard end-to-end (T-1..T-4) ----------
-      # Fixture: DTX-PGMain spawns an OWNED popup DTX-PGPopup when clicked (real window,
-      # tool-owned - never a real app's flaky popup). mode=fuse destroys the popup 800ms
-      # after it opens (the synthetic self-closing popup the task order demands); mode=keep
-      # leaves it alive for the control run and the win-close dismissal path.
+      # Fixture: a per-run owned window (DTXP-M-<tag>) spawns an OWNED popup (DTXP-P-<tag>)
+      # when clicked - real windows, tool-owned, never a real app's flaky popup. mode=fuse
+      # closes the popup only when THIS test writes a marker file, and only after the test
+      # has seen the guard's arming line; mode=keep leaves it alive for the control run and
+      # the win-close dismissal path.
       # X-02 residual (v4.1.1): see the chProc note - this block reads $script:pgProc in its
       # finally (and the inner finally re-reads it), while the real initialiser sat INSIDE the
       # try, so a throw before it left the outer finally reading an unassigned variable.
       $script:pgProc = $null
       $pgTmp = New-Object System.Collections.ArrayList
       try {
-        foreach ($pgStale in @('DTX-PGMain', 'DTX-PGPopup')) {
-          $pgOld = Resolve-Window $pgStale
-          if ($pgOld) { try { Stop-Process -Id $pgOld.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 400 }
-        }
+        # OPS-7: every fixture window now carries a PER-RUN tag in its title, so
+        # the old "kill whatever is named DTX-PGMain/DTX-PGPopup" sweep is gone - it could
+        # take another run's fixture down and made cleanup a claim about OTHER processes.
+        # Identity is the fixture's own PID, and the only thing finally may stop is that PID.
         $pgScript = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.ps1')
         [void]$pgTmp.Add($pgScript)
         $pgSrc = @'
@@ -395,30 +396,47 @@ public class HXPG {
 }
 "@
 [void][HXPG]::SetProcessDPIAware()
-$mode = if ($args.Count -ge 1) { $args[0] } else { 'keep' }
+$mode = if ($args.Count -ge 1) { [string]$args[0] } else { 'keep' }
+$mainTitle = if ($args.Count -ge 2) { [string]$args[1] } else { 'DTXP-M' }
+$popupTitle = if ($args.Count -ge 3) { [string]$args[2] } else { 'DTXP-P' }
+$closeFlag = if ($args.Count -ge 4) { [string]$args[3] } else { '' }
+$wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $main = New-Object System.Windows.Forms.Form
-$main.Text = 'DTX-PGMain'
+$main.Text = $mainTitle
 $main.ClientSize = New-Object System.Drawing.Size(300, 180)
 $main.StartPosition = 'Manual'
-$main.Location = New-Object System.Drawing.Point(160, 1500)
+$main.Location = New-Object System.Drawing.Point(80, [int]($wa.Height - 260))
 $main.TopMost = $true
 $script:popup = $null
+$script:waited = 0
 $main.Add_MouseClick({
   param($s, $e)
   if ($null -ne $script:popup) { return }
   $p = New-Object System.Windows.Forms.Form
-  $p.Text = 'DTX-PGPopup'
+  $p.Text = $popupTitle
   $p.ClientSize = New-Object System.Drawing.Size(220, 120)
   $p.StartPosition = 'Manual'
-  $p.Location = New-Object System.Drawing.Point($s.Location.X + 330, $s.Location.Y)
+  $p.Location = New-Object System.Drawing.Point(($s.Location.X + 330), $s.Location.Y)
   $p.TopMost = $true
   $s.AddOwnedForm($p)
   $p.Show()
   $script:popup = $p
-  if ($mode -eq 'fuse') {
+  if ($mode -eq 'fuse' -and $closeFlag -ne '') {
+    # OPS-7: the popup closes ONLY on the test's marker file, and the wait is
+    # bounded (200 ticks x 100ms). No wall-clock self-destruct: the close cannot beat the
+    # arming step, so "gone before require-popup" is not a timing accident any more.
     $t = New-Object System.Windows.Forms.Timer
-    $t.Interval = 800
-    $t.Add_Tick({ param($ts, $te) $ts.Stop(); if ($null -ne $script:popup) { $script:popup.Close(); $script:popup = $null } })
+    $t.Interval = 100
+    $t.Add_Tick({
+      param($ts, $te)
+      $script:waited++
+      if ([System.IO.File]::Exists($closeFlag)) {
+        $ts.Stop()
+        if ($null -ne $script:popup) { $script:popup.Close(); $script:popup = $null }
+        return
+      }
+      if ($script:waited -ge 200) { $ts.Stop() }
+    })
     $t.Start()
   }
 })
@@ -432,18 +450,24 @@ $main.Add_MouseClick({
         $script:pgProc = $null
         $pgSpawn = {
           param($mode, $tag)
-          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode)
+          $pgMainTitle = 'DTXP-M-' + $tag
+          $pgPopupTitle = 'DTXP-P-' + $tag
+          $pgFlag = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.close')
+          [void]$pgTmp.Add($pgFlag)
+          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode, $pgMainTitle, $pgPopupTitle, $pgFlag)
           $script:pgProc = Start-Process powershell -ArgumentList $pgArgs -PassThru
+          $pgWantPid = $script:pgProc.Id
           $pgMain = $null
           $swPg = [System.Diagnostics.Stopwatch]::StartNew()
           while ($swPg.Elapsed.TotalSeconds -lt 15) {
-            $pgMain = Resolve-Window 'DTX-PGMain'
-            if ($pgMain) { break }
-            Start-Sleep -Milliseconds 400
+            $pgMain = Resolve-Window $pgMainTitle
+            if ($pgMain -and ($pgMain.Pid -eq $pgWantPid)) { break }
+            Start-Sleep -Milliseconds 300
           }
           if ($null -eq $pgMain) { throw "popup-guard fixture ($tag) did not appear within 15s" }
-          Start-Sleep -Milliseconds 500
-          return $pgMain
+          if ($pgMain.Pid -ne $pgWantPid) { throw "popup-guard fixture ($tag): resolved pid=$($pgMain.Pid) is not the fixture pid=$pgWantPid" }
+          Start-Sleep -Milliseconds 400
+          return @{ Main = $pgMain; Popup = $pgPopupTitle; Flag = $pgFlag; Pid = $pgWantPid }
         }
         $pgStop = {
           if ($script:pgProc -and -not $script:pgProc.HasExited) { try { Stop-Process -Id $script:pgProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
@@ -457,21 +481,71 @@ $main.Add_MouseClick({
           $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath script $pgSteps 2>&1 | Out-String
           return @{ Out = $out; Code = $LASTEXITCODE }
         }
-        # T-1: the popup opens, is guarded alive, then self-closes - a later step must
-        # hit the guard and abort the REST of the script with measured values.
-        $pgMain1 = & $pgSpawn 'fuse' 'T-1'
-        $cx = [int]($pgMain1.Left + $pgMain1.W / 2)
-        $cy = [int]($pgMain1.Top + $pgMain1.H / 2)
-        $t1Json = '[{"click":[' + $cx + ',' + $cy + ']},{"sleep":150},{"require-popup":"DTX-PGPopup","tolerance":3},{"sleep":1500},{"assert-window":"DTX-PGPopup"}]'
-        $t1 = & $pgScriptRun $t1Json
+        # OPS-7: T-1's close has to be written by THIS process while the child script
+        # is still running, so that run is started in the background and its stdout/stderr are
+        # read back from files. The exit code is the child's own, never $LASTEXITCODE of a pipe.
+        $pgScriptRunAsync = {
+          param($stepsJson)
+          $pgSteps = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.json')
+          [void]$pgTmp.Add($pgSteps)
+          [System.IO.File]::WriteAllText($pgSteps, $stepsJson, (New-Object System.Text.UTF8Encoding($false)))
+          $pgSo = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.out')
+          $pgSe = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.err')
+          [void]$pgTmp.Add($pgSo)
+          [void]$pgTmp.Add($pgSe)
+          # The child runs under cmd with delayed expansion so its own ERRORLEVEL is echoed
+          # into the capture file: a bounded WaitForExit on a redirected child can surface
+          # 0 even when the child ended with exit 1 (measured on the popup-abort path).
+          # The echo is the ground truth here; the process object is only the fallback.
+          $pgLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" script "' + $pgSteps + '" & echo EXITCODE=!ERRORLEVEL!'
+          $pgPr = Start-Process cmd -ArgumentList @('/v:on', '/c', $pgLine) -RedirectStandardOutput $pgSo -RedirectStandardError $pgSe -PassThru -WindowStyle Hidden
+          return @{ Proc = $pgPr; OutFile = $pgSo; ErrFile = $pgSe }
+        }
+        $pgAwaitAsync = {
+          param($a, $boundSec)
+          if (-not $a.Proc.WaitForExit([int]($boundSec * 1000))) {
+            try { Stop-Process -Id $a.Proc.Id -Force -ErrorAction SilentlyContinue } catch { }
+            return @{ TimedOut = $true; Code = -1; Out = '' }
+          }
+          # A bounded WaitForExit returns once the process has exited, but with redirected
+          # streams the exit code is only guaranteed after the unbounded call (which also
+          # drains the async readers). Read it only after that, and refresh the handle.
+          try { $a.Proc.WaitForExit() } catch { }
+          try { $a.Proc.Refresh() } catch { }
+          $pgO = if (Test-Path -LiteralPath $a.OutFile) { [System.IO.File]::ReadAllText($a.OutFile) } else { '' }
+          $pgE = if (Test-Path -LiteralPath $a.ErrFile) { [System.IO.File]::ReadAllText($a.ErrFile) } else { '' }
+          $pgCode = [int]$a.Proc.ExitCode
+          if ($pgO -match 'EXITCODE=(\d+)') { $pgCode = [int]$Matches[1] }
+          return @{ TimedOut = $false; Code = $pgCode; Out = ($pgO + $pgE) }
+        }
+        # T-1: the popup opens, is guarded alive, and THIS test closes it only after it has
+        # SEEN the arming line in actions.log (bounded poll, 15s). The close is armed->close
+        # by evidence, not by a wall clock: a slow arm cannot be outrun, and the marker is
+        # never written before the guard exists.
+        $fi1 = & $pgSpawn 'fuse' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $cx = [int]($fi1.Main.Left + $fi1.Main.W / 2)
+        $cy = [int]($fi1.Main.Top + $fi1.Main.H / 2)
+        $t1Json = '[{"click":[' + $cx + ',' + $cy + ']},{"sleep":150},{"require-popup":"' + $fi1.Popup + '","tolerance":3},{"sleep":1500},{"assert-window":"' + $fi1.Popup + '"}]'
+        $t1a = & $pgScriptRunAsync $t1Json
+        $t1Armed = $false
+        $swArm = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($swArm.Elapsed.TotalSeconds -lt 15) {
+          if (Test-Path -LiteralPath $ActionLog) {
+            $lg = [System.IO.File]::ReadAllText($ActionLog)
+            if ($lg.Contains("popup guard armed at step 3 (pid=$($fi1.Pid) ")) { $t1Armed = $true; break }
+          }
+          Start-Sleep -Milliseconds 100
+        }
+        if ($t1Armed) { [System.IO.File]::WriteAllText($fi1.Flag, 'close', (New-Object System.Text.UTF8Encoding($false))) }
+        $t1 = & $pgAwaitAsync $t1a 20
         & $pgStop
-        $t1Shape = ($t1.Out -match 'popup guard: popup GONE') -and ($t1.Out -match 'before step 5 of 5') -and
+        $t1Shape = $t1Armed -and ($t1.Out -match 'popup guard: popup GONE') -and ($t1.Out -match 'before step 5 of 5') -and
           ($t1.Out -match '  baseline: pid=') -and ($t1.Out -match '  now     : ') -and ($t1.Out -match '  delta   : ') -and
           ($t1.Out -match 'script aborted: popup guard failed \(nothing after this step ran\)') -and
           ($t1.Out -match 'armed at step 3 ') -and (-not ($t1.Out -match '#5 assert-window FAIL'))
         ST-Check 'live: T-1 a self-closing popup aborts the rest of the script with baseline/now/delta echoed, nothing after it runs' (
           ($t1.Code -eq 1) -and $t1Shape)
-        Write-Output "      T-1 exit=$($t1.Code) shape=$t1Shape"
+        Write-Output "      T-1 exit=$($t1.Code) shape=$t1Shape armed-observed=$t1Armed timedout=$($t1.TimedOut)"
         Write-Output ("      T-1 output: " + (($t1.Out.Trim() -split "`r?`n" | Where-Object { $_ -match 'popup guard|baseline|now|delta|aborted' } | Select-Object -First 6) -join ' | '))
         # T-4: the aborted run left its marker in actions.log - replay must refuse the
         # slice that carries it (dry run included; no --force backdoor exists).
@@ -482,10 +556,10 @@ $main.Add_MouseClick({
         Write-Output "      T-4 exit=$t4Code refused=$($t4Out -match 'refusing to replay')"
         # T-2 (control): the same shape with a popup that STAYS - the script must run to
         # completion, arm at step 3 and release at step 5, exit 0 (no false red).
-        $pgMain2 = & $pgSpawn 'keep' 'T-2'
-        $cx2 = [int]($pgMain2.Left + $pgMain2.W / 2)
-        $cy2 = [int]($pgMain2.Top + $pgMain2.H / 2)
-        $t2Json = '[{"click":[' + $cx2 + ',' + $cy2 + ']},{"sleep":150},{"require-popup":"DTX-PGPopup","tolerance":3},{"assert-window":"DTX-PGPopup"},{"release-popup":""},{"assert-window":"DTX-PGMain"}]'
+        $fi2 = & $pgSpawn 'keep' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $cx2 = [int]($fi2.Main.Left + $fi2.Main.W / 2)
+        $cy2 = [int]($fi2.Main.Top + $fi2.Main.H / 2)
+        $t2Json = '[{"click":[' + $cx2 + ',' + $cy2 + ']},{"sleep":150},{"require-popup":"' + $fi2.Popup + '","tolerance":3},{"assert-window":"' + $fi2.Popup + '"},{"release-popup":""},{"assert-window":"' + $fi2.Main.Title + '"}]'
         $t2 = & $pgScriptRun $t2Json
         & $pgStop
         $t2Ok = ($t2.Code -eq 0) -and ($t2.Out -match 'armed at step 3 ') -and ($t2.Out -match 'popup guard: released at step 5') -and ($t2.Out -match '6 steps, all ok')
@@ -502,10 +576,10 @@ $main.Add_MouseClick({
         Write-Output "      T-4n exit=$t4bCode would-list=$($t4bOut -match 'WOULD')"
         # T-3: the script's OWN win-close of the guarded popup is a legal dismissal -
         # auto-release with a notice, then later steps keep running (exit 0).
-        $pgMain3 = & $pgSpawn 'keep' 'T-3'
-        $cx3 = [int]($pgMain3.Left + $pgMain3.W / 2)
-        $cy3 = [int]($pgMain3.Top + $pgMain3.H / 2)
-        $t3Json = '[{"click":[' + $cx3 + ',' + $cy3 + ']},{"sleep":150},{"require-popup":"DTX-PGPopup","tolerance":3},{"win-close":"DTX-PGPopup"},{"assert-window":"DTX-PGMain"}]'
+        $fi3 = & $pgSpawn 'keep' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $cx3 = [int]($fi3.Main.Left + $fi3.Main.W / 2)
+        $cy3 = [int]($fi3.Main.Top + $fi3.Main.H / 2)
+        $t3Json = '[{"click":[' + $cx3 + ',' + $cy3 + ']},{"sleep":150},{"require-popup":"' + $fi3.Popup + '","tolerance":3},{"win-close":"' + $fi3.Popup + '"},{"assert-window":"' + $fi3.Main.Title + '"}]'
         $t3 = & $pgScriptRun $t3Json
         & $pgStop
         $t3Ok = ($t3.Code -eq 0) -and ($t3.Out -match 'popup guard: released at step 4 \(win-close closed the guarded popup\)') -and ($t3.Out -match '5 steps, all ok')
@@ -516,13 +590,10 @@ $main.Add_MouseClick({
         ST-Check 'live: popup guard setup+run' $false
         Write-Output "      popup guard error: $($_.Exception.Message)"
       } finally {
-        # belt and suspenders: the runs stop their own fixture, a crashed run leaves
-        # nothing (both windows belong to the fixture process)
+        # OPS-7: cleanup is identity-based only. The fixture windows die with the
+        # fixture PID, so this stops that PID and nothing else - there is no title sweep left
+        # that could kill another run's fixture.
         if ($script:pgProc -and -not $script:pgProc.HasExited) { try { Stop-Process -Id $script:pgProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
-        foreach ($pgTitle in @('DTX-PGMain', 'DTX-PGPopup')) {
-          $pgLeft = Resolve-Window $pgTitle
-          if ($pgLeft) { try { Stop-Process -Id $pgLeft.Pid -Force -ErrorAction SilentlyContinue } catch { } }
-        }
         foreach ($f in $pgTmp) { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } }
       }
 

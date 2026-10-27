@@ -53,73 +53,125 @@ function Invoke-Handler-hover([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): click - the case body, verbatim
 function Invoke-Handler-click([string]$Cmd, [string[]]$Rest) {
-      # click <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--force]
+      # click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift...]
+      #       [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--force]
       # v1.4.0: a bare coordinate click is still unguarded (it targets whatever
       # sits at the point), but --to activates + verifies a window first and the
       # content guard can assert context BEFORE the click - the audit-point that
       # coordinate clicks were the only zero-guard link in the chain.
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 2) { throw 'usage: click <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--allow-outside] [--force]' }
+      # CU-OPS package B: --button and --mods are stripped BEFORE Split-Target and
+      # validated before the pointer moves, so an unknown button or an already-held
+      # modifier refuses with no input sent.
+      $own = Strip-OwnFlags $Rest 'click'
+      $p = Split-Target @($own.Rest)
+      if ($p.Words.Count -lt 2) { throw 'usage: click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <needle>|--expect-gone <needle>] [--allow-outside] [--force]' }
+      $button = if ($own.Present['--button']) { [string]$own.Values['--button'] } else { 'left' }
+      $mods = [string]$own.Values['--mods']
+      # CU-OPS package D: the coordinate space is validated before the pointer moves,
+      # and the window origin is read AFTER resolution (see Get-PointSpaceOrigin).
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      [void](Get-MouseButtonSpec $button)
+      [void](Resolve-MouseModifiers $mods)
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
+      $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       $clickLogArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
       if ($null -ne $tgt) { $clickLogArgs = @($clickLogArgs) + @("pid=$($tgt.Pid)") }
-      Log-Action $clickLogArgs "coords=$($p.Words[0]),$($p.Words[1])" $Cmd
-      Move-Click ([int]$p.Words[0]) ([int]$p.Words[1]) 'left'
-      "clicked $($p.Words[0]),$($p.Words[1])"
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
+      Log-Action $clickLogArgs "coords=$($pt.X),$($pt.Y)$spaceLog button=$($button.ToLowerInvariant()) mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
+      Move-Click $pt.X $pt.Y $button $mods
+      "clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry) button=$($button.ToLowerInvariant())$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'clicked'
       Invoke-ActionExpectation $p $tgt 'clicked'
 }
 
 # v4.4.0 (A-15): rclick - the case body, verbatim
 function Invoke-Handler-rclick([string]$Cmd, [string[]]$Rest) {
-      # rclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force] (guards + landing check like click)
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 2) { throw 'usage: rclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      # rclick <x> <y> [--mods shift...] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force] (guards + landing check like click)
+      $own = Strip-OwnFlags $Rest 'rclick'
+      $p = Split-Target @($own.Rest)
+      if ($p.Words.Count -lt 2) { throw 'usage: rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      $mods = [string]$own.Values['--mods']
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      [void](Resolve-MouseModifiers $mods)
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
+      $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($p.Words[0]),$($p.Words[1])" $Cmd
-      Move-Click ([int]$p.Words[0]) ([int]$p.Words[1]) 'right'
-      "right-clicked $($p.Words[0]),$($p.Words[1])"
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
+      Move-Click $pt.X $pt.Y 'right' $mods
+      "right-clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry)$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'right-clicked'
       Invoke-ActionExpectation $p $tgt 'right-clicked'
 }
 
 # v4.4.0 (A-15): dblclick - the case body, verbatim
 function Invoke-Handler-dblclick([string]$Cmd, [string[]]$Rest) {
-      # dblclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--force] (guards like click)
-      $p = Split-Target $Rest
-      if ($p.Words.Count -lt 2) { throw 'usage: dblclick <x> <y> [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      # dblclick <x> <y> [--mods ctrl+shift...] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--force] (guards like click)
+      $own = Strip-OwnFlags $Rest 'dblclick'
+      $p = Split-Target @($own.Rest)
+      if ($p.Words.Count -lt 2) { throw 'usage: dblclick <x> <y> [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
+      $mods = [string]$own.Values['--mods']
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      [void](Resolve-MouseModifiers $mods)
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($p.Words[0]),$($p.Words[1])" $Cmd
+      $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
       $ecb = Get-ExpectChangeBaseline $p $tgt
-      [void][DT]::SetCursorPos([int]$p.Words[0], [int]$p.Words[1])
-      Start-Sleep -Milliseconds 150
-      1..2 | ForEach-Object {
-        [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-        Start-Sleep -Milliseconds 40
-        [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
-        Start-Sleep -Milliseconds 60
+      $script:LastMouseReceipt = ''
+      $mx = $pt.X; $my = $pt.Y
+      $dbl = {
+        [void][DT]::SetCursorPos($mx, $my)
+        Start-Sleep -Milliseconds 150
+        1..2 | ForEach-Object {
+          [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
+          Start-Sleep -Milliseconds 40
+          [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+          Start-Sleep -Milliseconds 60
+        }
       }
-      "double-clicked $($p.Words[0]),$($p.Words[1])"
+      if ($mods) {
+        $rc = Invoke-ModifierGesture @(Resolve-MouseModifiers $mods) $dbl
+        $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+      } else { & $dbl }
+      "double-clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry)$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'double-clicked'
       Invoke-ActionExpectation $p $tgt 'double-clicked'
 }
@@ -338,6 +390,19 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       $expectVisibleText = [string]$own.Values['--expect-visible-text']
       $unit = if ($own.Present['--unit']) { [string]$own.Values['--unit'] } else { 'raw' }
       $axis = if ($own.Present['--axis']) { [string]$own.Values['--axis'] } else { 'vertical' }
+      # CU-OPS package B: modifiers are an INPUT to the wheel event. What the application
+      # does with Ctrl+wheel (zoom, horizontal pan, nothing) is the application's decision,
+      # so --verify-scroll is refused with modifiers: a ScrollPattern position change would
+      # be read as "the wheel worked" while the gesture was really a zoom request.
+      $mods = [string]$own.Values['--mods']
+      # CU-OPS package D: relative scroll points are converted against the resolved
+      # target right before the cursor moves (never against a point kept from earlier).
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      $created = [string]$own.Values['--created']
+      $modList = @(Resolve-MouseModifiers $mods)
+      if ($modList.Count -gt 0 -and $verifyScroll) {
+        throw "wheel: '--verify-scroll' cannot be combined with --mods '$mods' - with modifiers a wheel event is an application-defined gesture (zoom, pan, ...) and a changed ScrollPattern position is not evidence it did what you asked; use '--expect-visible-text <needle>' or '--expect-change x,y,w,h' instead; no wheel input was sent"
+      }
       if ($unit.ToLowerInvariant() -notin @('raw', 'notches')) { throw "wheel: '--unit' must be raw or notches, got '$unit'" }
       if ($axis.ToLowerInvariant() -notin @('vertical', 'horizontal')) { throw "wheel: '--axis' must be vertical or horizontal, got '$axis'" }
       $atPresent = [bool]$own.Present['--at']
@@ -349,6 +414,7 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       $wordCount = @($p.Words).Count
       if ($wordCount -notin @(0, 1, 3)) { throw "usage: wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>|--at <sel>] [--focus-first] [--expect-change [x,y,w,h]] [--verify-scroll [--expect-change x,y,w,h]|--expect-visible-text <needle>] - coordinates must be a complete x/y pair" }
       if ($atPresent -and $wordCount -ne 3) { throw "wheel: '--at <sel>' requires explicit x y coordinates for the scroll point; a window centre does not identify the target control" }
+      if ($space -ne 'screen' -and $wordCount -ne 3) { throw "wheel: '--space $space' needs explicit x y - a relative space with no point has nothing to convert; no input was sent" }
       $wheelRequest = Resolve-WheelRequest @($p.Words) $unit $axis
       $verificationRequested = $verifyScroll -or -not [string]::IsNullOrWhiteSpace($expectVisibleText)
       if ($verifyScroll -and -not [string]::IsNullOrWhiteSpace($expectVisibleText)) { throw "wheel: choose one verification route: '--verify-scroll' or '--expect-visible-text <needle>'" }
@@ -368,17 +434,21 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       }
       $targetSel = if ($atPresent) { $atSel } else { [string]$p.Sel }
       $targetSource = if ($atPresent) { '--at' } elseif ($p.Sel) { '--to' } else { '' }
-      if (-not $targetSel -and ($p.Force -or $p.AlwaysActivate -or $p.ExpectHandle)) {
-        throw "wheel: '--force', '--always-activate' and '--expect-handle' require '--to <sel>' or '--at <sel>'"
+      if ($space -ne 'screen' -and -not $targetSel) { throw "--space $space needs '--to <sel>' or '--at <sel>': a relative scroll point with no named window has no defined origin; no input was sent" }
+      if (-not $targetSel -and ($p.Force -or $p.AlwaysActivate -or $p.ExpectHandle -or $created -or ($space -ne 'screen'))) {
+        throw "wheel: '--force', '--always-activate', '--expect-handle', '--created' and '--space window|client' require '--to <sel>' or '--at <sel>'"
       }
       $tgt = $null
       if ($targetSel) {
-        $tgt = Resolve-Target $targetSel $p.Force $p.AlwaysActivate $p.ExpectHandle
+        $tgt = Resolve-Target $targetSel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
       }
+      $origin = Get-PointSpaceOrigin $space $tgt
       $posInfo = 'at current cursor position'
       if ($wordCount -eq 3) {
-        $posInfo = "at ($wx,$wy)"
+        $wpt = Convert-PointSpace $wx $wy $origin
+        $wx = $wpt.X; $wy = $wpt.Y
+        $posInfo = "at ($wx,$wy)$(if ($origin.Space -eq 'screen') { '' } else { ' space=' + $origin.Space })"
         $requestedX = $wx; $requestedY = $wy
       } else {
         $requestedPoint = New-Object DT+POINT
@@ -458,8 +528,21 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       $observed = if ($null -eq $pre.Hit) { '(none)' } else { "pid=$($pre.Hit.Pid) hwnd=$($pre.Hit.Hwnd) title='$($pre.Hit.Title)'" }
       $targetInfo = if ($null -eq $tgt) { 'target=unspecified' } else { "target-check=matched via $targetSource hwnd=$($tgt.Handle)" }
       $effectInfo = if ($verificationRequested) { 'effect-check=bounded-opt-in' } elseif ($p.ExpectChange) { 'effect-check=opt-in-pixel-hash' } else { 'effect=not-verified' }
-      Log-Action @($p.Words) "scroll-point=$($pre.X),$($pre.Y) $targetInfo observed=$observed request=$($wheelRequest.EventName):$($wheelRequest.RawDelta)" $Cmd
-      $inserted = [DT]::SendWheelInput([int]$wheelRequest.RawDelta, [uint32]$wheelRequest.InputFlag)
+      Log-Action @($p.Words) "scroll-point=$($pre.X),$($pre.Y) $targetInfo observed=$observed request=$($wheelRequest.EventName):$($wheelRequest.RawDelta) mods=$(if ($modList.Count -gt 0) { $modList -join '+' } else { 'none' })" $Cmd
+      $inserted = 0
+      $modReceipt = ''
+      # ONE call site on purpose: the CU-REL-04 lint pins "one wheel call is the maximum", so a
+      # modified gesture reuses the same send instead of growing a second [DT]::SendWheelInput line.
+      $wheelSend = { [DT]::SendWheelInput([int]$wheelRequest.RawDelta, [uint32]$wheelRequest.InputFlag) }
+      if ($modList.Count -gt 0) {
+        # The modifiers are pressed and released inside this one call; the wheel event is
+        # the only thing between them, and the release runs even if the event fails.
+        $rc = Invoke-ModifierGesture $modList { $script:WheelInserted = & $wheelSend }
+        $inserted = $script:WheelInserted
+        $modReceipt = Format-ModifierReceipt $rc
+      } else {
+        $inserted = & $wheelSend
+      }
       if ([uint32]$inserted -ne 1) {
         $win32 = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
         throw "wheel: SendInput inserted $inserted of 1 requested event (win32 error $win32); no automatic retry was attempted and no successful wheel receipt was produced"
@@ -467,7 +550,7 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
       if (-not $verificationRequested) { Start-Sleep -Milliseconds 300 }
       $p2 = New-Object DT+POINT
       [void][DT]::GetCursorPos([ref]$p2)
-      $receipt = "wheel $($wheelRequest.OriginalAmount) unit=$($wheelRequest.Unit) axis=$($wheelRequest.Axis) direction=$($wheelRequest.Direction) raw-delta=$($wheelRequest.RawDelta) amount-source=$($wheelRequest.AmountSource) requested=1 event=$($wheelRequest.EventName) SendInput-inserted=$inserted/1 scroll-point=($($pre.X),$($pre.Y)) observed-before-injection=$observed $targetInfo foreground-before-injection=$($pre.Foreground) $effectInfo  $posInfo  cursor-after=($($p2.X),$($p2.Y))"
+      $receipt = "wheel $($wheelRequest.OriginalAmount) unit=$($wheelRequest.Unit) axis=$($wheelRequest.Axis) direction=$($wheelRequest.Direction) raw-delta=$($wheelRequest.RawDelta) amount-source=$($wheelRequest.AmountSource) requested=1 event=$($wheelRequest.EventName) SendInput-inserted=$inserted/1$modReceipt$(if ($modList.Count -gt 0) { ' gesture-scope=application-defined (a modified wheel event is a request; the application decides whether that is zoom, pan or nothing)' }) scroll-point=($($pre.X),$($pre.Y)) observed-before-injection=$observed $targetInfo foreground-before-injection=$($pre.Foreground) $effectInfo  $posInfo  cursor-after=($($p2.X),$($p2.Y))"
       if (-not $verificationRequested) {
         Write-Output $receipt
         if ($ecb) { Invoke-ExpectChangeCheck $p $ecb 'wheel' }
@@ -590,39 +673,90 @@ function Invoke-Handler-drag([string]$Cmd, [string[]]$Rest) {
       $steps = [int]$own.Values['--steps']
       $hold = [int]$own.Values['--hold']
       $p = Split-Target @($own.Rest) 'drag'
-      if ($p.Words.Count -lt 4) { throw 'usage: drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--to <sel>] [--guard-text <s>] [--force]' }
+      if ($p.Words.Count -lt 4) { throw 'usage: drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left|middle|right|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>] [--force]' }
+      # CU-OPS package B: the same one-call press/act/release ownership as the clicks.
+      # Middle-drag (canvas pan), right-drag (some lists and 3D views) and the side
+      # buttons all share this one path, so a new button cannot grow its own unguarded
+      # copy of the drag code.
+      $button = if ($own.Present['--button']) { [string]$own.Values['--button'] } else { 'left' }
+      $mods = [string]$own.Values['--mods']
+      # CU-OPS package D: both endpoints come from ONE origin read, taken after the
+      # target resolved, so a resize between the two conversions cannot split the path.
+      $space = Test-PointSpaceArg ([string]$own.Values['--space'])
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
+      $created = [string]$own.Values['--created']
+      $buttonSpec = Get-MouseButtonSpec $button
+      $modList = @(Resolve-MouseModifiers $mods)
       # X-02: every sibling of this case (click / dblclick / relclick / wheel / press-down /
       # press-up / drag-to / menu-pick) initialises $tgt before the conditional resolve; drag
       # was the one that did not, so a drag WITHOUT --to reached Invoke-HitWindowCheck with a
       # never-set variable. Non-strict that reads as $null; under StrictMode it is a terminating
       # error and the whole command dies before moving the cursor.
       $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
-        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        if ($p.GuardText -or $p.GuardRegion) {
+          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        }
       }
-      $x1 = [int]$p.Words[0]; $y1 = [int]$p.Words[1]; $x2 = [int]$p.Words[2]; $y2 = [int]$p.Words[3]
+      $rx1 = [int]$p.Words[0]; $ry1 = [int]$p.Words[1]; $rx2 = [int]$p.Words[2]; $ry2 = [int]$p.Words[3]
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $dpt1 = Convert-PointSpace $rx1 $ry1 $origin
+      $dpt2 = Convert-PointSpace $rx2 $ry2 $origin
+      $x1 = $dpt1.X; $y1 = $dpt1.Y; $x2 = $dpt2.X; $y2 = $dpt2.Y
       # Both verdicts exist BEFORE the press - the order here is load-bearing.
       Invoke-HitWindowCheck $x1 $y1 $tgt ($p.Sel -ne '') $p.AllowOutside
       Invoke-HitWindowCheck $x2 $y2 $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$x1,$y1 -> $x2,$y2" $Cmd
-      [void][DT]::SetCursorPos($x1, $y1)
-      Start-Sleep -Milliseconds 150
-      [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-      Start-Sleep -Milliseconds $hold
-      for ($s = 1; $s -le $steps; $s++) {
-        $ix = [int][math]::Round($x1 + ($x2 - $x1) * $s / $steps)
-        $iy = [int][math]::Round($y1 + ($y2 - $y1) * $s / $steps)
-        [void][DT]::SetCursorPos($ix, $iy)
-        Start-Sleep -Milliseconds 12
+      $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx1,$ry1 -> $rx2,$ry2" }
+      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$x1,$y1 -> $x2,$y2$spaceLog button=$($buttonSpec.Name) mods=$(if ($modList.Count -gt 0) { $modList -join '+' } else { 'none' })" $Cmd
+      $script:LastMouseReceipt = ''
+      $dx1 = $x1; $dy1 = $y1; $dx2 = $x2; $dy2 = $y2; $dSteps = $steps; $dHold = $hold; $dBtn = $buttonSpec.Name
+      $dragAct = {
+        [void][DT]::SetCursorPos($dx1, $dy1)
+        Start-Sleep -Milliseconds 150
+        [void](Invoke-MouseButtonEvent $dBtn $true)
+        # CU-OPS-ADJ-06: once the button is down, the UP lives in a finally. A failure on
+        # the path must neither leave the button held nor be replaced by a "dragged" receipt;
+        # a failed UP is carried out separately instead of being swallowed.
+        $dragErr = $null
+        $dUpErr = $null
+        try {
+          Start-Sleep -Milliseconds $dHold
+          for ($s = 1; $s -le $dSteps; $s++) {
+            $ix = [int][math]::Round($dx1 + ($dx2 - $dx1) * $s / $dSteps)
+            $iy = [int][math]::Round($dy1 + ($dy2 - $dy1) * $s / $dSteps)
+            [void][DT]::SetCursorPos($ix, $iy)
+            Start-Sleep -Milliseconds 12
+          }
+          [void][DT]::SetCursorPos($dx2, $dy2)
+          Start-Sleep -Milliseconds 100
+        } catch {
+          $dragErr = $_
+        } finally {
+          try {
+            [void](Invoke-MouseButtonEvent $dBtn $false)
+            Start-Sleep -Milliseconds 200
+          } catch {
+            $dUpErr = $_
+          }
+        }
+        if ($null -ne $dragErr -and $null -ne $dUpErr) {
+          throw ('drag: the path failed (' + $dragErr.Exception.Message + ') and the button UP also failed (' + $dUpErr.Exception.Message + ') - ' + $dBtn + ' may still be held down')
+        }
+        if ($null -ne $dragErr) {
+          throw ('drag: the path failed while ' + $dBtn + ' was down: ' + $dragErr.Exception.Message + ' (button released)')
+        }
+        if ($null -ne $dUpErr) {
+          throw ('drag: mouse button ' + $dBtn + ' UP failed: ' + $dUpErr.Exception.Message + ' - the button state is not what the caller asked for')
+        }
       }
-      [void][DT]::SetCursorPos($x2, $y2)
-      Start-Sleep -Milliseconds 100
-      [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
-      Start-Sleep -Milliseconds 200
-      "dragged ($x1,$y1) -> ($x2,$y2) steps=$steps hold=${hold}ms"
+      if ($modList.Count -gt 0) {
+        $rc = Invoke-ModifierGesture $modList $dragAct
+        $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+      } else { & $dragAct }
+      "dragged ($x1,$y1) -> ($x2,$y2)$(if ($origin.Space -eq 'screen') { '' } else { ' space=' + $origin.Space }) steps=$steps hold=${hold}ms button=$($buttonSpec.Name)$(if ($modList.Count -gt 0) { ' mods=' + ($modList -join '+') })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'dragged'
 }
 
@@ -1058,5 +1192,196 @@ function Invoke-Handler-open-and-pick([string]$Cmd, [string[]]$Rest) {
       "open-and-pick: opener ($openX,$openY) beat 400ms, clicked '$($hit.Text)' at ($cx,$cy) (hit 1/$($hits.Count))$(if ($f.Scaled) { ' [found via 2x upscale]' })$(Get-OcrFoldMarker $hits)"
       Invoke-ExpectChangeCheck $p $ecb 'open-and-pick'
       Invoke-ActionExpectation $p $tgt 'picked'
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package A: proc-start / proc-kill.
+#   proc-list / proc-info / proc-wait live in handlers-read (observation); the two
+#   commands here are the only ones that CREATE or END something. Termination is
+#   preview-by-default and binds a PID to its recorded creation time: the identity is
+#   re-read THROUGH THE SAME OPENED PROCESS OBJECT that TerminateProcess is issued on,
+#   so "verified A, then killed a recycled PID" cannot happen. A terminate request is
+#   asynchronous - it is reported as an exit only when the same object has actually ended.
+# ---------------------------------------------------------------------------
+
+# Windows argv quoting (CommandLineToArgvW rules): the caller passes an array, this
+# makes the single command-line string. Start-Process -ArgumentList is NOT used -
+# it does not quote an operand containing a space (see the Chrome restart note).
+function Format-ProcArg([string]$a) {
+  if ($a -eq '') { return '""' }
+  if ($a -notmatch '[\s"]') { return $a }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append('"')
+  $bs = 0
+  foreach ($ch in $a.ToCharArray()) {
+    if ($ch -eq [char]'\') { $bs++; continue }
+    if ($ch -eq [char]'"') { [void]$sb.Append(('\' * (($bs * 2) + 1))); [void]$sb.Append('"'); $bs = 0; continue }
+    if ($bs -gt 0) { [void]$sb.Append(('\' * $bs)); $bs = 0 }
+    [void]$sb.Append($ch)
+  }
+  if ($bs -gt 0) { [void]$sb.Append(('\' * ($bs * 2))) }
+  [void]$sb.Append('"')
+  return $sb.ToString()
+}
+
+# Parent-PID chain of THIS tool's own process, so killing an ancestor that would take
+# this session down with it is refused instead of discovering it afterwards.
+function Get-ProcAncestors([int]$startId) {
+  $set = New-Object System.Collections.ArrayList
+  $cur = $startId
+  $steps = 0
+  while ($cur -gt 0 -and $steps -lt 16) {
+    $parent = 0
+    try {
+      $c = Get-CimInstance Win32_Process -Filter ("ProcessId=$cur") -ErrorAction Stop
+      if ($c) { $parent = [int]$c.ParentProcessId }
+    } catch { $parent = 0 }
+    if ($parent -le 0 -or $parent -eq $cur) { break }
+    if ($set.Contains($parent)) { break }
+    [void]$set.Add($parent)
+    $cur = $parent
+    $steps++
+  }
+  return ,$set
+}
+
+# proc-start [--cwd <dir>] [--wait-window <s>] <exe> [argv...]
+# The exe is a real path (or a bare image name resolved through App Paths); the rest is
+# argv, quoted here - never concatenated into a shell string, never elevated.
+function Invoke-Handler-proc-start([string]$Cmd, [string[]]$Rest) {
+  $tokens = @($Rest)
+  # Flags may only PRECEDE the exe; everything from the first non-flag token on is
+  # exe + argv and is never scanned for flags (a program's own --help must reach it).
+  # Which own flags take a value is read from the table, not re-typed here.
+  $spec = Get-OwnFlagSpec 'proc-start'
+  $head = New-Object System.Collections.ArrayList
+  $needValue = $false
+  $i = 0
+  while ($i -lt $tokens.Count) {
+    $t = [string]$tokens[$i]
+    if ($needValue) { [void]$head.Add($t); $needValue = $false; $i++; continue }
+    if ($t -like '--*') {
+      [void]$head.Add($t); $i++
+      if ($spec.ContainsKey($t) -and -not [bool](Get-OptValue $spec[$t] 'Bool')) { $needValue = $true }
+      continue
+    }
+    break
+  }
+  $own = Strip-OwnFlags @($head) 'proc-start'
+  $cwd = [string]$own.Values['--cwd']
+  $waitWindow = [int]$own.Values['--wait-window']
+  if ($i -ge $tokens.Count) { throw 'usage: proc-start [--cwd <dir>] [--wait-window <s>] <exe> [argv...]' }
+  $exe = [string]$tokens[$i]
+  $argv = @()
+  if ($i + 1 -lt $tokens.Count) { $argv = @($tokens[($i + 1)..($tokens.Count - 1)]) }
+  $rooted = [System.IO.Path]::IsPathRooted($exe)
+  if ($rooted) {
+    if (-not [System.IO.File]::Exists($exe)) { throw "proc-start: '$exe' is not an existing file - nothing was started" }
+  } elseif ($exe -match '[\\/]') {
+    throw "proc-start: '$exe' has a directory component but is not rooted - give the full path, nothing was started"
+  }
+  if ($cwd) {
+    if (-not [System.IO.Directory]::Exists($cwd)) { throw "proc-start: --cwd '$cwd' is not an existing directory - nothing was started" }
+  }
+  Log-Action (Get-RedactedLogArgs $Rest $argv $false) "exe='$exe' argc=$($argv.Count)$(if ($cwd) { " cwd='$cwd'" } else { '' })" $Cmd
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $exe
+  if ($argv.Count -gt 0) { $psi.Arguments = (($argv | ForEach-Object { Format-ProcArg ([string]$_) }) -join ' ') }
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $false
+  if ($cwd) { $psi.WorkingDirectory = $cwd }
+  $pr = $null
+  try { $pr = [System.Diagnostics.Process]::Start($psi) } catch { throw "proc-start: could not start '$exe' - $($_.Exception.Message)" }
+  $startIso = 'denied'
+  try { $startIso = $pr.StartTime.ToString('o') } catch { $startIso = 'denied' }
+  "started pid=$($pr.Id) start=$startIso exe='$exe' argc=$($argv.Count)$(if ($startIso -eq 'denied') { ' (creation time denied - proc-kill --go cannot bind it)' } else { '' })"
+  if ($waitWindow -gt 0) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $hwnd = 0
+    while ($sw.Elapsed.TotalSeconds -lt $waitWindow) {
+      try { $pr.Refresh(); $hwnd = $pr.MainWindowHandle.ToInt64() } catch { $hwnd = 0 }
+      if ($hwnd -ne 0) { break }
+      Start-Sleep -Milliseconds 200
+    }
+    if ($hwnd -ne 0) {
+      "window appeared after $([math]::Round($sw.Elapsed.TotalSeconds,1))s hwnd=0x$($hwnd.ToString('X')) title='$(try { $pr.MainWindowTitle } catch { 'denied' })'"
+    } else {
+      throw "proc-start: pid=$($pr.Id) is running but has no top-level window after ${waitWindow}s - the process was NOT stopped; use proc-wait/proc-info if a window is still expected"
+    }
+  }
+}
+
+# proc-kill <pid> [--created <iso>] [--timeout <s>] [--go]
+# Preview by default. --go needs --created (the identity read with proc-info), refuses
+# protected/system/session processes, this tool itself and its own ancestor chain, and
+# never kills a subtree.
+function Invoke-Handler-proc-kill([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-kill'
+  $words = @($own.Rest)
+  $go = [bool]$own.Values['--go']
+  $created = [string]$own.Values['--created']
+  $timeout = [int]$own.Values['--timeout']
+  if ($words.Count -ne 1) { throw 'usage: proc-kill <pid> [--created <iso>] [--timeout <s>] [--go]   (preview unless --go)' }
+  $pidNum = 0
+  if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-kill: '$($words[0])' is not a pid" }
+  $snap = Get-ProcSnapshot $pidNum
+  if (-not $snap.exists) { throw "proc-kill: pid=$pidNum is not running right now - nothing to kill (a PID alone is not an identity, and a reused PID will not be chased)" }
+  if ($snap.protected) { throw "proc-kill: pid=$pidNum name=$($snap.name) is a protected system/session process - refused, nothing was terminated" }
+  if ($pidNum -eq $PID) { throw "proc-kill: pid=$pidNum is this tool's own process - refused, nothing was terminated" }
+  $anc = Get-ProcAncestors ([int]$PID)
+  if ($anc.Contains($pidNum)) { throw "proc-kill: pid=$pidNum is an ancestor of this tool (chain: $($anc -join '<-')) - terminating it would take this session down, refused" }
+  "target: $(Format-ProcSnapshot $snap)"
+  if ($created) {
+    $id = Test-ProcIdentity $pidNum $created
+    if (-not $id.Ok) { throw "proc-kill: identity refused - $($id.Why). Nothing was terminated." }
+    "identity: $($id.Why)"
+  }
+  if (-not $go) {
+    "preview only: nothing was terminated. Re-run with --go$(if (-not $created) { ' AND --created <start> from the line above' }) to send the terminate request. Unsaved work in the target may be lost; a graceful win-close (WM_CLOSE) or dialog-cancel first is safer."
+    return
+  }
+  if (-not $created) { throw 'proc-kill: --go requires --created <iso> so the PID is bound to one observed process; re-read it with proc-info. Nothing was terminated.' }
+  # Open ONE process object, pin ONE native handle through it, re-read the creation time
+  # THROUGH THAT HANDLE, terminate THROUGH IT, wait THROUGH IT, then release it.
+  # CU-OPS-ADJ-02: sharing a .NET Process object is not by itself a stable native handle;
+  # Process.Handle opens the handle once and caches that IntPtr, so a later Kill/WaitForExit
+  # cannot quietly open a fresh handle on a reused PID.
+  $pr = $null
+  try { $pr = [System.Diagnostics.Process]::GetProcessById($pidNum) } catch { throw "proc-kill: pid=$pidNum cannot be opened ($($_.Exception.Message)) - nothing was terminated" }
+  try {
+    $hProcess = [IntPtr]::Zero
+    try { $hProcess = $pr.Handle } catch { throw "proc-kill: pid=$pidNum was opened but no native process handle could be pinned ($($_.Exception.Message)) - identity cannot be confirmed, nothing was terminated" }
+    if ($hProcess -eq [IntPtr]::Zero) { throw "proc-kill: pid=$pidNum returned a null native handle - identity cannot be confirmed, nothing was terminated" }
+    'handle: pinned=yes value=0x' + ([int64]$hProcess).ToString('X')
+    $hStart = 'denied'
+    try { $hStart = $pr.StartTime.ToString('o') } catch { $hStart = 'denied' }
+    if ($hStart -eq 'denied') { throw "proc-kill: pid=$pidNum was opened but its creation time is unreadable through that handle - identity cannot be confirmed, nothing was terminated" }
+    $want = [datetime]::MinValue; $have = [datetime]::MinValue
+    $parseOk = [datetime]::TryParse($created, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$want)
+    if (-not $parseOk) { $parseOk = [datetime]::TryParse($created, [ref]$want) }
+    if (-not $parseOk) { throw "proc-kill: --created '$created' is not a parseable time - nothing was terminated" }
+    $have = [datetime]::Parse($hStart, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    # CU-OPS-ADJ-01: exact, with the same no-tolerance rule as Test-ProcIdentity.
+    $diff = ($have.ToUniversalTime() - $want.ToUniversalTime()).TotalSeconds
+    if ($diff -ne 0) { throw "proc-kill: the opened handle's creation time $hStart does not match --created $created (diff $diff s; the creation time must be exact) - the PID was reused or the pin is stale, nothing was terminated" }
+    Log-Action $Rest "pid=$pidNum name=$($snap.name) created=$created handle=0x$(([int64]$hProcess).ToString('X'))" $Cmd
+    try { $pr.Kill() } catch {
+      $msg = $_.Exception.Message
+      if ($pr.HasExited) { "proc-kill: pid=$pidNum had already exited before the request - confirmed by the same pinned handle; no terminate was needed"; return }
+      throw "proc-kill: terminate request FAILED for pid=$pidNum ($msg) - the process is still running as far as this tool can see"
+    }
+    $waited = $false
+    try { $waited = $pr.WaitForExit([int]($timeout * 1000)) } catch { $waited = $false }
+    $gone = $false
+    try { $gone = [bool]$pr.HasExited } catch { $gone = $false }
+    if ($gone) {
+      "terminated pid=$pidNum name=$($snap.name) confirmed-exit=yes waited=$($timeout)s handle-pinned=yes"
+      return
+    }
+    throw "proc-kill: terminate request was ACCEPTED for pid=$pidNum but the process has not exited within ${timeout}s - a request is not an exit. It may be unwinding; re-check with proc-info $pidNum before retrying"
+  } finally {
+    # Release LAST, after every read above has been taken from the same handle.
+    try { $pr.Dispose() } catch { }
+  }
 }
 

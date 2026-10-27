@@ -698,4 +698,78 @@ function Invoke-SelftestFamily-CaptureOcr($Ctx) {
   ST-Check 'lint: --aim-line has its table entry, handler read, usage flag and echo note (exactly 4 code sites; help text is the D-1 lint''s source, not this scan)' (@($aimFlagSites).Count -eq 4)
   if (@($aimFlagSites).Count -ne 4) { Write-Output "      aim-line sites: $(Format-SourceLineList @($aimFlagSites))" }
 
+  # -------------------------------------------------------------------------
+  # CU-OPS-COMPLETE-20261026-01 package F: the template matcher. tpl-find's scan
+  # runs the compiled [TPL] loop (the PowerShell loop costs ~6ms/position, which
+  # would make the advertised pixel bound unreachable), so the CRITICAL property
+  # is that both implementations agree. A 40x30 synthetic canvas pins that by
+  # brute force: every offset is tested in both, and the hit sets must be equal.
+  # -------------------------------------------------------------------------
+  Add-Type -AssemblyName System.Drawing
+  $curFHay = New-Object System.Drawing.Bitmap(40, 30, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $curFTpl = New-Object System.Drawing.Bitmap(6, 4, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $curFG = [System.Drawing.Graphics]::FromImage($curFHay)
+  try {
+    $curFG.Clear([System.Drawing.Color]::White)
+    $curFRed = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 200, 10, 10))
+    $curFBlue = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 10, 10, 200))
+    try {
+      $curFG.FillRectangle($curFRed, 10, 8, 3, 2)
+      $curFG.FillRectangle($curFBlue, 13, 8, 3, 2)
+      $curFG.FillRectangle($curFBlue, 10, 10, 3, 2)
+      $curFG.FillRectangle($curFRed, 13, 10, 3, 2)
+    } finally { $curFRed.Dispose(); $curFBlue.Dispose() }
+  } finally { $curFG.Dispose() }
+  $curFG2 = [System.Drawing.Graphics]::FromImage($curFTpl)
+  try {
+    $curFG2.Clear([System.Drawing.Color]::White)
+    $curFRed2 = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 200, 10, 10))
+    $curFBlue2 = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 10, 10, 200))
+    try {
+      $curFG2.FillRectangle($curFRed2, 0, 0, 3, 2)
+      $curFG2.FillRectangle($curFBlue2, 3, 0, 3, 2)
+      $curFG2.FillRectangle($curFBlue2, 0, 2, 3, 2)
+      $curFG2.FillRectangle($curFRed2, 3, 2, 3, 2)
+    } finally { $curFRed2.Dispose(); $curFBlue2.Dispose() }
+  } finally { $curFG2.Dispose() }
+  $curFHayB = Get-Bitmap32Bytes $curFHay
+  $curFTplB = Get-Bitmap32Bytes $curFTpl
+  $curFAgree = $true
+  $curFHitCount = 0
+  $curFHitList = @()
+  foreach ($curFTol in @(0, 12)) {
+    $curFPos = [int64]0
+    $curFOver = $false
+    $curFCompiled = @([TPL]::Find($curFHayB.Bytes, $curFHayB.Stride, $curFHayB.W, $curFHayB.H, $curFTplB.Bytes, $curFTplB.Stride, $curFTplB.W, $curFTplB.H, $curFTol, 60000, [ref]$curFPos, [ref]$curFOver))
+    $curFPosSet = @()
+    for ($curFY = 0; $curFY -le ($curFHayB.H - $curFTplB.H); $curFY++) {
+      for ($curFX = 0; $curFX -le ($curFHayB.W - $curFTplB.W); $curFX++) {
+        if (Test-TemplateAt $curFHayB $curFTplB $curFX $curFY $curFTol) { $curFPosSet += ($curFX + $curFY * 1000) }
+      }
+    }
+    $curFCompiledPacked = @($curFCompiled | ForEach-Object { [int]($_ -shr 32) + [int]($_ -band 0xFFFFFFFFL) * 1000 } | Sort-Object)
+    $curFPosSet = @($curFPosSet | Sort-Object)
+    if (($curFCompiledPacked -join ',') -cne ($curFPosSet -join ',')) { $curFAgree = $false }
+    if ($curFTol -eq 0) {
+      $curFHitCount = @($curFCompiledPacked).Count
+      $curFHitList = @($curFCompiledPacked)
+    }
+    if ($curFOver -or $curFPos -lt 1) { $curFAgree = $false }
+  }
+  ST-Check 'unit (F-01): the compiled scanner and the PowerShell twin agree on EVERY offset (tolerance 0 and 12), so the fast path cannot drift from the pinned semantics' (
+    $curFAgree)
+  ST-Check 'unit (F-02): the planted 6x4 four-quadrant pattern is found exactly once, at its drawn offset (10,8)' (
+    ($curFHitCount -eq 1) -and ($curFHitList -contains 8010))
+  if (-not ($curFHitCount -eq 1 -and $curFHitList -contains 8010)) { Write-Output ('      F-02 hits: ' + ($curFHitList -join ', ')) }
+  $curFTolEdgeA = Test-TemplateAt $curFHayB @{ Bytes = [byte[]]$curFTplB.Bytes.Clone(); Stride = $curFTplB.Stride; W = $curFTplB.W; H = $curFTplB.H } 10 8 0
+  # one channel moved 12 away: tolerance 12 is inclusive, 11 is not
+  $curFShift = Get-Bitmap32Bytes $curFTpl
+  $curFShift.Bytes[0] = [byte]([math]::Min(255, [int]$curFShift.Bytes[0] + 12))
+  $curFTolIn = Test-TemplateAt $curFHayB $curFShift 10 8 12
+  $curFTolOut = Test-TemplateAt $curFHayB $curFShift 10 8 11
+  ST-Check 'unit (F-03): the per-channel tolerance is INCLUSIVE (a 12-off channel passes at 12 and fails at 11)' (
+    $curFTolEdgeA -and $curFTolIn -and (-not $curFTolOut))
+  $curFHay.Dispose()
+  $curFTpl.Dispose()
+
 }

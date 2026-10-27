@@ -1006,4 +1006,93 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     ($curelUsage.Contains('re-read AFTER it is raised')) -and ($curelUsage.Contains('the SAME handle')) -and
     ($curelUsage.Contains('is not the resolved target itself')))
 
+  # -------------------------------------------------------------------------
+  # CU-OPS-COMPLETE-20261026-01 packages A + D: target identity and coordinate
+  # spaces, pinned offline. Nothing here sends input or looks at the screen: the
+  # window branch uses an INJECTED rect (Get-TargetRect trusts cached fields when
+  # they are live geometry), and the identity checks only read process metadata.
+  # -------------------------------------------------------------------------
+  $curD1 = @(Test-PointSpaceArg '' )
+  $curDBad = ''
+  try { [void](Test-PointSpaceArg 'vstual') } catch { $curDBad = $_.Exception.Message }
+  ST-Check 'unit (D-01): an absent --space means screen (legacy path), the three names pass through, anything else is refused by name' (
+    ($curD1[0] -ceq 'screen') -and ((Test-PointSpaceArg 'screen') -ceq 'screen') -and ((Test-PointSpaceArg 'window') -ceq 'window') -and
+    ((Test-PointSpaceArg 'client') -ceq 'client') -and ($curDBad.Contains('screen|window|client')) -and ($curDBad.Contains('no input was sent')))
+
+  $curDWinTgt = [pscustomobject]@{ Handle = [IntPtr]1; Left = 100; Top = 200; W = 300; H = 200 }
+  $curDWinOrg = Get-PointSpaceOrigin 'window' $curDWinTgt
+  $curDWinPt = Convert-PointSpace 5 7 $curDWinOrg
+  $curDScrOrg = Get-PointSpaceOrigin 'screen' $null
+  $curDScrPt = Convert-PointSpace 900 700 $curDScrOrg
+  ST-Check 'unit (D-02): window space adds the rect read at action time, screen space is the identity, and screen needs no window' (
+    ($curDWinOrg.X -eq 100) -and ($curDWinOrg.Y -eq 200) -and ($curDWinOrg.W -eq 300) -and ($curDWinOrg.H -eq 200) -and
+    ($curDWinPt.X -eq 105) -and ($curDWinPt.Y -eq 207) -and ($curDScrOrg.Space -ceq 'screen') -and
+    ($curDScrPt.X -eq 900) -and ($curDScrPt.Y -eq 700))
+
+  $curDOorHigh = ''
+  try { [void](Convert-PointSpace 300 0 $curDWinOrg) } catch { $curDOorHigh = $_.Exception.Message }
+  $curDOorNeg = ''
+  try { [void](Convert-PointSpace -1 0 $curDWinOrg) } catch { $curDOorNeg = $_.Exception.Message }
+  ST-Check 'unit (D-03): a point outside the area is REFUSED (both edges, 0-based) and never clamped to the edge' (
+    $curDOorHigh.Contains('outside the target area 300x200') -and $curDOorHigh.Contains('no input was sent') -and
+    $curDOorNeg.Contains('outside the target area') -and $curDOorNeg.Contains('no input was sent'))
+
+  $curDNoWin = ''
+  try { [void](Get-PointSpaceOrigin 'client' $null) } catch { $curDNoWin = $_.Exception.Message }
+  ST-Check 'unit (D-04): a relative space without a resolved window is refused instead of defaulting to (0,0)' (
+    $curDNoWin.Contains('--space client needs a resolved window') -and $curDNoWin.Contains('no input was sent'))
+
+  $curDReceipt = Format-PointSpaceReceipt $curDScrOrg 5 7
+  $curDReceiptWin = Format-PointSpaceReceipt $curDWinOrg 5 7
+  ST-Check 'unit (D-05): the receipt tail is EMPTY for screen (every pre-existing echo stays byte-identical) and names the space+offset otherwise' (
+    ($curDReceipt -ceq '') -and ($curDReceiptWin -ceq ' space=window rel=5,7'))
+
+  # The client origin cannot be faked offline (ClientToScreen needs a live hwnd), so what is
+  # pinned is that the client branch measures the origin from the HANDLE at call time - both
+  # Win32 calls sit inside the client branch. (codeLines is the stitched source set, so a
+  # definition may appear once per contributing file; the floor is what matters here.)
+  $curDClientSrc = @($codeLines | Where-Object { $_ -notmatch '^\s*#' })
+  $curDClientSite = @($curDClientSrc | Where-Object { $_.Contains('ClientToScreen') })
+  $curDClientRect = @($curDClientSrc | Where-Object { $_.Contains('GetClientRect') })
+  ST-Check 'unit (D-06): client space is measured from the handle at action time (ClientToScreen + GetClientRect inside the client branch) and the conversion is produced once per source set' (
+    ($curDClientSite.Count -ge 2) -and ($curDClientRect.Count -ge 2) -and
+    (@($curDClientSrc | Where-Object { $_.Contains('function Convert-PointSpace') }).Count -ge 1) -and
+    (@($curDClientSrc | Where-Object { $_.Contains('function Get-PointSpaceOrigin') }).Count -ge 1))
+
+  # A lifted family may not read the caller's plain variables (A-14b), so the own-pid
+  # comes from the runtime handle rather than the automatic variable.
+  $curAOwn = [int][System.Diagnostics.Process]::GetCurrentProcess().Id
+  $curA1 = Test-ProcIdentity 999999999 ''
+  $curA2 = Test-ProcIdentity $curAOwn ''
+  $curA3 = Test-ProcIdentity $curAOwn '2000-01-01T00:00:00'
+  $curA4 = Test-ProcIdentity $curAOwn ([string]$curA2.Snap.start)
+  ST-Check 'unit (A-01): process identity answers in four honest shapes - dead pid, no pin, wrong creation time, matching creation time' (
+    (-not $curA1.Ok) -and ($curA1.Why -ceq 'process-not-running') -and
+    ($curA2.Ok) -and ($curA2.Why -ceq 'no-created-pin') -and
+    (-not $curA3.Ok) -and ($curA3.Why.Contains('creation time mismatch')) -and
+    ($curA4.Ok))
+  if (-not ($curA2.Ok -and $curA4.Ok -and (-not $curA3.Ok))) { Write-Output ('      A-01: ' + $curA1.Why + ' / ' + $curA2.Why + ' / ' + $curA3.Why + ' / ' + $curA4.Why + ' start=' + $curA2.Snap.start) }
+
+  $curATolEdge = Test-ProcIdentity $curAOwn (([datetime]$curA2.Snap.start).AddSeconds(1).ToString('o'))
+  $curATolOut = Test-ProcIdentity $curAOwn (([datetime]$curA2.Snap.start).AddSeconds(5).ToString('o'))
+  # CU-OPS-ADJ-01: the old 2s window accepted a process created one second after the pin.
+  # Exactness is the contract now: 1s off is refused exactly like 5s off.
+  ST-Check 'unit (A-02): identity is EXACT - a pin 1s off is refused like one 5s off (no tolerance window, CU-OPS-ADJ-01)' (
+    (-not $curATolEdge.Ok) -and $curATolEdge.Why.Contains('creation time mismatch') -and
+    (-not $curATolOut.Ok) -and $curATolOut.Why.Contains('creation time mismatch'))
+  if (-not ((-not $curATolEdge.Ok) -and (-not $curATolOut.Ok))) { Write-Output ('      A-02: 1s=' + $curATolEdge.Why + ' / 5s=' + $curATolOut.Why) }
+
+  $curAKillSrc = @($codeLines | Where-Object { $_ -notmatch '^\s*#' })
+  $curAGoGate = @($curAKillSrc | Where-Object { $_.Contains(' --go') -or $_.Contains("'--go'") })
+  ST-Check 'unit (A-03): proc-kill is preview-by-default (the --go branch is the only one that terminates) and it re-checks the same object before killing' (
+    ($curAGoGate.Count -ge 1) -and (@($curAKillSrc | Where-Object { $_.Contains('TerminateProcess') }).Count -ge 1) -and
+    (@($curAKillSrc | Where-Object { $_.Contains('WaitForExit') }).Count -ge 1))
+
+  # CU-OPS-ADJ-02: one pinned handle, released last. A shared .NET Process object alone is
+  # not a proof that the check and the terminate travelled through the same native handle.
+  ST-Check 'unit (A-04): proc-kill pins ONE native handle (Process.Handle) and releases it in finally (CU-OPS-ADJ-02)' (
+    (@($curAKillSrc | Where-Object { $_.Contains('$pr.Handle') }).Count -ge 1) -and
+    (@($curAKillSrc | Where-Object { $_.Contains('$pr.Dispose()') }).Count -ge 1) -and
+    (@($curAKillSrc | Where-Object { $_.Contains('handle-pinned=yes') }).Count -ge 1))
+
 }

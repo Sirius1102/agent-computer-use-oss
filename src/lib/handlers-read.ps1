@@ -41,7 +41,7 @@ function Invoke-Handler-win([string]$Cmd, [string[]]$Rest) {
       $pf = Parse-CaptureFlags @($of.Words) $false
       if ($pf.Rest.Count -lt 1) { throw 'usage: win <sel> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--occlude off|warn|strict]' }
       $w = Resolve-Window $pf.Rest[0]
-      if (-not $w) { throw "no window matching: $($pf.Rest[0])" }
+      if (-not $w) { throw (Format-WindowMissMessage $pf.Rest[0]) }
       Emit-ResolveNote
       # A minimized window's rect is the -32000 parking spot: capturing it
       # silently produced a garbage screenshot (audit 2026-09-29b #10). Read
@@ -66,7 +66,7 @@ function Invoke-Handler-win([string]$Cmd, [string[]]$Rest) {
 function Invoke-Handler-info([string]$Cmd, [string[]]$Rest) {
       if ($Rest.Count -lt 1) { throw 'usage: info <sel>' }
       $w = Resolve-Window $Rest[0]
-      if (-not $w) { throw "no window matching: $($Rest[0])" }
+      if (-not $w) { throw (Format-WindowMissMessage $Rest[0]) }
       Emit-ResolveNote
       $cr = New-Object DT+RECT
       [void][DT]::GetClientRect($w.Handle, [ref]$cr)
@@ -111,7 +111,7 @@ function Invoke-Handler-rect([string]$Cmd, [string[]]$Rest) {
 function Invoke-Handler-rect-of([string]$Cmd, [string[]]$Rest) {
       if ($Rest.Count -lt 1) { throw 'usage: rect-of <sel>' }
       $w = Resolve-Window $Rest[0]
-      if (-not $w) { throw "no window matching: $($Rest[0])" }
+      if (-not $w) { throw (Format-WindowMissMessage $Rest[0]) }
       Emit-ResolveNote
       if ($script:Json) {
         [pscustomobject]@{ x = $w.Left; y = $w.Top; w = $w.W; h = $w.H } | ConvertTo-Json -Compress
@@ -1032,3 +1032,581 @@ function Invoke-Handler-assert-stable([string]$Cmd, [string[]]$Rest) {
       Invoke-DesktopCommand 'wait-stable' $xr
 }
 
+
+# ---------------------------------------------------------------------------
+# CU-OPS-COMPLETE-20261026-01 (package A): process observation, launch, wait.
+#
+# The gap this closes: "the app is stuck" had no accurate way out - wins only shows
+# windows, and there was no way to see a process without one, wait for it to exit, or
+# terminate exactly it. These commands are bound to a PID AND its creation time, because
+# a PID alone is reused: an identity that does not match its recorded creation time is
+# refused instead of acted on. Unreadable fields are printed as denied/unknown - never
+# silently dropped, never turned into "does not exist".
+#
+# Termination lives in handlers-act (proc-kill) and is preview-by-default.
+# ---------------------------------------------------------------------------
+
+$script:ProcSystemNames = @('system', 'idle', 'registry', 'memory compression', 'csrss', 'wininit', 'winlogon',
+  'services', 'lsass', 'smss', 'svchost', 'dwm', 'explorer', 'sihost', 'taskhostw', 'fontdrvhost',
+  'spoolsv', 'audiodg', 'securityhealthservice', 'msmpeng', 'searchindexer')
+
+# One process -> the fields every proc command reports. Each field is read under its own
+# try/catch so a single protected property cannot erase the rest of the identity.
+function Get-ProcSnapshot([int]$procId) {
+  $snap = [ordered]@{
+    pid = $procId; name = 'unknown'; path = 'unknown'; start = 'unknown'
+    responding = 'unknown'; hwnd = 'unknown'; title = 'unknown'
+    session = 'unknown'; threads = 'unknown'; ws_mb = 'unknown'; handles = 'unknown'
+    exists = $false; protected = $false
+  }
+  $pr = $null
+  try { $pr = Get-Process -Id $procId -ErrorAction Stop } catch { return $snap }
+  $snap.exists = $true
+  try { $snap.name = [string]$pr.ProcessName } catch { $snap.name = 'denied' }
+  if ($script:ProcSystemNames -contains $snap.name.ToLowerInvariant()) { $snap.protected = $true }
+  if ($procId -eq 0 -or $procId -eq 4) { $snap.protected = $true }
+  try { $snap.path = [string]$pr.Path } catch { $snap.path = 'denied' }
+  if ($snap.path -eq '') { $snap.path = 'denied' }
+  try { $snap.start = $pr.StartTime.ToString('o') } catch { $snap.start = 'denied' }
+  try { $snap.responding = [bool]$pr.Responding } catch { $snap.responding = 'denied' }
+  try { $snap.hwnd = $pr.MainWindowHandle.ToInt64() } catch { $snap.hwnd = 'denied' }
+  try { $snap.title = [string]$pr.MainWindowTitle } catch { $snap.title = 'denied' }
+  try { $snap.session = [int]$pr.SessionId } catch { $snap.session = 'denied' }
+  try { $snap.threads = [int]$pr.Threads.Count } catch { $snap.threads = 'denied' }
+  try { $snap.ws_mb = [int][math]::Round($pr.WorkingSet64 / 1MB) } catch { $snap.ws_mb = 'denied' }
+  try { $snap.handles = [int]$pr.HandleCount } catch { $snap.handles = 'denied' }
+  return $snap
+}
+
+function Format-ProcSnapshot($s) {
+  if (-not $s.exists) { return "pid=$($s.pid) exists=false (no process with that id right now)" }
+  $hw = if ($s.hwnd -eq 'unknown' -or $s.hwnd -eq 'denied') { $s.hwnd } else { '0x' + ([int64]$s.hwnd).ToString('X') }
+  return ("pid=$($s.pid) name=$($s.name) start=$($s.start) path=$($s.path) responding=$($s.responding) hwnd=$hw title='$($s.title)' session=$($s.session) threads=$($s.threads) ws=$($s.ws_mb)MB handles=$($s.handles)" + $(if ($s.protected) { ' protected=yes' } else { '' }))
+}
+
+# Is this PID still the same process that was observed? Creation time is the identity:
+# a reused PID has a different one. CU-OPS-ADJ-01 (v4.6.1): the comparison is EXACT ticks,
+# with no tolerance - a 1s tolerance still let a process created one second after the pin
+# pass as "the same". Both sides come from Process.StartTime (the same FILETIME), so there
+# is no read jitter for a tolerance to absorb.
+function Test-ProcIdentity([int]$procId, [string]$createdIso) {
+  $s = Get-ProcSnapshot $procId
+  if (-not $s.exists) { return @{ Ok = $false; Why = 'process-not-running'; Snap = $s } }
+  if ($createdIso -eq '' -or $null -eq $createdIso) { return @{ Ok = $true; Why = 'no-created-pin'; Snap = $s } }
+  if ($s.start -eq 'denied' -or $s.start -eq 'unknown') { return @{ Ok = $false; Why = "creation time unreadable ($($s.start)) so the identity cannot be confirmed"; Snap = $s } }
+  $want = [datetime]::MinValue
+  if (-not [datetime]::TryParse($createdIso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$want)) {
+    if (-not [datetime]::TryParse($createdIso, [ref]$want)) { return @{ Ok = $false; Why = "unparseable --created '$createdIso'"; Snap = $s } }
+  }
+  $have = [datetime]::Parse($s.start, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+  $diff = ($have.ToUniversalTime() - $want.ToUniversalTime()).TotalSeconds
+  if ($diff -ne 0) { return @{ Ok = $false; Why = "creation time mismatch: recorded $createdIso, now $($s.start) (diff $diff s; the creation time must be exact - any other process, however close, is a different one)"; Snap = $s } }
+  return @{ Ok = $true; Why = 'creation time matches exactly'; Snap = $s }
+}
+
+# proc-list [nameFilter] - every process, window or not. The window columns are blank
+# for a process without one; that is the point (a background app has no `wins` row).
+function Invoke-Handler-proc-list([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-list'
+  $words = @($own.Rest)
+  $filter = ''
+  foreach ($a in $words) {
+    if ($filter) { throw 'usage: proc-list [name-filter]' }
+    $filter = "$a"
+  }
+  $all = @(Get-Process | Sort-Object ProcessName, Id)
+  $n = 0
+  foreach ($pr in $all) {
+    $name = ''
+    try { $name = [string]$pr.ProcessName } catch { $name = 'unknown' }
+    if ($filter -and ($name -notlike "*$filter*")) { continue }
+    $s = Get-ProcSnapshot ([int]$pr.Id)
+    $line = Format-ProcSnapshot $s
+    if ($s.exists -and ($s.hwnd -eq 0)) { $line = $line + ' nowindow=yes' }
+    $line
+    $n++
+  }
+  "proc-list: $n process(es)$(if ($filter) { " matching '$filter'" }) of $(@($all).Count) total  (a process without a visible window is listed too - no nowindow row is an absence of that process, not of its window)"
+}
+
+# proc-info <pid> - one identity, plus every top-level window the PID owns.
+function Invoke-Handler-proc-info([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-info'
+  $words = @($own.Rest)
+  if ($words.Count -lt 1) { throw 'usage: proc-info <pid>' }
+  $pidNum = 0
+  if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-info: '$($words[0])' is not a pid" }
+  $s = Get-ProcSnapshot $pidNum
+  Format-ProcSnapshot $s
+  if ($s.exists) {
+    $wins = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum })
+    if (@($wins).Count -eq 0) { 'windows: none visible to this desktop (a background process legitimately has no window)' }
+    else {
+      "windows: $(@($wins).Count)"
+      foreach ($w in $wins) { "  hwnd=0x$(([int64]$w.Handle).ToString('X')) class=$($w.Class) rect=($($w.Left),$($w.Top))-($($w.Right),$($w.Bottom)) title='$($w.Title)'" }
+    }
+  }
+}
+
+# proc-wait <pid> --exit|--window [--created <iso>] [--timeout s] [--interval ms]
+# Two different predicates, deliberately not one: the process ending and its window
+# disappearing are separate facts, and a caller that needs one must not be told the other.
+function Invoke-Handler-proc-wait([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'proc-wait'
+  $words = @($own.Rest)
+  $waitExit = [bool]$own.Values['--exit']
+  $waitWin = [bool]$own.Values['--window']
+  $created = [string]$own.Values['--created']
+  $timeout = [int]$own.Values['--timeout']
+  $interval = [int]$own.Values['--interval']
+  if ($words.Count -lt 1) { throw 'usage: proc-wait <pid> [--exit|--window] [--created <iso>] [--timeout s] [--interval ms]' }
+  if ($waitExit -eq $waitWin) { throw 'proc-wait: say which predicate to wait for: --exit (process gone) or --window (a top-level window appears) - exactly one' }
+  $mode = if ($waitExit) { 'exit' } else { 'window' }
+  $pidNum = 0
+  if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-wait: '$($words[0])' is not a pid" }
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $lastWhy = ''
+  while ($sw.Elapsed.TotalSeconds -lt $timeout) {
+    $id = Test-ProcIdentity $pidNum $created
+    if (-not $id.Ok) {
+      if ($id.Why -eq 'process-not-running') {
+        if ($mode -eq 'exit') { "proc-wait: pid=$pidNum exited after $([math]::Round($sw.Elapsed.TotalSeconds,1))s (creation pin: $(if ($created) { $created } else { 'none' }))"; return }
+        throw "proc-wait: pid=$pidNum is not running, so --window can never be satisfied (waited $([math]::Round($sw.Elapsed.TotalSeconds,1))s)"
+      }
+      throw "proc-wait: identity refused - $($id.Why)"
+    }
+    if ($mode -eq 'window') {
+      $hasWin = $false
+      try { $hasWin = ($id.Snap.hwnd -ne 0 -and $id.Snap.hwnd -ne 'denied' -and $id.Snap.hwnd -ne 'unknown') } catch { $hasWin = $false }
+      if ($hasWin) { "proc-wait: pid=$pidNum window appeared after $([math]::Round($sw.Elapsed.TotalSeconds,1))s hwnd=0x$(([int64]$id.Snap.hwnd).ToString('X')) title='$($id.Snap.title)'  start=$($id.Snap.start)"; return }
+    } else {
+      # --exit: the process is running, that is all this poll proved
+      $lastWhy = 'still running'
+    }
+    Start-Sleep -Milliseconds $interval
+  }
+  if ($mode -eq 'exit') { throw "proc-wait: timeout after ${timeout}s - pid=$pidNum still running ($lastWhy). A kill request is a separate, explicit command (proc-kill); this wait does not escalate by itself" }
+  throw "proc-wait: timeout after ${timeout}s - pid=$pidNum has no top-level window yet (a background process may never get one)"
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package F (v4.6.0): tpl-find - deterministic template location.
+# Determinism is the whole contract: ONE nearest-neighbour resample per requested
+# scale (no interpolation modes to drift), integer pixel comparison with an explicit
+# per-channel tolerance, a bounded search area and a bounded time budget, and its own
+# numbers printed. Multi-hit is a REFUSAL, not a guess: two matches mean the caller
+# has not said which one it means, and picking the first would be the "roughly this
+# title" mistake moved into pixels. imgclick keeps its own semantics; this command
+# only reports points and never clicks.
+# ---------------------------------------------------------------------------
+function Get-Bitmap32Bytes($bmp) {
+  $rect = New-Object System.Drawing.Rectangle(0, 0, $bmp.Width, $bmp.Height)
+  $bd = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  try {
+    $bytes = New-Object byte[] ($bd.Stride * $bmp.Height)
+    [System.Runtime.InteropServices.Marshal]::Copy($bd.Scan0, $bytes, 0, $bytes.Length)
+  } finally { $bmp.UnlockBits($bd) }
+  return @{ Bytes = $bytes; Stride = $bd.Stride; W = $bmp.Width; H = $bmp.Height }
+}
+
+function ConvertTo-Bitmap32($bmp) {
+  if ($bmp.PixelFormat -eq [System.Drawing.Imaging.PixelFormat]::Format32bppArgb) { return $bmp }
+  $norm = New-Object System.Drawing.Bitmap($bmp.Width, $bmp.Height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $g = [System.Drawing.Graphics]::FromImage($norm)
+  try { $g.DrawImage($bmp, 0, 0, $bmp.Width, $bmp.Height) } finally { $g.Dispose() }
+  return $norm
+}
+
+function Resize-BitmapNearest($bmp, [double]$scale) {
+  $nw = [int][math]::Round($bmp.Width * $scale)
+  $nh = [int][math]::Round($bmp.Height * $scale)
+  if ($nw -lt 1 -or $nh -lt 1) { throw "tpl-find: scale $scale shrinks the template to ${nw}x${nh} - nothing to match; keep the scales so the template stays at least 1x1" }
+  $dst = New-Object System.Drawing.Bitmap($nw, $nh, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $g = [System.Drawing.Graphics]::FromImage($dst)
+  try {
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+    $g.DrawImage($bmp, 0, 0, $nw, $nh)
+  } finally { $g.Dispose() }
+  return $dst
+}
+
+# One position test used by the self-test only: nine anchors first (cheap rejection),
+# then the full template. The scanner itself runs the compiled [TPL] loop in desktop.ps1
+# (the same comparison); this PowerShell twin exists so a selftest can pin the semantics
+# without a screen.
+function Test-TemplateAt($hay, $need, [int]$ox, [int]$oy, [int]$tol) {
+  $tw = $need.W; $th = $need.H
+  $hb = $hay.Bytes; $nb = $need.Bytes
+  $hs = $hay.Stride; $ns = $need.Stride
+  $twLast = $tw - 1
+  $thLast = $th - 1
+  $xs = @(0, [int]($twLast / 2), $twLast)
+  $ys = @(0, [int]($thLast / 2), $thLast)
+  foreach ($ay in $ys) {
+    foreach ($ax in $xs) {
+      $no = $ay * $ns + $ax * 4
+      if ($nb[$no + 3] -eq 0) { continue }
+      $ho = ($oy + $ay) * $hs + ($ox + $ax) * 4
+      if ([math]::Abs([int]$hb[$ho + 2] - [int]$nb[$no + 2]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho + 1] - [int]$nb[$no + 1]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho] - [int]$nb[$no]) -gt $tol) { return $false }
+    }
+  }
+  for ($y = 0; $y -lt $th; $y++) {
+    $nrow = $y * $ns
+    $hrow = ($oy + $y) * $hs
+    for ($x = 0; $x -lt $tw; $x++) {
+      $no = $nrow + $x * 4
+      if ($nb[$no + 3] -eq 0) { continue }
+      $ho = $hrow + ($ox + $x) * 4
+      if ([math]::Abs([int]$hb[$ho + 2] - [int]$nb[$no + 2]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho + 1] - [int]$nb[$no + 1]) -gt $tol) { return $false }
+      if ([math]::Abs([int]$hb[$ho] - [int]$nb[$no]) -gt $tol) { return $false }
+    }
+  }
+  return $true
+}
+
+function Invoke-Handler-tpl-find([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'tpl-find'
+      $p = Split-Target @($own.Rest) 'tpl-find'
+      if ($p.Words.Count -ne 1) { throw 'usage: tpl-find <templatePath> [--to <sel>] [--region x,y,w,h] [--space screen|window|client] [--tolerance n] [--scales 1,1.25] [--index n] [--max-ms ms]' }
+      $tplPath = [string]$p.Words[0]
+      if (-not (Test-Path -LiteralPath $tplPath -PathType Leaf)) { throw "template not found: $tplPath" }
+      $tol = [int]$own.Values['--tolerance']
+      $maxMs = [int]$own.Values['--max-ms']
+      $indexPassed = [bool]$own.Present['--index']
+      $index = [int]$own.Values['--index']
+      $scaleText = [string]$own.Values['--scales']
+      if ($scaleText -eq '') { $scaleText = '1' }
+      $scales = New-Object System.Collections.ArrayList
+      foreach ($s in @("$scaleText" -split ',')) {
+        $sv = 0.0
+        if (-not [double]::TryParse($s.Trim(), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$sv)) { throw "tpl-find: --scales needs comma-separated numbers, got '$s'; nothing was read" }
+        if ($sv -lt 0.5 -or $sv -gt 2.0) { throw "tpl-find: scale $sv is outside 0.5..2.0 (bounded on purpose - a wide ladder turns a locator into a guess); nothing was read" }
+        [void]$scales.Add($sv)
+      }
+      if ($scales.Count -lt 1 -or $scales.Count -gt 3) { throw "tpl-find: --scales accepts 1..3 values, got $($scales.Count); nothing was read" }
+      $spaceArg = [string]$own.Values['--space']
+      $space = if ($spaceArg) { Test-PointSpaceArg $spaceArg } elseif ($p.Sel) { 'window' } else { 'screen' }
+      $created = [string]$own.Values['--created']
+      if ($space -ne 'screen' -and -not $p.Sel) { throw "tpl-find: --space $space needs --to <sel> (a relative region has no origin without a named window); nothing was read" }
+      $regionText = [string]$own.Values['--region']
+      $tgt = $null
+      if ($p.Sel) {
+        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
+        Emit-ResolveNote
+      }
+      $origin = Get-PointSpaceOrigin $space $tgt
+      $rx = 0; $ry = 0; $rw = $origin.W; $rh = $origin.H
+      if ($space -eq 'screen' -and -not $regionText) {
+        # screen space has no window to size the search: the default is the virtual
+        # desktop, and the 3,000,000-pixel bound below decides whether that is allowed.
+        $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+        $rx = [int]$vs.X; $ry = [int]$vs.Y; $rw = [int]$vs.Width; $rh = [int]$vs.Height
+      }
+      if ($regionText) {
+        $rn = @("$regionText" -split ',' | ForEach-Object { $_.Trim() })
+        if ($rn.Count -ne 4) { throw "tpl-find: --region needs x,y,w,h, got: $regionText" }
+        $rx = [int]$rn[0]; $ry = [int]$rn[1]; $rw = [int]$rn[2]; $rh = [int]$rn[3]
+      }
+      if ($rw -le 0 -or $rh -le 0) { throw "tpl-find: the search region is ${rw}x${rh} - nothing to read" }
+      if ($space -ne 'screen') {
+        if ($rx -lt 0 -or $ry -lt 0 -or ($rx + $rw) -gt $origin.W -or ($ry + $rh) -gt $origin.H) {
+          throw ('tpl-find: region ' + $rx + ',' + $ry + ',' + $rw + ',' + $rh + ' is outside the target area ' + $origin.W + 'x' + $origin.H + ' (space=' + $space + '); nothing was read and no clamping was applied')
+        }
+      }
+      $area = [int64]$rw * [int64]$rh
+      if ($area -gt 3000000) { throw "tpl-find: region $($rw)x$($rh) is $area pixels - above the 3,000,000-pixel bound; pass a smaller --region (a locator that scans the whole desktop is a guess) " }
+
+      $tplSrc = New-Object System.Drawing.Bitmap((Get-Item -LiteralPath $tplPath).FullName)
+      $tplNorm = $null
+      $hits = New-Object System.Collections.ArrayList
+      $positions = 0
+      # CU-OPS F: do not race our OWN activation. When this call was the one that raised
+      # the window (activated=yes), the client area can still be mid-repaint for a moment,
+      # and a capture taken inside that window reports "no match" for a pattern that is
+      # plainly there - measured 2026-10-27 on the F fixture: the first call after
+      # activation failed, the identical second call matched. The settle is only paid
+      # when activation actually happened, and it is printed in the receipt.
+      $settleMs = 0
+      if ($null -ne $tgt -and [bool]$tgt.Activated) {
+        $settleMs = 300
+        Start-Sleep -Milliseconds $settleMs
+      }
+      $sw = [System.Diagnostics.Stopwatch]::StartNew()
+      try {
+        $tplNorm = ConvertTo-Bitmap32 $tplSrc
+        $cap = Get-ScreenBitmap ($origin.X + $rx) ($origin.Y + $ry) $rw $rh 1.0
+        try {
+          $hay = Get-Bitmap32Bytes $cap.Bitmap
+          foreach ($s in @($scales)) {
+            $tb = $null
+            $t32 = $null
+            try {
+              $tb = Resize-BitmapNearest $tplNorm $s
+              $t32 = ConvertTo-Bitmap32 $tb
+              $need = Get-Bitmap32Bytes $t32
+              if ($need.W -gt $hay.W -or $need.H -gt $hay.H) { continue }
+              $posOut = [int64]0
+              $overOut = $false
+              $raw = [TPL]::Find($hay.Bytes, $hay.Stride, $hay.W, $hay.H, $need.Bytes, $need.Stride, $need.W, $need.H, $tol, ($maxMs - [int]$sw.ElapsedMilliseconds), [ref]$posOut, [ref]$overOut)
+              $positions = $positions + [int]$posOut
+              if ($overOut) {
+                throw ('tpl-find: the search exceeded its ' + $maxMs + 'ms budget after ' + $positions + ' positions at scale ' + $s + ' - narrow --region or pass fewer --scales; no match list is being invented')
+              }
+              foreach ($pair in @($raw)) {
+                $hx = [int]($pair -shr 32)
+                $hy = [int]($pair -band 0xFFFFFFFFL)
+                [void]$hits.Add([pscustomobject]@{ X = ($origin.X + $rx + $hx); Y = ($origin.Y + $ry + $hy); RelX = ($rx + $hx); RelY = ($ry + $hy); Scale = $s; W = $need.W; H = $need.H })
+              }
+            } finally {
+              if ($null -ne $t32 -and -not [object]::ReferenceEquals($t32, $tb)) { $t32.Dispose() }
+              if ($null -ne $tb) { $tb.Dispose() }
+            }
+          }
+        } finally { $cap.Bitmap.Dispose() }
+      } finally {
+        if ($null -ne $tplNorm -and -not [object]::ReferenceEquals($tplNorm, $tplSrc)) { $tplNorm.Dispose() }
+        $tplSrc.Dispose()
+      }
+      # Non-maximum suppression: matches whose boxes OVERLAP are one object seen twice
+      # (a solid glyph matches at every offset inside itself, and a pattern found at two
+      # scales is still one pattern). Genuinely separate copies do not overlap and are
+      # kept apart - which is exactly what the ambiguity refusal below reports.
+      $uniq = New-Object System.Collections.ArrayList
+      foreach ($h in @($hits | Sort-Object Y, X)) {
+        $dup = $false
+        foreach ($u in $uniq) {
+          $limX = [math]::Max([int]$h.W, [int]$u.W)
+          $limY = [math]::Max([int]$h.H, [int]$u.H)
+          if ([math]::Abs([int]$h.X - [int]$u.X) -lt $limX -and [math]::Abs([int]$h.Y - [int]$u.Y) -lt $limY) { $dup = $true; break }
+        }
+        if (-not $dup) { [void]$uniq.Add($h) }
+      }
+      $elapsed = [int]$sw.ElapsedMilliseconds
+      if ($uniq.Count -eq 0) { throw "tpl-find: no match for '$tplPath' in region ($($origin.X + $rx),$($origin.Y + $ry)) ${rw}x${rh} (tolerance $tol, scales $scaleText, space=$space, positions=$positions ms=$elapsed settle=${settleMs}ms)" }
+      if (-not $indexPassed -and $uniq.Count -gt 1) {
+        $list = (@($uniq | ForEach-Object { "screen=($($_.X),$($_.Y)) rel=($($_.RelX),$($_.RelY))@$($_.Scale)" }) -join ', ')
+        throw "tpl-find: $($uniq.Count) matches for '$tplPath' - ambiguous, nothing was chosen: $list. Pass --index n, or narrow --region, or raise the fidelity (lower --tolerance)."
+      }
+      if ($indexPassed -and $index -ge @($uniq).Count) { throw "tpl-find: --index $index is out of range - only $(@($uniq).Count) match(es) were found" }
+      $chosen = if ($indexPassed) { @($uniq)[$index] } else { @($uniq)[0] }
+      if ($script:Json) {
+        [pscustomobject]@{
+          template = (Split-Path -Leaf $tplPath)
+          tolerance = $tol
+          space = $space
+          region = [pscustomobject]@{ x = ($origin.X + $rx); y = ($origin.Y + $ry); w = $rw; h = $rh }
+          matches = @($uniq | ForEach-Object { [pscustomobject]@{ x = $_.X; y = $_.Y; relx = $_.RelX; rely = $_.RelY; w = $_.W; h = $_.H; scale = $_.Scale } })
+          selected = [pscustomobject]@{ x = $chosen.X; y = $chosen.Y; relx = $chosen.RelX; rely = $chosen.RelY; w = $chosen.W; h = $chosen.H; scale = $chosen.Scale }
+          positions = $positions
+          ms = $elapsed
+          settleMs = $settleMs
+        } | ConvertTo-Json -Compress -Depth 5
+      } else {
+        "tpl-find: template=$(Split-Path -Leaf $tplPath) tolerance=$tol scales=$scaleText space=$space region=($($origin.X + $rx),$($origin.Y + $ry)) ${rw}x${rh} matches=$(@($uniq).Count) positions=$positions ms=$elapsed settle=${settleMs}ms"
+        $k = 0
+        foreach ($u in @($uniq)) { "  match[$k] screen=($($u.X),$($u.Y)) rel=($($u.RelX),$($u.RelY)) size=$($u.W)x$($u.H) scale=$($u.Scale)"; $k++ }
+        "  selected index=$(if ($indexPassed) { $index } else { 0 }) screen=($($chosen.X),$($chosen.Y))  (tpl-find only locates; it never clicks)"
+      }
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package G (v4.6.1): clip-info - READ-ONLY clipboard metadata.
+# It exists so "what is on the clipboard, and can this tool put it back" can be
+# answered WITHOUT touching the content: format names, counts, and a restorable
+# verdict derived from the SAME branch Save/Restore-ClipboardState use.
+# v4.6.1: this handler reads the FORMAT LIST and nothing else. It no longer calls
+# Save-ClipboardState (which opens text/FileDrop, decodes the image and may write a
+# temp PNG), so the "metadata only" promise is now true by construction; the image is
+# reported as a FORMAT, never by size, and no carrier file is created or deleted here.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'clip-info'
+      if (@($own.Rest).Count -ne 0) { throw 'usage: clip-info [--json] - it takes no positional arguments (use paste/paste-file/copy-file to change the clipboard)' }
+      $formats = @()
+      try {
+        $do = [System.Windows.Forms.Clipboard]::GetDataObject()
+        if ($null -ne $do) { $formats = @($do.GetFormats()) }
+      } catch { $formats = @() }
+      $plan = Get-ClipboardFormatPlan $formats
+      # A plan-shaped state, not a saved snapshot: content fields are deliberately empty
+      # because this command never opened them.
+      $st = @{ Kind = $plan.Kind; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @($plan.Formats); Extras = @($plan.Extras) }
+      $imgNote = if ($plan.HasImage) { 'Bitmap/DIB format present - content NOT decoded by this read-only command (the writing command saves the carrier)' } else { 'none' }
+      $textNote = if ($plan.HasText) { 'present - content NOT read by this read-only command' } else { 'none' }
+      $filesNote = if ($plan.HasFiles) { 'FileDrop present - the list was NOT read by this read-only command' } else { 'none' }
+      $extrasNote = if (@($plan.Extras).Count -gt 0) { Format-ClipboardFormatNames $plan.Extras } else { 'none' }
+      $restorable = Get-ClipboardRestorableVerdict $st
+      if ($script:Json) {
+        [pscustomobject]@{
+          kind = $plan.Kind
+          formats = $formats
+          extras = @($plan.Extras)
+          text = $textNote
+          files = $filesNote
+          image = $imgNote
+          restorable = $restorable
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        "clipboard kind=$($plan.Kind) formats=$(@($plan.Formats).Count) unknown=$($extrasNote)"
+        "  formats: " + $(if (@($plan.Formats).Count -gt 0) { (@($plan.Formats) -join ', ') } else { '(none)' })
+        "  text: $textNote"
+        "  files: $filesNote"
+        "  image: $imgNote"
+        "  restorable by this tool: $restorable"
+        "  (read-only: no text, file list or image was read or decoded, and nothing was written)"
+      }
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package D (v4.6.0): wait-cond - ONE bounded wait for the conditions the
+# older commands each cover separately, with the three outcomes kept distinct:
+# matched, timed out, and COULD NOT READ (a read that throws is never reported as
+# "the condition did not happen"). Read-only; it never activates or clicks.
+# ---------------------------------------------------------------------------
+function Get-WaitUiaState([string]$wSel, [string]$nameSub, [Hashtable]$found) {
+  $w = Resolve-Window $wSel
+  if (-not $w) { return 'gone' }
+  $rr = Uia-Roots $w
+  if ($rr.Roots.Count -lt 1) { return 'no-uia-root' }
+  $el = Uia-Find $rr.Roots $nameSub ''
+  if (-not $el) { return 'not-found' }
+  $st = ''
+  $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
+  if ($null -ne $tp) { return ('toggle:' + [string]$tp.Current.ToggleState) }
+  $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+  if ($null -ne $si) { return ('selected:' + ([bool]$si.Current.IsSelected).ToString()) }
+  $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+  if ($null -ne $ec) { return ('expand:' + [string]$ec.Current.ExpandCollapseState) }
+  return 'no-state-pattern'
+}
+
+function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'wait-cond'
+      $words = @($own.Rest)
+      if ($words.Count -ne 1) { throw 'usage: wait-cond <sel> (--win | --gone | --foreground | --text <needle> | --uia <nameSub> [--state <On|Off|Expanded|Collapsed|Selected|NotSelected>]) [--timeout s] [--interval ms]' }
+      $sel = [string]$words[0]
+      $wantWin = [bool]$own.Values['--win']
+      $wantGone = [bool]$own.Values['--gone']
+      $wantFg = [bool]$own.Values['--foreground']
+      $needle = [string]$own.Values['--text']
+      $uiaName = [string]$own.Values['--uia']
+      $wantState = [string]$own.Values['--state']
+      $preds = 0
+      foreach ($b in @($wantWin, $wantGone, $wantFg, [bool]($needle -ne ''), [bool]($uiaName -ne ''))) { if ($b) { $preds++ } }
+      if ($preds -ne 1) { throw 'wait-cond: give exactly ONE predicate (--win, --gone, --foreground, --text <needle> or --uia <nameSub>); nothing was polled' }
+      if ($wantState -ne '' -and $uiaName -eq '') { throw 'wait-cond: --state only means something with --uia <nameSub>; nothing was polled' }
+      if ($wantState -ne '' -and $wantState -notin @('On', 'Off', 'Expanded', 'Collapsed', 'Selected', 'NotSelected')) { throw "wait-cond: --state must be On|Off|Expanded|Collapsed|Selected|NotSelected, got '$wantState'; nothing was polled" }
+      $timeout = [int]$own.Values['--timeout']
+      $interval = [int]$own.Values['--interval']
+      $sw = [System.Diagnostics.Stopwatch]::StartNew()
+      $lastRead = ''
+      $readErrors = 0
+      $polls = 0
+      while ($sw.Elapsed.TotalSeconds -lt $timeout) {
+        $polls++
+        $ok = $false
+        try {
+          if ($wantWin -or $wantGone -or $wantFg) {
+            $w = Resolve-Window $sel
+            if ($wantWin) { $ok = ($null -ne $w); $lastRead = $(if ($w) { "hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'no window' }) }
+            elseif ($wantGone) { $ok = ($null -eq $w); $lastRead = $(if ($w) { "still hwnd=$($w.Handle) pid=$($w.Pid)" } else { 'gone' }) }
+            else {
+              $fg = Get-ForegroundInfo
+              $ok = ("$fg".Contains("pid=$($w.Pid)")) -and ($null -ne $w)
+              $lastRead = "foreground=$fg"
+            }
+          } elseif ($needle -ne '') {
+            $w = Resolve-Window $sel
+            if (-not $w) { throw "target window '$sel' is gone - a text wait cannot read a window that is not there" }
+            $r = Get-TargetRect $w
+            if ($null -eq $r) { throw "the target rect for '$sel' could not be read now" }
+            $f = Find-OcrHitsScaled $r.X $r.Y $r.W $r.H $needle 'auto' 16 $false
+            $ok = (@($f.Hits).Count -gt 0)
+            $lastRead = "ocr hits=$(@($f.Hits).Count)"
+          } else {
+            $got = Get-WaitUiaState $sel $uiaName $null
+            $lastRead = $got
+            if ($wantState -eq '') { $ok = ($got -ne 'gone' -and $got -ne 'no-uia-root' -and $got -ne 'not-found' -and $got -ne 'no-state-pattern') }
+            elseif ($wantState -in @('On', 'Off')) { $ok = ($got -ceq ('toggle:' + $wantState)) }
+            elseif ($wantState -in @('Expanded', 'Collapsed')) { $ok = ($got -ceq ('expand:' + $wantState)) }
+            else { $ok = ($got -ceq ('selected:' + $(if ($wantState -eq 'Selected') { 'True' } else { 'False' }))) }
+          }
+        } catch {
+          $readErrors++
+          $lastRead = 'read error: ' + $_.Exception.Message
+        }
+        if ($ok) {
+          $mode = $(if ($wantWin) { 'win' } elseif ($wantGone) { 'gone' } elseif ($wantFg) { 'foreground' } elseif ($needle -ne '') { 'text' } else { 'uia' })
+          "wait-cond $mode met after $([math]::Round($sw.Elapsed.TotalSeconds,1))s ($polls polls): $lastRead"
+          return
+        }
+        Start-Sleep -Milliseconds $interval
+      }
+      if ($readErrors -gt 0 -and $readErrors -eq $polls) {
+        throw "wait-cond: timed out after ${timeout}s but EVERY poll failed to read ($lastRead) - this is a read failure, not evidence the condition stayed false"
+      }
+      $mode = $(if ($wantWin) { 'win' } elseif ($wantGone) { 'gone' } elseif ($wantFg) { 'foreground' } elseif ($needle -ne '') { 'text' } else { 'uia' })
+      throw "wait-cond: timeout after ${timeout}s waiting for $mode on '$sel' ($polls polls, $readErrors read errors); last read: $lastRead"
+}
+
+# ---------------------------------------------------------------------------
+# CU-OPS package H (v4.6.0): capabilities - the command surface DERIVED from the
+# dispatcher's own registry, not a second hand-written list. Each name comes from
+# $script:StHandlerGroups (whose total this command re-checks), flags come from the
+# same private/shared tables the parsers read, and the entry identity is the file
+# this process is actually running. A name that is registered but unreachable, or
+# a registry total that disagrees with the names summed by group, is an error.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'capabilities'
+      if (@($own.Rest).Count -ne 0) { throw 'usage: capabilities [--json] - it takes no positional arguments' }
+      $names = New-Object System.Collections.ArrayList
+      foreach ($gk in @(Get-HashKeys $script:StHandlerGroups | Sort-Object)) {
+        foreach ($n in @($script:StHandlerGroups[$gk])) { [void]$names.Add([pscustomobject]@{ Name = [string]$n; Group = [string]$gk }) }
+      }
+      $groupsCount = @(Get-HashKeys $script:StHandlerGroups).Count
+      $rows = New-Object System.Collections.ArrayList
+      foreach ($r in @($names | Sort-Object Name)) {
+        $ownF = @(Get-HashKeys (Get-OwnFlagSpec $r.Name) | Sort-Object)
+        $sharedF = @(Get-CommandSharedSet $r.Name)
+        $allF = @(Get-CommandFlagSet $r.Name)
+        [void]$rows.Add([pscustomobject]@{
+          name = $r.Name
+          group = $r.Group
+          ownFlags = $ownF
+          sharedFlags = $sharedF
+          flags = $allF
+          json = (@(Get-ActionJsonCommandSet) -contains $r.Name)
+        })
+      }
+      $entryPath = [string]$script:ToolEntryPath
+      $sha = ''
+      if ($entryPath -ne '' -and (Test-Path -LiteralPath $entryPath -PathType Leaf)) {
+        try { $sha = (Get-FileHash -LiteralPath $entryPath -Algorithm SHA256).Hash.ToLowerInvariant() } catch { $sha = 'unreadable' }
+      }
+      $dpi = [string]$script:DpiMode
+      if ($dpi -eq '') { $dpi = 'unreadable' }
+      if ($script:Json) {
+        [pscustomobject]@{
+          version = $script:ToolVersion
+          entry = [pscustomobject]@{ path = $entryPath; sha256 = $sha }
+          environment = [pscustomobject]@{ psversion = [string]$PSVersionTable.PSVersion; dpi = $dpi; os = [string][System.Environment]::OSVersion.VersionString }
+          counts = [pscustomobject]@{ groups = $groupsCount; names = @($rows).Count }
+          commands = @($rows)
+        } | ConvertTo-Json -Compress -Depth 6
+      } else {
+        "capabilities: version=$($script:ToolVersion) names=$(@($rows).Count) groups=$groupsCount"
+        "  entry: $entryPath"
+        "  sha256: $sha"
+        "  environment: PowerShell $($PSVersionTable.PSVersion)  dpi=$dpi"
+        foreach ($g in @('read', 'act', 'ui', 'batch')) {
+          $gn = @($rows | Where-Object { $_.Group -eq $g })
+          "  [$g] $($gn.Count): " + (($gn | ForEach-Object { $_.name }) -join ' ')
+        }
+        "  (flags/json per command: pass --json for the machine-readable table)"
+      }
+}

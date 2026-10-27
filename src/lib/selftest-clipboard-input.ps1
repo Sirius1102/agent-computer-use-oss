@@ -18,6 +18,72 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   ST-Check 'unit: clipboard kind - text alone' ((Resolve-ClipboardKind $true $false) -ceq 'text')
   ST-Check 'unit: clipboard kind - FileDrop alone' ((Resolve-ClipboardKind $false $true) -ceq 'files')
   ST-Check 'unit: clipboard kind - neither' ((Resolve-ClipboardKind $false $false) -ceq 'other')
+  # CU-OPS package G: the image carrier and the write gate. The clipboard itself is never
+  # touched here (red line: this process must not read or write the shared clipboard), so
+  # the BRANCH and the VERDICT are pinned as pure functions.
+  ST-Check 'unit (G): clipboard kind - image alone / image+text / image+FileDrop are distinct' (
+    ((Resolve-ClipboardKind $false $false $true) -ceq 'image') -and
+    ((Resolve-ClipboardKind $true $false $true) -ceq 'text+image') -and
+    ((Resolve-ClipboardKind $false $true $true) -ceq 'files+image') -and
+    ((Resolve-ClipboardKind $true $true $true) -ceq 'text+files+image'))
+  ST-Check 'unit (G): every restorable kind answers yes and unknown formats answer no with the flag named' (
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'none' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'text' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'files' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'both' }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'image'; ImagePath = 'x'; ImageSaveError = $false }) -ceq 'yes') -and
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'other' }) -like 'no - unknown formats*--replace-clipboard*'))
+  ST-Check 'unit (G): an image whose PNG could not be saved is its OWN no, not "no image"' (
+    (Get-ClipboardRestorableVerdict @{ Kind = 'image'; ImagePath = ''; ImageSaveError = $true }) -like 'no - an image is present but its PNG could not be saved*')
+  $gGateNo = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'other' } $false 'paste' } catch { $gGateNo = $_.Exception.Message }
+  $gGateOk = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'other' } $true 'paste'; $gGateOk = 'passed' } catch { $gGateOk = 'threw: ' + $_.Exception.Message }
+  ST-Check 'unit (G): the write gate refuses unknown formats BEFORE any write and --replace-clipboard is the explicit override' (
+    $gGateNo -like "paste : the clipboard holds formats this tool cannot restore*--replace-clipboard*" -and $gGateOk -ceq 'passed')
+  # v4.6.1 (CU-OPS package G): the FORMAT LIST decides the branch, not ContainsText/ContainsImage.
+  # A clipboard that carries text AND something this tool cannot put back (HTML Format, Rich Text
+  # Format, PNG, any app-private format) must NOT be written over on the strength of the text
+  # coming back - "the text hash matches" is not "every format is preserved". Pure synthetic
+  # arrays only: the shared clipboard is never read here.
+  $gPlanOther = Get-ClipboardFormatPlan @('UnicodeText', 'HTML Format')
+  $gPlanPure = Get-ClipboardFormatPlan @('UnicodeText', 'Locale')
+  $gPlanImg = Get-ClipboardFormatPlan @('FileDrop', 'Bitmap')
+  ST-Check 'unit (G): a format list carrying any non-pure format is kind=other and names the extra (text+HTML is not restorable as text)' (
+    ($gPlanOther.Kind -ceq 'other') -and ((@($gPlanOther.Extras) -join ',') -ceq 'HTML Format') -and ($gPlanOther.HasText -eq $true))
+  ST-Check 'unit (G): pure lists keep their kind and report no extras (text / FileDrop+image)' (
+    ($gPlanPure.Kind -ceq 'text') -and (@($gPlanPure.Extras).Count -eq 0) -and
+    ($gPlanImg.Kind -ceq 'files+image') -and (@($gPlanImg.Extras).Count -eq 0))
+  $gGateHtml = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'other'; Extras = @('HTML Format', 'Rich Text Format') } $false 'paste' } catch { $gGateHtml = $_.Exception.Message }
+  ST-Check 'unit (G): the write gate names the extra formats so --replace-clipboard is an informed choice' (
+    $gGateHtml -like 'paste : the clipboard holds formats this tool cannot restore (HTML Format, Rich Text Format)*--replace-clipboard*')
+  # The restore note is the only thing paste sees; partial/failed must be mechanically readable so
+  # the command can exit non-zero when the previous clipboard did not come back.
+  ST-Check 'unit (G): a restore note maps to ok/partial/failed/skipped/unknown without guessing' (
+    ((Get-ClipboardRestoreOutcome 'clipboard restored (previous content was text, 3 chars)') -ceq 'ok') -and
+    ((Get-ClipboardRestoreOutcome 'clipboard PARTIALLY restored (wanted text 3 chars; read back 0)') -ceq 'partial') -and
+    ((Get-ClipboardRestoreOutcome 'clipboard restore failed (text)') -ceq 'failed') -and
+    ((Get-ClipboardRestoreOutcome 'skipped clipboard restore (empty)') -ceq 'skipped') -and
+    ((Get-ClipboardRestoreOutcome 'something else') -ceq 'unknown'))
+  # clip-info's "metadata only" promise is now structural: read its body and require that it reads
+  # the FORMAT LIST and nothing else. Comment lines are excluded from the scan (this very block's
+  # rationale is written in the body's header comment).
+  $ciStart = -1
+  for ($gci = 0; $gci -lt $codeLines.Count; $gci++) { if ($codeLines[$gci] -match '^function Invoke-Handler-clip-info') { $ciStart = $gci; break } }
+  $ciCode = @()
+  if ($ciStart -ge 0) {
+    for ($gci = $ciStart + 1; $gci -lt $codeLines.Count; $gci++) {
+      if ($codeLines[$gci] -match '^function ') { break }
+      if ($codeLines[$gci] -notmatch '^\s*#') { $ciCode += $codeLines[$gci] }
+    }
+  }
+  $ciText = $ciCode -join "`n"
+  ST-Check 'lint (G): clip-info reads the format list only - no saved snapshot, no content read, no carrier file' (
+    ($ciStart -ge 0) -and ($ciText.Contains('Get-ClipboardFormatPlan')) -and
+    (-not $ciText.Contains('Save-ClipboardState')) -and (-not $ciText.Contains('GetText(')) -and
+    (-not $ciText.Contains('GetImage(')) -and (-not $ciText.Contains('Remove-Item')) -and
+    (-not $ciText.Contains('Set-Clipboard')))
 
   # ---------- unit: v1.5.2 WP-5 confusable fold is a marked SECOND pass --------
   # audit R-10: OCR reads 'QXHELLO123' as 'QXHELL01231' and 'DTX-AuditInput' as

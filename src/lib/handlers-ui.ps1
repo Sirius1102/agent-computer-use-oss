@@ -532,6 +532,253 @@ function Invoke-Handler-uia-settext([string]$Cmd, [string[]]$Rest, [ref]$SkipTai
       "set text via $via on element '$nm': wrote $($text.Length) chars, readback match=True"
 }
 
+# ---------------------------------------------------------------------------
+# CU-OPS package E (v4.6.0): UIA semantic state and semantic actions.
+# The read side answers "what does this control expose RIGHT NOW" - one line per
+# pattern, and a pattern that is absent says so instead of being omitted. The act
+# side acts ONLY through the pattern it names and verifies the state afterwards;
+# a missing pattern, a read-only range, a stale element or an out-of-bounds value
+# is a refusal that changed nothing, never a fallback click.
+# ---------------------------------------------------------------------------
+function Get-UiaPatternOrNull($el, $pattern) {
+  try { return $el.GetCurrentPattern($pattern) } catch { return $null }
+}
+
+function Get-UiaElementLabel($el) {
+  $nm = ''
+  try { $nm = $el.Current.Name } catch { }
+  if ("$nm".Length -eq 0) { $nm = '(unnamed)' }
+  $ct = ''
+  try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+  return ($ct + " '" + $nm + "'")
+}
+
+function Get-UiaToggleState($el) {
+  $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
+  if ($null -eq $tp) { return $null }
+  return [string]$tp.Current.ToggleState
+}
+
+function Get-UiaRangeInfo($el) {
+  $rp = Get-UiaPatternOrNull $el ([System.Windows.Automation.RangeValuePattern]::Pattern)
+  if ($null -eq $rp) { return $null }
+  $ci = $rp.Current
+  return @{ Value = $ci.Value; Min = $ci.Minimum; Max = $ci.Maximum; ReadOnly = [bool]$ci.IsReadOnly }
+}
+
+function Format-UiaStateLines($el, [bool]$withText) {
+  $lines = New-Object System.Collections.ArrayList
+  $ct = ''
+  try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+  $nm = ''
+  try { $nm = $el.Current.Name } catch { }
+  $en = $null; $off = $null; $pw = $null
+  try { $en = [bool]$el.Current.IsEnabled } catch { }
+  try { $off = [bool]$el.Current.IsOffscreen } catch { }
+  try { $pw = [bool]$el.Current.IsPassword } catch { }
+  $ident = ''
+  try { $ident = [string]$el.Current.AutomationId } catch { }
+  [void]$lines.Add("element: $ct  name='" + $nm + "'  automationId='" + $ident + "'")
+  [void]$lines.Add("enabled=" + $(if ($null -eq $en) { 'unknown' } else { $en.ToString().ToLower() }) + "  offscreen=" + $(if ($null -eq $off) { 'unknown' } else { $off.ToString().ToLower() }) + "  password=" + $(if ($null -eq $pw) { 'unknown' } else { $pw.ToString().ToLower() }))
+  $tg = Get-UiaToggleState $el
+  if ($null -eq $tg) { [void]$lines.Add('toggle: no TogglePattern') } else { [void]$lines.Add('toggle: ' + $tg) }
+  $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+  if ($null -eq $si) { [void]$lines.Add('selection: no SelectionItemPattern') } else { [void]$lines.Add('selection: isSelected=' + ([bool]$si.Current.IsSelected).ToString().ToLower()) }
+  $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+  if ($null -eq $ec) { [void]$lines.Add('expand: no ExpandCollapsePattern') } else { [void]$lines.Add('expand: ' + [string]$ec.Current.ExpandCollapseState) }
+  $rg = Get-UiaRangeInfo $el
+  if ($null -eq $rg) { [void]$lines.Add('range: no RangeValuePattern') } else {
+    [void]$lines.Add('range: value=' + $rg.Value + ' min=' + $rg.Min + ' max=' + $rg.Max + ' readonly=' + $rg.ReadOnly.ToString().ToLower())
+  }
+  $vp = Get-UiaPatternOrNull $el ([System.Windows.Automation.ValuePattern]::Pattern)
+  if ($null -eq $vp) { [void]$lines.Add('value: no ValuePattern') } else {
+    $ro = $null
+    try { $ro = [bool]$vp.Current.IsReadOnly } catch { }
+    if ($pw) {
+      [void]$lines.Add('value: (password field - value not read)  writable=' + $(if ($null -eq $ro) { 'unknown' } else { (-not $ro).ToString().ToLower() }))
+    } else {
+      $val = ''
+      try { $val = [string]$vp.Current.Value } catch { }
+      [void]$lines.Add('value: ' + $val.Length + ' chars  writable=' + $(if ($null -eq $ro) { 'unknown' } else { (-not $ro).ToString().ToLower() }) + $(if ($withText) { "  text='" + $val + "'" } else { '  (pass --text to print it)' }))
+    }
+  }
+  $tx = Get-UiaPatternOrNull $el ([System.Windows.Automation.TextPattern]::Pattern)
+  if ($null -eq $tx) { [void]$lines.Add('text: no TextPattern') } else {
+    $snippet = ''
+    $total = 0
+    try {
+      $snippet = [string]$tx.DocumentRange.GetText(200)
+      $total = ([string]$tx.DocumentRange.GetText(-1)).Length
+    } catch { $snippet = '' }
+    if ($pw) { [void]$lines.Add('text: (password field - text not read)') }
+    else { [void]$lines.Add('text: ' + $total + ' chars' + $(if ($withText) { "  text='" + [regex]::Replace($snippet, '\s+', ' ') + "'" } else { '  (pass --text to print it)' })) }
+  }
+  $sc = Get-UiaPatternOrNull $el ([System.Windows.Automation.ScrollItemPattern]::Pattern)
+  [void]$lines.Add('scrollItem: ' + $(if ($null -eq $sc) { 'no ScrollItemPattern' } else { 'ScrollItemPattern' }))
+  return @($lines)
+}
+
+function Invoke-Handler-uia-state([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'uia-state'
+      $p = $own.Rest
+      if (@($p).Count -lt 2) { throw 'usage: uia-state <sel> <nameSub> [--text]' }
+      $w = Resolve-Window $p[0]
+      if (-not $w) { throw (Format-WindowMissMessage $p[0]) }
+      $rr = Uia-Roots $w
+      if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid) - this target exposes no UIA tree" }
+      $el = Uia-Find $rr.Roots $p[1] ''
+      if (-not $el) { throw "no element matching: $($p[1]) - re-read with uia-tree / uia-find; nothing was changed" }
+      $withText = [bool]$own.Values['--text']
+      if ($script:Json) {
+        $tg = Get-UiaToggleState $el
+        $rg = Get-UiaRangeInfo $el
+        $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+        $vp = Get-UiaPatternOrNull $el ([System.Windows.Automation.ValuePattern]::Pattern)
+        $nm = ''; try { $nm = [string]$el.Current.Name } catch { }
+        $ct = ''; try { $ct = $el.Current.ControlType.ProgrammaticName -replace 'ControlType\.', '' } catch { }
+        $pw = $null; try { $pw = [bool]$el.Current.IsPassword } catch { }
+        [pscustomobject]@{
+          pid = $w.Pid; title = $w.Title; type = $ct; name = $nm; password = $pw
+          toggle = $tg
+          selected = $(if ($null -eq $si) { $null } else { [bool]$si.Current.IsSelected })
+          expand = $(if ($null -eq $ec) { $null } else { [string]$ec.Current.ExpandCollapseState })
+          range = $rg
+          value = $(if ($null -eq $vp -or $pw) { $null } elseif ($withText) { [string]$vp.Current.Value } else { $null })
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        "target: pid=$($w.Pid) title='$($w.Title)'"
+        Format-UiaStateLines $el $withText
+      }
+}
+
+function Invoke-Handler-uia-do([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'uia-do'
+      $p = @($own.Rest)
+      if ($p.Count -lt 3) { throw 'usage: uia-do <toggle|toggle-on|toggle-off|select|add-select|remove-select|expand|collapse|scroll-into-view|range-set> <sel> <nameSub> [value]' }
+      $action = [string]$p[0]
+      $known = @('toggle', 'toggle-on', 'toggle-off', 'select', 'add-select', 'remove-select', 'expand', 'collapse', 'scroll-into-view', 'range-set')
+      if ($action -notin $known) { throw ("uia-do: unknown action '" + $action + "' - known: " + ($known -join ', ') + "; nothing was changed") }
+      if ($action -eq 'range-set' -and $p.Count -lt 4) { throw 'usage: uia-do range-set <sel> <nameSub> <value>' }
+      if ($action -ne 'range-set' -and $p.Count -gt 3) { throw ("uia-do " + $action + ": takes exactly <sel> <nameSub>, got extra argument '" + $p[3] + "'; nothing was changed") }
+      $w = Resolve-Window $p[1]
+      if (-not $w) { throw (Format-WindowMissMessage $p[1]) }
+      $rr = Uia-Roots $w
+      if ($rr.Roots.Count -lt 1) { throw "no UIA root for pid $($w.Pid) - this target exposes no UIA tree" }
+      $el = Uia-Find $rr.Roots $p[2] ''
+      if (-not $el) { throw "no element matching: $($p[2]) - re-read with uia-tree / uia-find; nothing was changed" }
+      $label = Get-UiaElementLabel $el
+      # CU-OPS package E (v4.6.1): a disabled element keeps its patterns, so the old code could
+      # call Toggle/Select on a greyed-out control and report a provider no-op as a success.
+      # Refuse BEFORE any pattern call: disabled is its own answer, not a missing-pattern error.
+      $enabledNow = $null
+      try { $enabledNow = [bool]$el.Current.IsEnabled } catch { }
+      if ($enabledNow -eq $false) { throw ("uia-do " + $action + ": " + $label + " is disabled (enabled=false) - nothing was changed; enable it first or pick another control") }
+      $echo = ''
+      # Every branch acts once, then reads the state back; a failed read-back is an
+      # error, not a success story.
+      if ($action -in @('toggle', 'toggle-on', 'toggle-off')) {
+        $tp = Get-UiaPatternOrNull $el ([System.Windows.Automation.TogglePattern]::Pattern)
+        if ($null -eq $tp) { throw ("uia-do " + $action + ": " + $label + " exposes no TogglePattern - nothing was changed; the control is not a toggle") }
+        $before = [string]$tp.Current.ToggleState
+        if ($action -eq 'toggle-on' -and $before -eq 'On') { $echo = 'already On (no toggle sent)' }
+        elseif ($action -eq 'toggle-off' -and $before -eq 'Off') { $echo = 'already Off (no toggle sent)' }
+        else {
+          $tp.Toggle()
+          $after = [string]$tp.Current.ToggleState
+          if ($action -eq 'toggle') { $echo = 'toggled ' + $before + ' -> ' + $after }
+          elseif ($action -eq 'toggle-on') {
+            if ($after -ne 'On') { throw ("uia-do toggle-on: " + $label + " reports " + $after + " after Toggle (an indeterminate toggle may need two calls)") }
+            $echo = 'toggled ' + $before + ' -> On'
+          } else {
+            if ($after -ne 'Off') { throw ("uia-do toggle-off: " + $label + " reports " + $after + " after Toggle (an indeterminate toggle may need two calls)") }
+            $echo = 'toggled ' + $before + ' -> Off'
+          }
+        }
+      } elseif ($action -eq 'select') {
+        $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        if ($null -eq $si) { throw ("uia-do select: " + $label + " exposes no SelectionItemPattern - nothing was changed") }
+        if ([bool]$si.Current.IsSelected) { $echo = 'already selected (no select sent)' }
+        else {
+          $si.Select()
+          if (-not [bool]$si.Current.IsSelected) { throw ("uia-do select: " + $label + " still reports isSelected=false after Select") }
+          $echo = 'selected (readback isSelected=true)'
+        }
+      } elseif ($action -in @('add-select', 'remove-select')) {
+        # Multi-select needs its OWN pattern calls: Select() on a second item in a Multiple-mode
+        # list replaces the selection, so "select the second item too" cannot be expressed with it.
+        $si = Get-UiaPatternOrNull $el ([System.Windows.Automation.SelectionItemPattern]::Pattern)
+        if ($null -eq $si) { throw ("uia-do " + $action + ": " + $label + " exposes no SelectionItemPattern - nothing was changed") }
+        $wasSel = [bool]$si.Current.IsSelected
+        if ($action -eq 'add-select') {
+          if ($wasSel) { $echo = 'already selected (nothing sent)' }
+          else {
+            $si.AddToSelection()
+            if (-not [bool]$si.Current.IsSelected) { throw ("uia-do add-select: " + $label + " still reports isSelected=false after AddToSelection") }
+            $echo = 'added to selection (readback isSelected=true)'
+          }
+        } else {
+          if (-not $wasSel) { $echo = 'already not selected (nothing sent)' }
+          else {
+            $si.RemoveFromSelection()
+            if ([bool]$si.Current.IsSelected) { throw ("uia-do remove-select: " + $label + " still reports isSelected=true after RemoveFromSelection") }
+            $echo = 'removed from selection (readback isSelected=false)'
+          }
+        }
+      } elseif ($action -in @('expand', 'collapse')) {
+        $ec = Get-UiaPatternOrNull $el ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+        if ($null -eq $ec) { throw ("uia-do " + $action + ": " + $label + " exposes no ExpandCollapsePattern - nothing was changed") }
+        $want = if ($action -eq 'expand') { 'Expanded' } else { 'Collapsed' }
+        $before = [string]$ec.Current.ExpandCollapseState
+        if ($before -eq $want) { $echo = 'already ' + $want + ' (nothing sent)' }
+        else {
+          if ($action -eq 'expand') { $ec.Expand() } else { $ec.Collapse() }
+          $after = [string]$ec.Current.ExpandCollapseState
+          if ($after -ne $want) { throw ("uia-do " + $action + ": " + $label + " reports " + $after + " after the call") }
+          # v4.6.1: spell the past tense explicitly. The old 'expand' + 'd' shape printed
+          # "expandd" in the receipt (measured 13:02 on the WPF combo).
+          $echo = $(if ($action -eq 'expand') { 'expanded' } else { 'collapsed' }) + ' ' + $before + ' -> ' + $after
+        }
+      } elseif ($action -eq 'scroll-into-view') {
+        $sc = Get-UiaPatternOrNull $el ([System.Windows.Automation.ScrollItemPattern]::Pattern)
+        if ($null -eq $sc) { throw ("uia-do scroll-into-view: " + $label + " exposes no ScrollItemPattern - nothing was changed") }
+        # v4.6.1: the old echo said "no state to read back". IsOffscreen IS that state, so the
+        # scroll is now proven rather than asserted: a provider that accepts ScrollIntoView and
+        # leaves the item off screen is an error, not a success.
+        $offBefore = $null
+        try { $offBefore = [bool]$el.Current.IsOffscreen } catch { }
+        if ($null -eq $offBefore) { throw ("uia-do scroll-into-view: " + $label + " would not report IsOffscreen - the scroll cannot be verified; nothing was changed") }
+        if (-not $offBefore) {
+          $echo = 'already on screen (offscreen=false, no scroll sent)'
+        } else {
+          $sc.ScrollIntoView()
+          $offAfter = $null
+          try { $offAfter = [bool]$el.Current.IsOffscreen } catch { }
+          if ($null -eq $offAfter) { throw ("uia-do scroll-into-view: " + $label + " would not report IsOffscreen after ScrollIntoView - the scroll is unverified") }
+          if ($offAfter) { throw ("uia-do scroll-into-view: " + $label + " still reports offscreen=true after ScrollIntoView (the provider accepted the call but did not bring it on screen)") }
+          $echo = 'scrolled into view (offscreen: true -> false, read back)'
+        }
+      } else {
+        # range-set
+        $rp = Get-UiaPatternOrNull $el ([System.Windows.Automation.RangeValuePattern]::Pattern)
+        if ($null -eq $rp) { throw ("uia-do range-set: " + $label + " exposes no RangeValuePattern - nothing was changed") }
+        if ([bool]$rp.Current.IsReadOnly) { throw ("uia-do range-set: " + $label + " reports IsReadOnly=true - nothing was changed") }
+        $val = 0.0
+        if (-not [double]::TryParse([string]$p[3], [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$val)) {
+          throw ("uia-do range-set: '" + $p[3] + "' is not a number; nothing was changed")
+        }
+        $mn = [double]$rp.Current.Minimum; $mx = [double]$rp.Current.Maximum
+        if ($val -lt $mn -or $val -gt $mx) { throw ("uia-do range-set: " + $val + " is outside the control's range " + $mn + ".." + $mx + " - nothing was changed (no clamping)") }
+        $rp.SetValue($val)
+        $after = [double]$rp.Current.Value
+        if ([math]::Abs($after - $val) -gt 0.000001) { throw ("uia-do range-set: readback " + $after + " != requested " + $val + " for " + $label) }
+        $echo = 'range value ' + $after + ' (range ' + $mn + '..' + $mx + ', readback match=True)'
+      }
+      Log-Action @($p) "pid=$($w.Pid) title='$($w.Title)' element=$label action=$action" $Cmd
+      "uia-do $action on $label`: $echo"
+}
+
+
 # v4.4.0 (A-15): type - the case body, verbatim
 function Invoke-Handler-type([string]$Cmd, [string[]]$Rest) {
       # type [--to <sel>] <text...> [--verify] [--guard-text <s>|--guard-region x,y,w,h=s] [--force]
@@ -646,7 +893,334 @@ function Invoke-Handler-keys([string]$Cmd, [string[]]$Rest) {
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
 }
 
-# v4.4.0 (A-15): ime - the case body, verbatim
+# CU-OPS-COMPLETE-20261026-01 (package C): native key gestures.
+#
+# keys keeps SendKeys verbatim - its '^v'/'%{F4}' syntax is not reinterpreted here, because
+# silently changing what an existing spec means is exactly the break this package was told
+# to avoid. The native entry point is a NEW command with its own grammar:
+#
+#   key ctrl+shift+t        press ctrl, press shift, tap t, release shift, release ctrl
+#   key f5 --repeat 3       tap F5 three times
+#   key enter --hold 800    hold Enter for 800 ms, then release (one bounded hold)
+#
+# Every press is released inside this call. SendInput reports how many events it inserted,
+# and it does not reset an already-down key, so a key someone else holds is refused instead
+# of being pressed or released by us. The Windows key is accepted for real shortcuts but a
+# small list of session-wide sequences (lock, show desktop, Run dialog, ...) is refused:
+# this tool will not lock the owner's screen or rearrange their desktop to prove a green.
+$script:KeyVk = @{
+  'enter' = @{ Vk = 0x0D; Ext = $false }; 'return' = @{ Vk = 0x0D; Ext = $false }
+  'tab' = @{ Vk = 0x09; Ext = $false }; 'esc' = @{ Vk = 0x1B; Ext = $true }; 'escape' = @{ Vk = 0x1B; Ext = $true }
+  'space' = @{ Vk = 0x20; Ext = $false }; 'backspace' = @{ Vk = 0x08; Ext = $false }; 'bs' = @{ Vk = 0x08; Ext = $false }
+  'delete' = @{ Vk = 0x2E; Ext = $true }; 'del' = @{ Vk = 0x2E; Ext = $true }
+  'insert' = @{ Vk = 0x2D; Ext = $true }; 'ins' = @{ Vk = 0x2D; Ext = $true }
+  'home' = @{ Vk = 0x24; Ext = $true }; 'end' = @{ Vk = 0x23; Ext = $true }
+  'pageup' = @{ Vk = 0x21; Ext = $true }; 'pgup' = @{ Vk = 0x21; Ext = $true }
+  'pagedown' = @{ Vk = 0x22; Ext = $true }; 'pgdn' = @{ Vk = 0x22; Ext = $true }
+  'left' = @{ Vk = 0x25; Ext = $true }; 'up' = @{ Vk = 0x26; Ext = $true }
+  'right' = @{ Vk = 0x27; Ext = $true }; 'down' = @{ Vk = 0x28; Ext = $true }
+  'capslock' = @{ Vk = 0x14; Ext = $false }; 'numlock' = @{ Vk = 0x90; Ext = $true }; 'scrolllock' = @{ Vk = 0x91; Ext = $false }
+  'printscreen' = @{ Vk = 0x2C; Ext = $true }; 'prtsc' = @{ Vk = 0x2C; Ext = $true }
+  'pause' = @{ Vk = 0x13; Ext = $false }; 'apps' = @{ Vk = 0x5D; Ext = $true }
+  'minus' = @{ Vk = 0xBD; Ext = $false }; 'equal' = @{ Vk = 0xBB; Ext = $false }
+  'comma' = @{ Vk = 0xBC; Ext = $false }; 'period' = @{ Vk = 0xBE; Ext = $false }
+  'slash' = @{ Vk = 0xBF; Ext = $false }; 'semicolon' = @{ Vk = 0xBA; Ext = $false }
+  'quote' = @{ Vk = 0xDE; Ext = $false }; 'backslash' = @{ Vk = 0xDC; Ext = $false }
+  'grave' = @{ Vk = 0xC0; Ext = $false }
+  'add' = @{ Vk = 0x6B; Ext = $false }; 'subtract' = @{ Vk = 0x6D; Ext = $false }
+  'multiply' = @{ Vk = 0x6A; Ext = $false }; 'divide' = @{ Vk = 0x6F; Ext = $true }
+  'decimal' = @{ Vk = 0x6E; Ext = $false }
+}
+
+# Pure: one key name -> @{ Vk; Ext }. Letters, digits and F1-F24 are derived, not listed.
+function Resolve-KeyName([string]$name) {
+  $n = ("$name").Trim().ToLowerInvariant()
+  if (-not $n) { throw 'key: empty key name' }
+  if ($n.Length -eq 1) {
+    $c = [int][char]$n
+    if ($n -cmatch '^[a-z]$') { return @{ Vk = 0x41 + ($c - [int][char]'a'); Ext = $false } }
+    if ($n -match '^[0-9]$') { return @{ Vk = 0x30 + ($c - [int][char]'0'); Ext = $false } }
+  }
+  if ($n -match '^f([0-9]{1,2})$') {
+    $num = [int]$Matches[1]
+    if ($num -lt 1 -or $num -gt 24) { throw "key: '$name' is out of range - F1..F24 only" }
+    return @{ Vk = 0x70 + ($num - 1); Ext = $false }
+  }
+  if ($n -match '^numpad([0-9])$') { return @{ Vk = 0x60 + [int]$Matches[1]; Ext = $false } }
+  if ($script:KeyVk.ContainsKey($n)) { return $script:KeyVk[$n] }
+  throw "key: unknown key name '$name' - accepted: a-z, 0-9, F1..F24, numpad0..9, enter, tab, esc, space, backspace, delete, insert, home, end, pageup, pagedown, left, up, right, down, capslock, numlock, scrolllock, printscreen, pause, apps, and the punctuation names in 'desktop.ps1 help key'; no key was sent"
+}
+
+# Pure: 'ctrl+shift+t' -> @{ Mods = @('ctrl','shift'); Key = 't'; Spec = ... }. Refuses the
+# session-wide sequences and any repeat of one modifier, before any input exists.
+function Resolve-KeyCombo([string]$combo) {
+  $parts = @(("$combo").Trim() -split '\+')
+  if ($parts.Count -eq 0 -or -not $parts[$parts.Count - 1]) { throw "key: '$combo' has no base key - write e.g. ctrl+shift+t" }
+  $base = $parts[$parts.Count - 1]
+  $mods = @()
+  for ($i = 0; $i -lt $parts.Count - 1; $i++) {
+    $m = $parts[$i].Trim().ToLowerInvariant()
+    if ($m -eq 'control') { $m = 'ctrl' }
+    if ($m -eq 'windows') { $m = 'win' }
+    if ($m -notin @('ctrl', 'shift', 'alt', 'win')) { throw "key: unknown modifier '$($parts[$i])' in '$combo' - accepted: ctrl, shift, alt, win" }
+    if ($mods -contains $m) { throw "key: modifier '$m' appears twice in '$combo'" }
+    $mods += $m
+  }
+  $baseInfo = Resolve-KeyName $base
+  $bn = $base.Trim().ToLowerInvariant()
+  if (($mods -contains 'ctrl') -and ($mods -contains 'alt') -and ($mods -contains 'delete' -or $bn -eq 'delete' -or $bn -eq 'del')) {
+    throw "key: Ctrl+Alt+Del is the Secure Attention Sequence - it is handled by the OS/security desktop and cannot be synthesised by SendInput; this tool refuses instead of pretending it can"
+  }
+  if ($mods -contains 'win') {
+    if ($bn -in @('l', 'd', 'u', 'r', 'q', 'w', 'tab', 'esc', 'escape', 'f4')) {
+      throw "key: Win+$bn acts on the whole session (lock / desktop / utility / Run / task view), not on a window; this tool will not prove a capability by locking or rearranging the owner's desktop. Ctrl/Shift/Alt are the supported gesture modifiers"
+    }
+  }
+  return @{ Mods = $mods; Key = $bn; Base = $baseInfo; Spec = $combo }
+}
+
+# Observed physical state, read-only. GetAsyncKeyState is the same read the mouse family uses.
+function Get-InputStateLine {
+  $names = @(
+    @{ N = 'ctrl'; Vk = 0x11 }, @{ N = 'shift'; Vk = 0x10 }, @{ N = 'alt'; Vk = 0x12 }, @{ N = 'win'; Vk = 0x5B },
+    @{ N = 'capslock'; Vk = 0x14 }, @{ N = 'numlock'; Vk = 0x90 }, @{ N = 'scrolllock'; Vk = 0x91 }
+  )
+  $down = @()
+  foreach ($k in $names) { if (([DT]::IsVkDown([int]$k.Vk)) -ne 0) { $down += $k.N } }
+  $btn = @()
+  foreach ($b in @('left', 'right', 'middle', 'back', 'forward')) {
+    try { if (Get-MouseButtonDown $b) { $btn += $b } } catch { }
+  }
+  return ("down=" + $(if ($down.Count) { $down -join '+' } else { 'none' }) + " buttons=" + $(if ($btn.Count) { $btn -join '+' } else { 'none' }))
+}
+
+# The ownership ledger: written while THIS tool has a key down, removed when THAT KEY is
+# released. A hard-killed process cannot run its finally block, so the file is what lets a
+# later call distinguish "this tool may still be holding X" from "someone else is holding X".
+# Nothing is released on a guess: key-release only touches keys named here.
+#
+# CU-OPS-ADJ-04/05 (v4.6.1): one flat record PER KEY with its own vk/ext/owner/state, so a
+# modifier (ctrl/shift/alt/win) can be written and read back without going through
+# Resolve-KeyName (which only knows base keys), and so clearing one released key cannot
+# erase another key's recovery record. Legacy name-list entries are still read.
+function Get-KeyLedgerPath {
+  $dir = Join-Path $env:TEMP 'agent-computer-use'
+  return (Join-Path $dir 'key-held.json')
+}
+
+# Modifier names resolve here; everything else is a base key.
+function Resolve-LedgerKey([string]$name) {
+  switch (("$name").Trim().ToLowerInvariant()) {
+    'ctrl' { return @{ Vk = 0x11; Ext = $false } }
+    'control' { return @{ Vk = 0x11; Ext = $false } }
+    'shift' { return @{ Vk = 0x10; Ext = $false } }
+    'alt' { return @{ Vk = 0x12; Ext = $false } }
+    'win' { return @{ Vk = 0x5B; Ext = $true } }
+    'windows' { return @{ Vk = 0x5B; Ext = $true } }
+  }
+  return (Resolve-KeyName $name)
+}
+
+# Normalized: always @{ pid; name; vk; ext; state; combo; at }, legacy entries expanded.
+function Read-KeyLedger {
+  $p = Get-KeyLedgerPath
+  if (-not (Test-Path -LiteralPath $p)) { return @() }
+  try {
+    $raw = Get-Content -LiteralPath $p -Raw -ErrorAction Stop
+    $obj = $raw | ConvertFrom-Json
+    $out = @()
+    foreach ($e in @($obj.entries)) {
+      if ($null -eq $e) { continue }
+      $nm = ''
+      if ($e.PSObject.Properties['name']) { $nm = [string]$e.name }
+      if ($nm -ne '') {
+        $out += @{ pid = [int]$e.pid; name = $nm; vk = [int]$e.vk; ext = [bool]$e.ext; state = [string]$e.state; combo = [string]$e.combo; at = [string]$e.at }
+        continue
+      }
+      if ($e.PSObject.Properties['keys']) {
+        foreach ($k in @($e.keys)) {
+          $info = $null
+          try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
+          $out += @{
+            pid = [int]$e.pid; name = [string]$k
+            vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
+            state = 'down'; combo = [string]$e.combo; at = [string]$e.at
+          }
+        }
+      }
+    }
+    return $out
+  } catch { return @() }
+}
+
+function Write-KeyLedger($entries) {
+  $p = Get-KeyLedgerPath
+  $dir = Split-Path -Parent $p
+  if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  $obj = @{ written_at = (Get-Date).ToString('o'); pid = $PID; entries = @($entries) }
+  Set-Content -LiteralPath $p -Value ($obj | ConvertTo-Json -Depth 5 -Compress) -Encoding UTF8
+}
+
+function Add-KeyLedger($entries) {
+  Write-KeyLedger (@(Read-KeyLedger) + @($entries))
+}
+
+# Remove ONLY the records for one key owned by one pid; other keys/owners survive.
+function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid) {
+  $all = @(Read-KeyLedger)
+  $keep = @($all | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $ownerPid)) })
+  if ($keep.Count -eq 0) { Clear-KeyLedger } else { Write-KeyLedger $keep }
+}
+
+function Clear-KeyLedger {
+  $p = Get-KeyLedgerPath
+  if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+}
+
+# The case body of `key`. Runs parse -> refuse -> one owned gesture -> receipt.
+function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
+  $own = Strip-OwnFlags $Rest 'key'
+  $p = Split-Target @($own.Rest) 'key'
+  if ($p.Words.Count -lt 1) { throw 'usage: key [--to <sel>] <combo> [--repeat n] [--interval ms] [--hold ms] [--guard-text <s>] [--expect <needle>] [--force]   e.g. key ctrl+shift+t / key f5 --repeat 3 / key enter --hold 800' }
+  $combo = Resolve-KeyCombo $p.Words[0]
+  # bounds are the promise the echo makes; they are checked before any input exists
+  $repeat = [int]$own.Values['--repeat']; if ($repeat -lt 1 -or $repeat -gt 50) { throw "key: --repeat must be 1..50 (got $repeat); no key was sent" }
+  $interval = [int]$own.Values['--interval']; if ($interval -lt 0 -or $interval -gt 5000) { throw "key: --interval must be 0..5000 ms (got $interval); no key was sent" }
+  $hold = [int]$own.Values['--hold']; if ($hold -lt 0 -or $hold -gt 20000) { throw "key: --hold must be 0..20000 ms (got $hold); no key was sent" }
+  $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+  Emit-ResolveNote
+  Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+  $vks = @()
+  foreach ($m in $combo.Mods) {
+    $vk = switch ($m) { 'ctrl' { 0x11 } 'shift' { 0x10 } 'alt' { 0x12 } 'win' { 0x5B } }
+    if (([DT]::IsVkDown([int]$vk)) -ne 0) {
+      throw "key: modifier '$m' is already held down (not by this call); this tool will not press or release a key it does not own - let go of it first. Observed: $(Get-InputStateLine); no key was sent"
+    }
+    $vks += @{ Name = $m; Vk = [int]$vk; Ext = ($m -eq 'win') }
+  }
+  if (([DT]::IsVkDown([int]$combo.Base.Vk)) -ne 0) {
+    throw "key: '$($combo.Key)' is already held down (not by this call); refusing to press or release it. Observed: $(Get-InputStateLine); no key was sent"
+  }
+  Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' combo=$($combo.Spec) repeat=$repeat hold=${hold}ms interval=${interval}ms" $Cmd
+  $pressed = @()
+  $baseDown = $false
+  $inserted = 0
+  $fail = ''
+  $releaseFail = @()
+  $intent = @()
+  foreach ($v in $vks) {
+    $intent += @{ pid = $PID; name = $v.Name; vk = [int]$v.Vk; ext = [bool]$v.Ext; state = 'down'; combo = $combo.Spec; at = (Get-Date).ToString('o') }
+  }
+  $intent += @{ pid = $PID; name = $combo.Key; vk = [int]$combo.Base.Vk; ext = [bool]$combo.Base.Ext; state = 'down'; combo = $combo.Spec; at = (Get-Date).ToString('o') }
+  Add-KeyLedger $intent
+  try {
+    foreach ($v in $vks) {
+      $n = [uint32][DT]::SendKeyInput([int]$v.Vk, $false, [bool]$v.Ext)
+      if ($n -ne 1) { throw "key: modifier '$($v.Name)' DOWN: SendInput inserted $n of 1; the gesture did not run" }
+      $pressed += $v
+      $inserted++
+      Start-Sleep -Milliseconds 30
+    }
+    for ($r = 1; $r -le $repeat; $r++) {
+      $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $false, [bool]$combo.Base.Ext)
+      if ($n -ne 1) { throw "key: '$($combo.Key)' DOWN (repeat $r of $repeat): SendInput inserted $n of 1" }
+      $baseDown = $true
+      $inserted++
+      Start-Sleep -Milliseconds $hold
+      $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
+      if ($n -ne 1) { throw "key: '$($combo.Key)' UP (repeat $r of $repeat): SendInput inserted $n of 1 - the key may still be down; its ledger record is kept, run 'key-release'" }
+      $baseDown = $false
+      $inserted++
+      if ($r -lt $repeat -and $interval -gt 0) { Start-Sleep -Milliseconds $interval }
+    }
+  } catch {
+    $fail = $_.Exception.Message
+  } finally {
+    $rel = @()
+    # Every modifier this call pressed is released and COUNTED, and its UP is verified:
+    # a swallowed failed UP used to be receipted as "released" (CU-OPS-ADJ-03/ADJ-04).
+    $pos = @($pressed).Count - 1
+    while ($pos -ge 0) {
+      $v = $pressed[$pos]
+      $upOk = $false
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$v.Vk, $true, [bool]$v.Ext)
+        if ($n -eq 1) { $upOk = $true; $inserted++ } else { $releaseFail += "$($v.Name)(inserted $n/1)" }
+      } catch { $releaseFail += "$($v.Name)($($_.Exception.Message))" }
+      if ($upOk) { $rel += $v.Name; Remove-KeyLedgerRecords $v.Name $PID }
+      $pos--
+    }
+    # The base key's record is only owed while it is actually down; a failed base UP keeps
+    # it so key-release can still recover it (CU-OPS-ADJ-04).
+    if (-not $baseDown) { Remove-KeyLedgerRecords $combo.Key $PID }
+    Start-Sleep -Milliseconds 40
+    $script:LastKeyReceipt = ("combo=" + $combo.Spec + " mods=" + $(if ($combo.Mods.Count) { $combo.Mods -join '+' } else { 'none' }) + " repeat=$repeat hold=${hold}ms interval=${interval}ms SendInput-inserted=$inserted released=" + $(if ($rel.Count) { $rel -join '+' } else { 'none' }))
+  }
+  if ($releaseFail.Count -gt 0) {
+    $msg = "key: modifier UP failed for: $($releaseFail -join ', ') - those keys may still be down and their ledger records are kept; run 'key-release'"
+    if ($fail) { throw ($fail + ' | ' + $msg) }
+    throw $msg
+  }
+  if ($fail) { throw ($fail + " (any key still down is kept in the ownership ledger: run 'key-state' / 'key-release'; observed now: $(Get-InputStateLine))") }
+  Start-Sleep -Milliseconds 250
+  $warn = Test-PostSendForeground $target $p.Force
+  "key $($combo.Spec): target pid=$($target.Pid) title='$($target.Title)'  $($script:LastKeyReceipt)"
+  Invoke-ActionExpectation $p $target 'sent key'
+  if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
+}
+
+# Read-only: what is down right now, and what (if anything) this tool has on record.
+function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
+  $ledger = @(Read-KeyLedger)
+  $owned = @()
+  foreach ($e in $ledger) {
+    # vk comes from the record itself: modifiers are ledger keys too, and Resolve-KeyName
+    # would reject ctrl/shift/alt/win (CU-OPS-ADJ-05).
+    $vk = [int]$e.vk
+    if ($vk -ne 0 -and ([DT]::IsVkDown($vk) -ne 0)) { $owned += "$($e.name)(pid=$($e.pid))" }
+  }
+  "key-state: $(Get-InputStateLine)  owned-held=$(if ($owned.Count) { $owned -join ',' } else { 'none' })  ledger=$(if ($ledger.Count) { $ledger.Count.ToString() + ' entr(y/ies)' } else { 'absent' })"
+  "note: every key this tool presses is released inside the same call; an entry here can only outlive a killed process. 'key-release' touches only keys named in the ledger."
+}
+
+# Releases only keys the ledger names AND that are still down. Everything else is reported.
+function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
+  # The ledger records keys THIS tool pressed and has not released yet. Only those - and only
+  # if they are still physically down - are released; anything else is reported, not touched.
+  # Release is preview by default: the ledger is the only thing that separates "ours" from
+  # "the user is holding this", and a stray release could undo somebody else's chord.
+  $own = Strip-OwnFlags $Rest 'key-release'
+  if (@($own.Rest).Count -gt 0) { throw "key-release: unexpected argument '$($own.Rest[0])' - it takes no operand, only --go" }
+  $go = [bool]$own.Values['--go']
+  $ledger = @(Read-KeyLedger)
+  if ($ledger.Count -eq 0) {
+    "key-release: no ownership ledger exists - this tool has no key on record as held, so there is nothing it may release. Observed: $(Get-InputStateLine)"
+    return
+  }
+  $acts = @()
+  foreach ($e in $ledger) {
+    $vk = [int]$e.vk
+    if ($vk -eq 0) { $acts += "$($e.name) = unreadable record (skipped, recorded pid=$($e.pid))"; continue }
+    if (([DT]::IsVkDown($vk)) -ne 0) { $acts += "$($e.name) = still down (recorded pid=$($e.pid))" } else { $acts += "$($e.name) = already up" }
+  }
+  "key-release" + $(if ($go) { '' } else { ' (DRY-RUN: add --go to release; nothing was sent)' }) + ":"
+  $acts | ForEach-Object { "  $_" }
+  if (-not $go) { return }
+  $released = @()
+  $failed = @()
+  foreach ($e in $ledger) {
+    $vk = [int]$e.vk; $ext = [bool]$e.ext
+    if ($vk -eq 0) { continue }
+    if (([DT]::IsVkDown($vk)) -eq 0) { Remove-KeyLedgerRecords ([string]$e.name) ([int]$e.pid); continue }
+    try {
+      $n = [uint32][DT]::SendKeyInput($vk, $true, $ext)
+      if ($n -eq 1) { $released += [string]$e.name; Remove-KeyLedgerRecords ([string]$e.name) ([int]$e.pid) } else { $failed += "$($e.name)(inserted $n/1)" }
+    } catch { $failed += "$($e.name)($($_.Exception.Message))" }
+  }
+  "  released=" + $(if ($released.Count) { $released -join '+' } else { 'none' }) + " failed=" + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + "  observed-after=$(Get-InputStateLine)"
+  if ($failed.Count) { throw "key-release: $($failed.Count) key(s) could not be released: $($failed -join ', ')" }
+}
+
 function Invoke-Handler-ime([string]$Cmd, [string[]]$Rest) {
       # ime - read-only: which keyboard layout/IME the FOREGROUND window's
       # thread is using. ime=yes means SendKeys-based `keys` can be swallowed
@@ -662,7 +1236,7 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       # directly (SendInput Unicode) - paste stays the path for apps that only
       # accept clipboard input or for very long/multiline payloads.
       $p = Split-Target $Rest
-      if ($p.Words.Count -lt 1) { throw 'usage: paste [--to <sel>] <file> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--force]' }
+      if ($p.Words.Count -lt 1) { throw 'usage: paste [--to <sel>] <file> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--replace-clipboard] [--force]' }
       $file = $p.Words[0]
       if (-not (Test-Path $file)) { throw "file not found: $file" }
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
@@ -678,6 +1252,10 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       $bomNote = ''
       if ($readRes.HadBom) { $bomNote = ' [UTF-8 BOM stripped]' }
       $clip = Save-ClipboardState
+      # CU-OPS package G: refuse BEFORE the write when the clipboard holds content this
+      # tool cannot put back. The user's clipboard is then untouched - the same contract
+      # the guard above runs on the target window.
+      Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste'
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$file" $Cmd
       # v2.2.0 (plan doc 3): the receipt half is measured BEFORE the send so the comparison is
       # honest, and only when the payload is long enough that a chip fold is possible - a short
@@ -707,6 +1285,13 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
         Confirm-AutoExpect $auto
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
+      # CU-OPS package G (v4.6.1): the restore note is checked mechanically. The payload
+      # went out either way, but a previous clipboard that did not come back must not end
+      # with the same exit code as one that did - the user is told, and the code says so.
+      $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
+      if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
+        throw "paste: the payload WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+      }
 }
 
 # v4.4.0 (A-15): paste-file - the case body, verbatim
@@ -718,13 +1303,14 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       # needle is visible in the target window (probed incident: a guard-green
       # window whose active chat had silently switched to a private friend).
       $p = Split-Target $Rest
-      if ($p.Words.Count -lt 1) { throw 'usage: paste-file [--to <sel>] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--force]' }
+      if ($p.Words.Count -lt 1) { throw 'usage: paste-file [--to <sel>] <path> [--guard-text <s>|--guard-region x,y,w,h=s] [--expect <s>|--expect-gone <s>|--expect-region x,y,w,h=s] [--timeout s] [--interval ms] [--no-expect] [--replace-clipboard] [--force]' }
       if (-not (Test-Path -LiteralPath $p.Words[0] -PathType Leaf)) { throw "file not found: $($p.Words[0])" }
       $fi = Get-Item -LiteralPath $p.Words[0]
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       $clip = Save-ClipboardState
+      Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste-file'
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$($fi.FullName)" $Cmd
       $ok = Set-ClipboardFileDrop $fi.FullName
       if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
@@ -743,6 +1329,12 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
         Confirm-AutoExpect $auto
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
+      # CU-OPS package G (v4.6.1): same mechanical check as paste - the file went out,
+      # but a previous clipboard that did not come back is a non-zero exit, not a footnote.
+      $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
+      if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
+        throw "paste-file: the file WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+      }
 }
 
 # v4.4.0 (A-15): copy-file - the case body, verbatim

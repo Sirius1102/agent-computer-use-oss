@@ -176,8 +176,8 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
 # v3.1.0 (X-01): the action family joins it through ONE table of its own (below), so the
 # capable set is the union - a caller asking for JSON on an action gets the action envelope.
 function Get-JsonCapableCommandSet {
-  return (@('chrome-tabs', 'color-at', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'wait-stable', 'wins') +
+  return (@('chrome-tabs', 'color-at', 'capabilities', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
+    'clip-info', 'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
     @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
@@ -201,8 +201,12 @@ function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableComman
 # on record saying so); this round ships it on the Y position because the X position is the
 # owner's to call, and that conflict is registered as an open adjudication, not silently eaten.
 function Get-ActionJsonCommandSet {
+  # CU-OPS package C: the native-keyboard commands take/observe/release physical keys, so their
+  # product is the same receipt sentence the rest of this family prints - they belong in the
+  # envelope for the same reason click does (the output must be readable, not greppable).
   return @('click', 'copy-file', 'dialog-cancel', 'drag', 'drag-to', 'dblclick',
-    'find-click', 'focus', 'hover', 'imgclick', 'keys', 'menu-pick', 'move', 'open-and-pick',
+    'find-click', 'focus', 'hover', 'imgclick', 'key', 'key-release', 'key-state', 'keys',
+    'menu-pick', 'move', 'open-and-pick',
     'paste', 'paste-file', 'press-down', 'press-up', 'rclick', 'relclick', 'type', 'type-in',
     'unmap', 'wheel', 'win-close', 'win-max', 'win-min', 'win-move', 'win-restore', 'win-resize')
 }
@@ -321,7 +325,11 @@ function Test-UntrustedTextCommand([string]$cmd) { return (@(Get-UntrustedTextCo
 function Get-OwnFlagTable {
   return @{
     'hover' = @{ '--dwell' = @{ Min = 0; Max = 60000; Default = 800 } }
-    'drag' = @{ '--steps' = @{ Min = 1; Max = 200; Default = 14 }; '--hold' = @{ Min = 0; Max = 10000; Default = 120 } }
+    # CU-OPS package B: drag carries the same gesture flags as click (button and
+    # modifiers). The handler already reads both; before this entry existed the
+    # parser refused them, so a right-drag or a ctrl-drag was documented but
+    # unreachable.
+    'drag' = @{ '--steps' = @{ Min = 1; Max = 200; Default = 14 }; '--hold' = @{ Min = 0; Max = 10000; Default = 120 }; '--button' = @{ Raw = $true }; '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
     # v2.0.1 (P-3): the drag mid-state. --max-hold is watchdog 1 and the bounds are the
     # promise the echo makes, so they live in this table (handler, error text and the
     # reachability lint all read it) rather than being hardcoded in the handler.
@@ -344,9 +352,36 @@ function Get-OwnFlagTable {
     'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true } }
     'unmap' = @{ '--stale-ok' = @{ Bool = $true } }
     'type-in' = @{ '--tab' = @{ Min = 0; Max = 20; Default = 0 } }
+    # CU-OPS-COMPLETE-20261026-01 (package B): gesture flags. --mods is a verbatim spec
+    # ('ctrl+shift'); --button names the button. Both are validated by the handler BEFORE
+    # the pointer moves, and both are stripped before Split-Target (the reachability lint
+    # keys on that strip site).
+    'click' = @{ '--mods' = @{ Raw = $true }; '--button' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    'rclick' = @{ '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    'dblclick' = @{ '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    # CU-OPS package C: the native key gesture's bounded knobs. Bounds live here so the
+    # handler, its refusal text and the reachability lint all read the same numbers.
+    'key' = @{ '--repeat' = @{ Min = 1; Max = 50; Default = 1 }; '--interval' = @{ Min = 0; Max = 5000; Default = 80 }; '--hold' = @{ Min = 0; Max = 20000; Default = 0 } }
+    'key-release' = @{ '--go' = @{ Bool = $true } }
+    # CU-OPS package A: process identity + lifecycle. --exit/--window are the two DIFFERENT
+    # wait predicates; --created is the creation-time pin (verbatim ISO string); proc-kill's
+    # --go is the explicit execution switch (absent = preview).
+    'proc-wait' = @{ '--exit' = @{ Bool = $true }; '--window' = @{ Bool = $true }; '--created' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 20 }; '--interval' = @{ Min = 50; Max = 5000; Default = 400 } }
+    'proc-start' = @{ '--cwd' = @{ Raw = $true }; '--wait-window' = @{ Min = 0; Max = 600; Default = 0 } }
+    'proc-kill' = @{ '--created' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 5 }; '--go' = @{ Bool = $true } }
     # CU-REL-02..04: wheel's private modifiers. Enum/text values are checked by its handler;
     # the two verification routes are opt-in and require a concrete selected target.
-    'wheel' = @{ '--focus-first' = @{ Bool = $true }; '--at' = @{ Raw = $true }; '--unit' = @{ Raw = $true }; '--axis' = @{ Raw = $true }; '--verify-scroll' = @{ Bool = $true }; '--expect-visible-text' = @{ Raw = $true } }
+    'wheel' = @{ '--focus-first' = @{ Bool = $true }; '--at' = @{ Raw = $true }; '--unit' = @{ Raw = $true }; '--axis' = @{ Raw = $true }; '--verify-scroll' = @{ Bool = $true }; '--expect-visible-text' = @{ Raw = $true }; '--mods' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true } }
+    # CU-OPS package E: --text is the ONLY way uia-state prints a control's value/text
+    # (default is length + writability), so a password field or a private note is not
+    # echoed by accident.
+    'uia-state' = @{ '--text' = @{ Bool = $true } }
+    # CU-OPS packages D/F/H: the three new surface commands with their own values.
+    # tpl-find's --index is "absent = refuse ambiguity", so the handler keys on Present
+    # rather than a sentinel default; --scales/--region/--space/--created are verbatim.
+    'tpl-find' = @{ '--region' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true }; '--scales' = @{ Raw = $true }; '--tolerance' = @{ Min = 0; Max = 255; Default = 0 }; '--index' = @{ Min = 0; Max = 999; Default = 0 }; '--max-ms' = @{ Min = 50; Max = 60000; Default = 5000 } }
+    # wait-cond: exactly one predicate is allowed; the handler counts them and refuses 0 or 2.
+    'wait-cond' = @{ '--win' = @{ Bool = $true }; '--gone' = @{ Bool = $true }; '--foreground' = @{ Bool = $true }; '--text' = @{ Raw = $true }; '--uia' = @{ Raw = $true }; '--state' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 20 }; '--interval' = @{ Min = 50; Max = 5000; Default = 400 } }
   }
 }
 
@@ -367,6 +402,31 @@ function Get-CommandSharedMap {
     # CU-REL-03..04: wheel accepts only flags it actually consumes. In particular,
     # --allow-outside and unrelated shared readback flags do not silently disappear.
     'wheel' = @('--to', '--force', '--expect-handle', '--always-activate', '--expect-change')
+    # CU-OPS package A: the process commands hand-parse (they never call Split-Target - a
+    # proc command must not activate anything), so they route none of the shared flags.
+    'proc-list' = @()
+    'proc-info' = @()
+    'proc-wait' = @()
+    'proc-start' = @()
+    'proc-kill' = @()
+    # CU-OPS package E: uia-state/uia-do hand-parse (a read or a semantic action must not
+    # activate the window or imply a target), so they route none of the shared flags.
+    'uia-state' = @()
+    'uia-do' = @()
+    # CU-OPS packages D/F/H: tpl-find really routes only the target-binding quartet
+    # (it locates, it does not act), and the other three hand-parse with no target at all.
+    'tpl-find' = @('--to', '--force', '--expect-handle', '--always-activate')
+    'clip-info' = @()
+    'wait-cond' = @()
+    'capabilities' = @()
+    # CU-OPS package C: the native-keyboard commands parse their own arguments. key
+    # takes repeat/interval/hold (privately tabled) plus the target-binding and readback
+    # flags it really routes through Split-Target/Resolve-Target/expect; key-state and
+    # key-release take nothing shared at all - releasing what the ledger names must not
+    # imply a target or a wait.
+    'key' = @('--to', '--force', '--expect-handle', '--always-activate', '--guard-text', '--guard-region', '--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-change', '--no-expect', '--log-payload')
+    'key-state' = @()
+    'key-release' = @()
   }
 }
 
@@ -388,7 +448,8 @@ function Get-SharedFlagSet {
   return @('--to', '--force', '--verify', '--verify-timeout', '--log-payload', '--guard-text', '--guard-region',
     '--needle', '--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-handle', '--expect-region', '--expect-change', '--always-activate',
     '--no-expect', '--timeout', '--interval', '--min-line-density',
-    '--scale', '--max-tiles', '--no-tile', '--allow-outside', '--occlude', '--occlude-grid', '--allow-occluded')
+    '--scale', '--max-tiles', '--no-tile', '--allow-outside', '--occlude', '--occlude-grid', '--allow-occluded',
+    '--replace-clipboard')
 }
 
 # The shared flags that CONSUME the token after them. Needed by Strip-OwnFlags: whatever
@@ -621,10 +682,10 @@ function Get-IntArgSpec([string]$cmd) {
     'find-color'  { return @{ Indices = @(0, 1, 2, 3); Usage = 'find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n]' } }
     'assert-color' { return @{ Indices = @(0, 1); Usage = 'assert-color <x> <y> <#RRGGBB> [tol]' } }
     'move'        { return @{ Indices = @(0, 1); Usage = 'move <x> <y>' } }
-    'click'       { return @{ Indices = @(0, 1); Usage = 'click <x> <y> [--to <sel>] [--guard-text <s>] [--expect <needle>]' } }
-    'rclick'      { return @{ Indices = @(0, 1); Usage = 'rclick <x> <y> [--to <sel>] [--expect <needle>]' } }
-    'dblclick'    { return @{ Indices = @(0, 1); Usage = 'dblclick <x> <y> [--to <sel>] [--expect <needle>]' } }
-    'drag'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms]' } }
+    'click'       { return @{ Indices = @(0, 1); Usage = 'click <x> <y> [--button left|right|middle|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>] [--expect <needle>]' } }
+    'rclick'      { return @{ Indices = @(0, 1); Usage = 'rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--expect <needle>]' } }
+    'dblclick'    { return @{ Indices = @(0, 1); Usage = 'dblclick <x> <y> [--mods ctrl+shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--expect <needle>]' } }
+    'drag'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left|middle|right|back|forward] [--mods ctrl+shift] [--space screen|window|client] [--created <iso>]' } }
     # v2.0.1 (P-3): the mid-state trio. All three are coordinate-first, so the
     # positional gate must see them or a `press-down abc 20` reaches the handler.
     'press-down'  { return @{ Indices = @(0, 1); Usage = 'press-down <x> <y> [--max-hold ms] [--to <sel>]' } }

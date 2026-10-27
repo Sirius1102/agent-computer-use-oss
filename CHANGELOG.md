@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.1 - 2026-10-27
+
+- **Clipboard preservation tells the truth.** `clip-info` now reads the FORMAT LIST only: it no
+  longer calls the save path, so no text, file list or image is opened, decoded or written to a
+  temp carrier, and the "metadata only" promise is true by construction. Classification is
+  format-first: a clipboard carrying any format outside the pure allowlist is `kind=other`, and
+  `--replace-clipboard` refuses that clipboard BEFORE anything is written, naming the extra
+  formats. Restores are verified after the fact: text and file lists are read back and compared,
+  the image is compared by RGB SHA256, and the receipt maps to `ok`/`partial`/`failed`/`skipped`.
+  A failed restore now makes `paste`/`paste-file` exit non-zero instead of reporting success.
+- **`uia-do` gained the semantics it was missing, and reads them back.** `add-select` and
+  `remove-select` drive `SelectionItemPattern.AddToSelection`/`RemoveFromSelection` (a second
+  `select` on a multiple-selection list replaces the selection, so it cannot express "select this
+  too"). A DISABLED element is refused before any pattern call - the previous code could call
+  Toggle on a greyed-out control and report a provider no-op as success. `scroll-into-view` is now
+  verified: `IsOffscreen` must go true -> false, and a provider that accepts the call without
+  scrolling is an error.
+- **Six adjudicated identity/ledger defects.** Process identity is an exact creation-time match
+  with no 2s tolerance (`proc-kill` pins ONE `Process.Handle`, re-reads the creation time through
+  it, terminates and waits through it, and releases it last); modifier UP failures are no longer
+  receipted as success; a failed base-key UP keeps its ledger record; the ledger resolves
+  `ctrl`/`shift`/`alt`/`win`; and a new mouse button that goes down is released in a `finally`.
+- **Scope.** Clipboard, UIA and lifecycle identity paths above; no command was renamed and no
+  guard was loosened. Offline check total 1038 -> 1044.
+
+## v4.6.0 - 2026-10-27
+
+- **Eight capability gaps closed in the public tree.** `proc-list`/`proc-info`/`proc-start`/
+  `proc-wait`/`proc-kill` (preview by default, `--go` bound to an exact `--created`); mouse
+  modifiers on click/rclick/dblclick/drag/wheel plus middle and side buttons; native
+  `key`/`key-state`/`key-release` with repeat/interval/hold parsing and an owned-key ledger;
+  `hwnd:` selection with `--created` and `--space screen|window|client` plus one bounded
+  `wait-cond`; `uia-state`/`uia-do` semantic actions with read-back; `tpl-find` template matching;
+  `clip-info` and clipboard carrier preservation; and a dispatcher-derived `capabilities` report.
+- **Scope.** Additive commands and flags; existing syntax and refusal contracts unchanged.
+
 ## v4.5.7 - 2026-10-26
 
 - **OCR language refusal no longer crashes.** When the requested `--ocr-lang` had no installed
