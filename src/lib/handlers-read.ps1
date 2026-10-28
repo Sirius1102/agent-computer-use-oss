@@ -58,7 +58,7 @@ function Invoke-Handler-win([string]$Cmd, [string[]]$Rest) {
       # Self-report the coordinate mapping so nobody clicks this image's pixels
       # directly: it is a screen-region grab at origin (Left,Top), NOT a
       # re-rendered window image.
-      Save-RectEx $w.Left $w.Top $w.W $w.H $path $pf.Fit $pf.Grid $pf.Marks 'win' $w $pf | Write-Output
+      Save-RectEx $w.Left $w.Top $w.W $w.H $path $pf.Fit $pf.Grid $pf.Marks 'win' $w $null $pf | Write-Output
       "window-relative clicks -> relclick $($pf.Rest[0]) <dx> <dy> (same origin); $($gate.Echo); pixels read are whatever sits on top where occluded (raise the window, or pass --occlude off to skip the check)"
 }
 
@@ -106,12 +106,16 @@ function Invoke-Handler-rect([string]$Cmd, [string[]]$Rest) {
       if ($pf.Rest.Count -lt 4) { throw 'usage: rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--to <sel>]' }
       $x = [int]$pf.Rest[0]; $y = [int]$pf.Rest[1]; $w = [int]$pf.Rest[2]; $h = [int]$pf.Rest[3]
       $path = if ($pf.Rest.Count -ge 5 -and $pf.Rest[4]) { $pf.Rest[4] } else { Default-ShotName 'rect' }
-      $hostWin = $null
+      $hostWin = $null; $hostSnap = $null
       if ($hb.Sel) {
-        $hostWin = (Resolve-CropHost $hb.Sel $x $y $w $h 'rect').Win
+        $ch = Resolve-CropHost $hb.Sel $x $y $w $h 'rect'
+        $hostWin = $ch.Win
+        # v4.6.7 (A1-b): freeze identity AND rect BEFORE the pixels are grabbed; Save-RectEx
+        # re-reads the window after the save and refuses to publish a moved binding.
+        $hostSnap = Get-CaptureHostSnapshot $ch
         "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it"
       }
-      Save-RectEx $x $y $w $h $path $pf.Fit $pf.Grid $pf.Marks 'rect' $hostWin $pf | Write-Output
+      Save-RectEx $x $y $w $h $path $pf.Fit $pf.Grid $pf.Marks 'rect' $hostWin $hostSnap $pf | Write-Output
       # v1.5.1 WP-A owners mode (see shot for the rationale).
       $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
       $own = Invoke-OcclusionOwners @{ X = $x; Y = $y; W = $w; H = $h } $occAct $of.OcclGrid
@@ -199,7 +203,7 @@ function Invoke-Handler-shot([string]$Cmd, [string[]]$Rest) {
       $path = Resolve-ShotOutputPath @($pf.Rest)
       $o = [System.Windows.Forms.SystemInformation]::VirtualScreen
       if (-not $path) { $path = Default-ShotName 'shot' }
-      Save-RectEx $o.X $o.Y $o.Width $o.Height $path $pf.Fit $pf.Grid $pf.Marks '' $null $pf | Write-Output
+      Save-RectEx $o.X $o.Y $o.Width $o.Height $path $pf.Fit $pf.Grid $pf.Marks '' $null $null $pf | Write-Output
       # v1.5.1 WP-A owners mode: a full-screen/multi-window capture has no
       # single owner - report who owns the sampled pixels instead of guessing.
       $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action

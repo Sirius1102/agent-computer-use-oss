@@ -201,13 +201,13 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; Left = 100; Top = 200; W = 300; H = 400 } }
     Set-Item -Path 'function:Emit-ResolveNote' -Value { }
     Set-Item -Path 'function:Get-WindowVisibleRect' -Value { param($h) return @{ X = 100; Y = 200; W = 300; H = 400 } }
-    Set-Item -Path 'function:Save-RectEx' -Value { param($x, $y, $w, $h, $path, $fit, $grid, $marks, $kind, $mapWin, $cf) $script:a1RectArgs = @{ Path = $path; Kind = $kind; Host = $mapWin; X = [int]$x; Y = [int]$y }; return @('stub-saved') }
+    Set-Item -Path 'function:Save-RectEx' -Value { param($x, $y, $w, $h, $path, $fit, $grid, $marks, $kind, $mapWin, $mapRect, $cf) $script:a1RectArgs = @{ Path = $path; Kind = $kind; Host = $mapWin; Rect = $mapRect; X = [int]$x; Y = [int]$y }; return @('stub-saved') }
     Set-Item -Path 'function:Invoke-OcclusionOwners' -Value { param($rect, $action, $grid) return @{ Ran = $false; Echo = '' } }
     # --to must be stripped BEFORE the capture parser: left in place it becomes the
     # OUTPUT PATH (the first positional after the four numbers) and the binding vanishes.
     [void](Invoke-DesktopCommand 'rect' @('110', '210', '50', '40', '--to', 'a1-host'))
-    ST-Check 'unit (A1): rect --to is stripped before the capture parser and reaches Save-RectEx as the host (never as the outPath)' (
-      $null -ne $script:a1RectArgs -and $script:a1RectArgs.Path -ne '--to' -and $script:a1RectArgs.Path -like '*rect_*' -and $null -ne $script:a1RectArgs.Host -and $script:a1RectArgs.X -eq 110 -and $script:a1RectArgs.Kind -eq 'rect')
+    ST-Check 'unit (A1): rect --to is stripped before the capture parser, reaches Save-RectEx as the host, AND carries the pre-capture rect snapshot (never as the outPath)' (
+      $null -ne $script:a1RectArgs -and $script:a1RectArgs.Path -ne '--to' -and $script:a1RectArgs.Path -like '*rect_*' -and $null -ne $script:a1RectArgs.Host -and $null -ne $script:a1RectArgs.Rect -and $script:a1RectArgs.Rect.X -eq 100 -and $script:a1RectArgs.Rect.Y -eq 200 -and $script:a1RectArgs.X -eq 110 -and $script:a1RectArgs.Kind -eq 'rect')
     $script:a1RectArgs = $null
     $a1OutErr = ''
     try { [void](Invoke-DesktopCommand 'rect' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1OutErr = "$($_.Exception.Message)" }
@@ -217,7 +217,7 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { [void](Invoke-DesktopCommand 'zoom' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1ZoomErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1): zoom --to is parsed out (not taken as the outPath) and refuses an outside region before capture' (
       $a1ZoomErr.Contains('outside the visible rect'))
-    Write-MapSidecar $a1Side 110 210 1.0 50 40 'rect' ([pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' })
+    Write-MapSidecar $a1Side 110 210 1.0 50 40 'rect' ([pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' }) 0 ([pscustomobject]@{ X = 100; Y = 200; W = 300; H = 400 })
     $a1Back = Read-MapSidecar $a1Side
     ST-Check 'unit (A1): a bound rect sidecar round-trips its host identity AND host rect (what the strict check compares)' (
       $a1Back.Kind -eq 'rect' -and $a1Back.HostPid -eq 7 -and ([Int64]$a1Back.HostHwnd -eq 1234) -and $a1Back.HostX -eq 100 -and $a1Back.HostY -eq 200 -and $a1Back.HostW -eq 300 -and $a1Back.HostH -eq 400)
@@ -229,6 +229,146 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   } finally {
     foreach ($a1n in $a1Names) { Set-Item -Path ("function:" + $a1n) -Value $a1Orig[$a1n] }
     Remove-Item -LiteralPath @(($a1Side + '.map.txt'), ($a1Bad + '.map.txt')) -Force -ErrorAction SilentlyContinue
+  }
+  # v4.6.7 (CU-466-REVIEW-20261028-01 A1): the review's two counterexamples stay load-bearing.
+  # Only window observation, target activation and the input recorder are replaced; the sidecar
+  # writer/reader, the real stale verdict, the real capture functions and the real imgclick
+  # handler run unchanged. A stale check stubbed to a constant 'ok' would prove nothing.
+  $a1bSnap = @{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; X = 100; Y = 200; W = 300; H = 400; Sel = 'a1-host' }
+  $a1bMoved = Compare-CaptureHostSnapshot $a1bSnap @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+  $a1bSame = Compare-CaptureHostSnapshot $a1bSnap @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+  $a1bGone = Compare-CaptureHostSnapshot $a1bSnap @{ Alive = $false; Pid = 0; Iconic = $false; Rect = $null }
+  $a1bMin = Compare-CaptureHostSnapshot $a1bSnap @{ Alive = $true; Pid = 7; Iconic = $true; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+  ST-Check 'unit (A1-b): a rect that changed between capture and sidecar write is refused and both rects are named' (
+    (-not $a1bMoved.Ok) -and $a1bMoved.Msg.Contains('DURING capture') -and $a1bMoved.Msg.Contains('(100,200) 300x400') -and $a1bMoved.Msg.Contains('(200,200) 300x400') -and $a1bSame.Ok)
+  ST-Check 'unit (A1-b): vanished and minimized hosts during capture are refused, never re-recorded as valid' (
+    (-not $a1bGone.Ok) -and $a1bGone.Msg.Contains('vanished DURING capture') -and (-not $a1bMin.Ok) -and $a1bMin.Msg.Contains('minimized DURING capture'))
+  $a1bNames = @('Get-WindowObservation', 'Get-WindowVisibleRect')
+  $a1bOrig = @{}
+  foreach ($a1bn in $a1bNames) { $a1bOrig[$a1bn] = (Get-Item ("function:" + $a1bn)).ScriptBlock }
+  $a1bBase = Join-Path $env:TEMP ('dtx-a1-' + [guid]::NewGuid().ToString('N'))
+  $a1bFakeWin = [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' }
+  try {
+    $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Get-WindowObservation' -Value { param($h) return $script:a1bObs }
+    $a1bAssertErr = ''
+    try { [void](Assert-CaptureHostStable $a1bSnap 'rect') } catch { $a1bAssertErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): Assert-CaptureHostStable re-reads the host AFTER the grab and refuses a moved one' (
+      $a1bAssertErr.Contains('rect :') -and $a1bAssertErr.Contains('DURING capture') -and $a1bAssertErr.Contains('re-capture'))
+    $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+    $a1bStillOk = $true
+    try { [void](Assert-CaptureHostStable $a1bSnap 'rect') } catch { $a1bStillOk = $false }
+    ST-Check 'unit (A1-b): the stationary control passes the same post-capture re-check' ($a1bStillOk)
+
+    $script:a1bReads = 0
+    Set-Item -Path 'function:Get-WindowVisibleRect' -Value { param($h) $script:a1bReads++; return @{ X = 200; Y = 200; W = 300; H = 400 } }
+    $a1bSide = $a1bBase + '-snap.png'
+    Write-MapSidecar $a1bSide 10 20 1.0 30 40 'rect' $a1bFakeWin 0 $a1bSnap
+    $a1bBack = Read-MapSidecar $a1bSide
+    ST-Check 'unit (A1-b): Write-MapSidecar records the PRE-capture rect and makes zero live rect reads' (
+      $a1bBack.HostX -eq 100 -and $a1bBack.HostY -eq 200 -and $a1bBack.HostW -eq 300 -and $a1bBack.HostH -eq 400 -and $script:a1bReads -eq 0)
+
+    $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+    $a1bImgMove = $a1bBase + '-moved.png'
+    $a1bSaveErr = ''
+    try { [void](Save-RectEx 0 0 1 1 $a1bImgMove 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1bSaveErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): Save-RectEx refuses to publish a sidecar when the host moved during the capture' (
+      $a1bSaveErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath ($a1bImgMove + '.map.txt'))))
+    $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+    $a1bImgStill = $a1bBase + '-still.png'
+    [void](Save-RectEx 0 0 1 1 $a1bImgStill 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1bStillMap = Read-MapSidecar $a1bImgStill
+    $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+    $a1bLate = Test-MapSidecarStale $a1bStillMap
+    ST-Check 'unit (A1-b): the stationary frame keeps the capture-time rect, so a LATER move reads stale instead of ok' (
+      $a1bStillMap.HostX -eq 100 -and $a1bLate.Verdict -eq 'stale')
+    $a1bImgScript = $a1bBase + '-script.png'
+    [void](Save-RectEx 0 0 1 1 $a1bImgScript 1.0 -1 @() '' $null $null)
+    ST-Check 'unit (A1-b): a script-style capture publishes no bound sidecar at all' (
+      -not (Test-Path -LiteralPath ($a1bImgScript + '.map.txt')))
+  } finally {
+    foreach ($a1bn in $a1bNames) { Set-Item -Path ("function:" + $a1bn) -Value $a1bOrig[$a1bn] }
+    Remove-Item -LiteralPath @(($a1bBase + '-snap.png.map.txt'), ($a1bImgMove + '.map.txt'), ($a1bImgStill + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @(($a1bBase + '-snap.png'), $a1bImgMove, $a1bImgStill, $a1bImgScript) -Force -ErrorAction SilentlyContinue
+  }
+  # A1-b end-to-end on zoom: Resolve-CropHost reads the rect BEFORE the grab; the post-save
+  # re-check uses the same observation seam. Only the window lookup/observation is replaced.
+  $a1zNames = @('Resolve-Window', 'Emit-ResolveNote', 'Get-WindowVisibleRect', 'Get-WindowObservation')
+  $a1zOrig = @{}
+  foreach ($a1zn in $a1zNames) { $a1zOrig[$a1zn] = (Get-Item ("function:" + $a1zn)).ScriptBlock }
+  try {
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; Left = 100; Top = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Get-WindowVisibleRect' -Value { param($h) return @{ X = 100; Y = 200; W = 300; H = 400 } }
+    $script:a1zObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Get-WindowObservation' -Value { param($h) return $script:a1zObs }
+    $a1zMove = $a1bBase + '-zoom-moved.png'
+    $a1zErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '10', '10', '2', $a1zMove, '--to', 'a1-host')) } catch { $a1zErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): zoom refuses the frame when the host moved between the grab and the sidecar write' (
+      $a1zErr.Contains('zoom :') -and $a1zErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath ($a1zMove + '.map.txt'))))
+    $script:a1zObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+    $a1zStill = $a1bBase + '-zoom-still.png'
+    [void](Invoke-DesktopCommand 'zoom' @('100', '200', '10', '10', '2', $a1zStill, '--to', 'a1-host'))
+    $a1zMap = Read-MapSidecar $a1zStill
+    ST-Check 'unit (A1-b): a stationary zoom records the pre-capture host rect in its sidecar' (
+      $a1zMap.HostPid -eq 7 -and $a1zMap.HostX -eq 100 -and $a1zMap.HostY -eq 200 -and $a1zMap.HostW -eq 300 -and $a1zMap.HostH -eq 400)
+  } finally {
+    foreach ($a1zn in $a1zNames) { Set-Item -Path ("function:" + $a1zn) -Value $a1zOrig[$a1zn] }
+    Remove-Item -LiteralPath @(($a1zMove + '.map.txt'), ($a1zStill + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @($a1zMove, $a1zStill) -Force -ErrorAction SilentlyContinue
+  }
+  # A1-a: the real handler, real sidecar read, real stale verdict. Resolve-Target only flips a
+  # flag and the observation seam returns the moved rect afterwards - the exact review shape:
+  # the OLD mapped point is still inside the window, so the landing guard alone would pass.
+  $a1aNames = @('Resolve-Target', 'Emit-ResolveNote', 'Invoke-TargetBlockGuard', 'Invoke-HitWindowCheck', 'Move-Click', 'Invoke-ActionExpectation', 'Invoke-ExpectChangeCheck', 'Get-ExpectChangeBaseline', 'Get-WindowObservation')
+  $a1aLog = 'Log-' + 'Action'
+  $a1aNames += $a1aLog
+  $a1aOrig = @{}
+  foreach ($a1an in $a1aNames) { $a1aOrig[$a1an] = (Get-Item ("function:" + $a1an)).ScriptBlock }
+  try {
+    $a1aSide = $a1bBase + '-click.png'
+    Write-MapSidecar $a1aSide 110 210 1.0 50 40 'rect' $a1bFakeWin 0 $a1bSnap
+    Set-Item -Path 'function:Get-WindowObservation' -Value { param($h) $r = @{ X = 100; Y = 200; W = 300; H = 400 }; if ($script:a1aMove -and $script:a1aActivated) { $r = @{ X = 200; Y = 200; W = 300; H = 400 } }; return @{ Alive = $true; Pid = 7; Iconic = $false; Rect = $r } }
+    Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $eh, $created) $script:a1aActivated = $true; return [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; Left = 100; Top = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Invoke-TargetBlockGuard' -Value { }
+    Set-Item -Path 'function:Invoke-HitWindowCheck' -Value { param($x, $y, $tgt, $hasSel, $allow) }
+    Set-Item -Path ("function:" + $a1aLog) -Value { param($r, $m, $c) }
+    Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $b) $script:a1aClicked++ }
+    Set-Item -Path 'function:Invoke-ActionExpectation' -Value { param($p, $tgt, $what) }
+    Set-Item -Path 'function:Invoke-ExpectChangeCheck' -Value { param($p, $ecb, $what) }
+    Set-Item -Path 'function:Get-ExpectChangeBaseline' -Value { param($p, $tgt) return $null }
+    $script:a1aMove = $true
+    $script:a1aActivated = $false
+    $script:a1aClicked = 0
+    $a1aErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host', '--require-verified')) } catch { $a1aErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-a): strict imgclick refuses when activation moved the host, even though the old point is still inside it' (
+      $script:a1aClicked -eq 0 -and $a1aErr.Contains('immediately before input') -and $a1aErr.Contains('STALE'))
+    $script:a1aMove = $false
+    $script:a1aActivated = $false
+    $script:a1aClicked = 0
+    $a1aOk = $true
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host', '--require-verified')) } catch { $a1aOk = $false }
+    ST-Check 'unit (A1-a): the stationary control still clicks once' ($a1aOk -and $script:a1aClicked -eq 1)
+    $script:a1aMove = $true
+    $script:a1aActivated = $false
+    $script:a1aClicked = 0
+    $a1aDefErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host')) } catch { $a1aDefErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-a): the default path (no --stale-ok) also refuses a late move before input' (
+      $script:a1aClicked -eq 0 -and $a1aDefErr.Contains('immediately before input'))
+    $script:a1aMove = $true
+    $script:a1aActivated = $false
+    $script:a1aClicked = 0
+    $a1aStaleOk = $true
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host', '--stale-ok')) } catch { $a1aStaleOk = $false }
+    ST-Check 'unit (A1-a): --stale-ok remains the explicit permission to map against the old origin' (
+      $a1aStaleOk -and $script:a1aClicked -eq 1)
+  } finally {
+    foreach ($a1an in $a1aNames) { Set-Item -Path ("function:" + $a1an) -Value $a1aOrig[$a1an] }
+    Remove-Item -LiteralPath @(($a1aSide + '.map.txt'), $a1aSide) -Force -ErrorAction SilentlyContinue
   }
   # CU-EXTERNAL-EXPERIENCE-20261028 B2: the pre-input block verdict. owner is a WINDOW
   # RELATION, not a modality: an owned visible window that UIA reads as modeless must stay

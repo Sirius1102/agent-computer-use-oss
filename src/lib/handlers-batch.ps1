@@ -71,6 +71,17 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
         # --expect-change for imgclick; before this line the handler accepted it and did
         # nothing. Baseline before the click, verdict after it - same shape as click/rclick.
         $ecb = Get-ExpectChangeBaseline $p $tgt
+        # v4.6.7 (CU-466-REVIEW-20261028-01 A1-a): the geometry above was verified BEFORE
+        # Resolve-Target ran. Activation and the guards since then cost time, and a host that
+        # moved in that window turns a pixel mapped from the OLD origin into a lie even when the
+        # old point still falls inside the window rect (the landing guard cannot see that). So
+        # re-check the SAME recorded baseline immediately before input; never translate the old
+        # point by the measured delta. --stale-ok remains the explicit permission to map anyway.
+        $stInput = Test-MapSidecarStale $map
+        if ($stInput.Verdict -eq 'gone') { throw "imgclick: $($stInput.Msg)" }
+        if ($stInput.Verdict -eq 'stale' -and ($requireVer -or -not $staleOk)) {
+          throw "imgclick: the host moved after the initial check, immediately before input - $($stInput.Msg) - refusing; re-capture the image"
+        }
         Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "img=$img ix=$ix iy=$iy -> $($sp.X),$($sp.Y)" $Cmd
         Move-Click $sp.X $sp.Y 'left'
         "clicked $($sp.X),$($sp.Y)"
@@ -101,8 +112,14 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
       if (-not $path) { $path = Default-ShotName 'zoom' }
-      $hostWin = $null
-      if ($hb.Sel) { $hostWin = (Resolve-CropHost $hb.Sel $x $y $w $h 'zoom').Win }
+      $hostWin = $null; $hostSnap = $null
+      if ($hb.Sel) {
+        $ch = Resolve-CropHost $hb.Sel $x $y $w $h 'zoom'
+        $hostWin = $ch.Win
+        # v4.6.7 (A1-b): freeze identity AND rect BEFORE the pixels are grabbed; the capture is
+        # re-checked after the save and a moved host is refused instead of being re-recorded.
+        $hostSnap = Get-CaptureHostSnapshot $ch
+      }
       Ensure-OutDir
       $src = New-Object System.Drawing.Bitmap($w, $h)
       $gs = [System.Drawing.Graphics]::FromImage($src)
@@ -118,7 +135,8 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
       $dst.Dispose()
       $size = (Get-Item -LiteralPath $path).Length
-      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin
+      if ($null -ne $hostSnap) { [void](Assert-CaptureHostStable $hostSnap 'zoom') }
+      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"

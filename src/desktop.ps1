@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.6  (version sync list lives in the project overview doc)
+# version: 4.6.7  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.6'
+$script:ToolVersion = '4.6.7'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -470,7 +470,7 @@ Set-StrictMode -Version Latest
 # Find-OcrHitsScaled with only the low-level OCR read stubbed (first-read late hit, first-read
 # late miss, in-budget hit), and three against the REAL wait-cond handler (late hit never met,
 # 5000ms interval capped to a 1s budget, ordinary false->false->true still met) (1083 -> 1089).
-$script:DeclaredCheckTotal = 1089
+$script:DeclaredCheckTotal = 1103
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2338,7 +2338,7 @@ $script:StFamilyCounts = @{
   'capture-ocr' = 'banners=9,lines=824'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=1298'
+  'window-targeting' = 'banners=11,lines=1438'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=190'
   'docs-contract' = 'banners=12,lines=646'
@@ -2405,7 +2405,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=107',
   'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=177',
+  'Invoke-SelftestFamily-WindowTargeting=191',
   'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
@@ -3719,6 +3719,36 @@ function Resolve-CropHost([string]$sel, [int]$x, [int]$y, [int]$w, [int]$h, [str
   return @{ Win = $win; Rect = $r; Sel = $sel }
 }
 
+# v4.6.7 (CU-466-REVIEW-20261028-01 A1-b): the pre-capture resolution above is the ONLY honest
+# baseline for a bound crop. A rect read again after the pixels were grabbed can already describe
+# a moved window, and writing that later rect into the sidecar would replace the old origin while
+# every stale check afterwards reads 'ok'. The snapshot below travels WITH the image; the compare
+# core is pure (alive/pid/iconic/rect), and Assert-CaptureHostStable re-reads the host once the
+# pixels are on disk. A moved, vanished, minimized or unreadable host means the sidecar is NOT
+# published at all - no "bound and verified" claim is invented for a frame that no longer matches.
+function Get-CaptureHostSnapshot($cropHost) {
+  $w = $cropHost.Win; $r = $cropHost.Rect
+  return @{ Pid = [int]$w.Pid; Handle = [IntPtr]$w.Handle; Title = [string]$w.Title; X = [int]$r.X; Y = [int]$r.Y; W = [int]$r.W; H = [int]$r.H; Sel = [string]$cropHost.Sel }
+}
+
+function Compare-CaptureHostSnapshot($snap, $obs) {
+  if (-not [bool]$obs.Alive) { return @{ Ok = $false; Msg = 'the --to window vanished DURING capture - the image is not bound to a live host; re-capture' } }
+  if ([int]$obs.Pid -ne [int]$snap.Pid) { return @{ Ok = $false; Msg = "the --to handle now belongs to pid=$([int]$obs.Pid) (was pid=$([int]$snap.Pid)) - handle reused during capture; re-capture" } }
+  if ([bool]$obs.Iconic) { return @{ Ok = $false; Msg = 'the --to window was minimized DURING capture - its pixels are no longer on screen; restore it and re-capture' } }
+  if ($null -eq $obs.Rect) { return @{ Ok = $false; Msg = 'the --to window rect became unreadable DURING capture - re-capture' } }
+  $cur = $obs.Rect
+  if ([int]$cur.X -ne [int]$snap.X -or [int]$cur.Y -ne [int]$snap.Y -or [int]$cur.W -ne [int]$snap.W -or [int]$cur.H -ne [int]$snap.H) {
+    return @{ Ok = $false; Msg = "the --to window moved/resized DURING capture (rect was ($($snap.X),$($snap.Y)) $($snap.W)x$($snap.H), now ($($cur.X),$($cur.Y)) $($cur.W)x$($cur.H)) - the pixels in this image no longer match the recorded baseline; re-capture (do not reuse this image)" }
+  }
+  return @{ Ok = $true; Msg = '' }
+}
+
+function Assert-CaptureHostStable($snap, [string]$cmd) {
+  $v = Compare-CaptureHostSnapshot $snap (Get-WindowObservation ([IntPtr]$snap.Handle))
+  if (-not $v.Ok) { throw "$cmd : $($v.Msg)" }
+  return $snap
+}
+
 function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
   $rest = New-Object System.Collections.ArrayList
   $fit = $null; $grid = -1
@@ -3766,7 +3796,7 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
 # v1.5.1 WP-B: $mapWin (the resolved window object, when the capture is a
 # window grab) is recorded in the sidecar so imgclick/unmap can detect that
 # the window moved/resized since capture instead of silently mis-mapping.
-function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]$fit, [int]$grid, $marks, [string]$mapKind = '', $mapWin = $null, $cf = $null) {
+function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]$fit, [int]$grid, $marks, [string]$mapKind = '', $mapWin = $null, $mapRect = $null, $cf = $null) {
   $autoGrid = $false
   Ensure-OutDir
   $bmp = New-Object System.Drawing.Bitmap($w, $h)
@@ -3839,7 +3869,15 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
   $bmp.Dispose()
   $size = (Get-Item -LiteralPath $path).Length
-  if ($mapKind) { Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid }
+  if ($mapKind) {
+    $mapSnap = $null
+    if ($mapKind -ne 'win' -and $null -ne $mapWin) {
+      if ($null -eq $mapRect) { throw "$mapKind : the host rect resolved BEFORE the capture did not reach Save-RectEx - internal call site lost the snapshot; re-run the capture" }
+      $mapSnap = @{ Pid = [int]$mapWin.Pid; Handle = [IntPtr]$mapWin.Handle; Title = [string]$mapWin.Title; X = [int]$mapRect.X; Y = [int]$mapRect.Y; W = [int]$mapRect.W; H = [int]$mapRect.H; Sel = '' }
+      [void](Assert-CaptureHostStable $mapSnap $mapKind)
+    }
+    Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap
+  }
   $lines = New-Object System.Collections.ArrayList
   $gridTxt = $(if ($grid -gt 0) { "  grid=$grid$(if ($autoGrid) { ' (auto: --fit and wider than 1000px; --no-grid turns it off)' } else { '' })" } else { '' })
   if ($scale -eq 1.0) {
@@ -3877,7 +3915,7 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
 # v1.5.1 WP-B: kind=win sidecars additionally record pid/handle/title_b64
 # (the staleness anchor). Title is base64 because window titles may contain
 # newlines, '=' or non-ASCII bytes.
-function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0) {
+function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null) {
   $inv = [System.Globalization.CultureInfo]::InvariantCulture
   $s = [math]::Round($scale, 6).ToString($inv)
   $text = "origin_x=$ox`r`norigin_y=$oy`r`nscale=$s`r`nout_w=$ow`r`nout_h=$oh`r`nkind=$kind`r`n"
@@ -3897,12 +3935,15 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
   # CAPTURE TIME, which is exactly what a later imgclick compares against. Without this a
   # crop lifted out of a window was 'unverifiable' forever and got clicked anyway.
   if ($kind -ne 'win' -and $null -ne $hostWin) {
+    # v4.6.7 (A1-b): the rect must be the PRE-capture snapshot handed in by the capture call.
+    # Re-reading the window here is exactly the defect this version closes: a move between the
+    # grab and this write would be recorded as if it were the baseline, and every later stale
+    # check would compare the moved window against its own new rect and answer 'ok'.
+    if ($null -eq $hostRect) { throw 'map sidecar: a bound crop must carry the host rect measured at CAPTURE time - re-run the capture (rect/zoom ... --to <sel>)' }
     $hp2 = [int]$hostWin.Pid
     $hh2 = ([IntPtr]$hostWin.Handle).ToInt64()
     $tb2 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$hostWin.Title))
-    $hr = Get-WindowVisibleRect ([IntPtr]$hostWin.Handle)
-    if ($null -eq $hr) { throw 'map sidecar: the --to window vanished before its rect could be recorded - re-run the capture' }
-    $text += "pid=$hp2`r`nhandle=$hh2`r`ntitle_b64=$tb2`r`nhost_x=$($hr.X)`r`nhost_y=$($hr.Y)`r`nhost_w=$($hr.W)`r`nhost_h=$($hr.H)`r`n"
+    $text += "pid=$hp2`r`nhandle=$hh2`r`ntitle_b64=$tb2`r`nhost_x=$([int]$hostRect.X)`r`nhost_y=$([int]$hostRect.Y)`r`nhost_w=$([int]$hostRect.W)`r`nhost_h=$([int]$hostRect.H)`r`n"
   }
   [System.IO.File]::WriteAllText(($imagePath + '.map.txt'), $text, (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -3972,6 +4013,17 @@ function Get-WindowVisibleRect([IntPtr]$h) {
   return @{ X = $wr.Left; Y = $wr.Top; W = ($wr.Right - $wr.Left); H = ($wr.Bottom - $wr.Top) }
 }
 
+# v4.6.7 (CU-466-REVIEW-20261028-01 A1): ONE observation call for every staleness/binding
+# decision - alive, owner pid, iconic and visible rect read in the same visit. Tests replace this
+# seam (not each static [DT] call) so the real verdict logic runs against a moved or vanished host
+# without owning a live window.
+function Get-WindowObservation([IntPtr]$h) {
+  if (-not [DT]::IsWindow($h)) { return @{ Alive = $false; Pid = 0; Iconic = $false; Rect = $null } }
+  $p = 0
+  [void][DT]::GetWindowThreadProcessId($h, [ref]$p)
+  return @{ Alive = $true; Pid = [int]$p; Iconic = [bool][DT]::IsIconic($h); Rect = (Get-WindowVisibleRect $h) }
+}
+
 # v1.5.1 WP-B: is a sidecar still valid for the window it was captured from?
 #   ok            - window exists, same pid, origin/size within 2px
 #   stale         - window moved/resized beyond 2px (or is minimized)
@@ -4019,19 +4071,17 @@ function Test-MapSidecarStale($map) {
     return $unv
   }
   $h = $map.HostHwnd
-  if (-not [DT]::IsWindow($h)) {
+  $obs = Get-WindowObservation $h
+  if (-not [bool]$obs.Alive) {
     return @{ Verdict = 'gone'; Msg = "the recorded window handle=$($h) no longer exists - re-capture the image (win <sel>)"; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
-  $curPid = 0
-  [void][DT]::GetWindowThreadProcessId($h, [ref]$curPid)
-  if ($curPid -ne $map.HostPid) {
-    return @{ Verdict = 'gone'; Msg = "window handle=$($h) now belongs to pid=$curPid (was pid=$($map.HostPid)) - handle reused, refusing to guess; re-capture the image"; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
+  if ([int]$obs.Pid -ne [int]$map.HostPid) {
+    return @{ Verdict = 'gone'; Msg = "window handle=$($h) now belongs to pid=$([int]$obs.Pid) (was pid=$($map.HostPid)) - handle reused, refusing to guess; re-capture the image"; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
-  $cur = Get-WindowVisibleRect $h
-  if ($null -eq $cur) {
+  if ($null -eq $obs.Rect) {
     return @{ Verdict = 'gone'; Msg = 'window vanished while checking - re-capture the image'; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
-  return (Get-SidecarRectVerdict ([string]$map.HostTitle) $rx $ry $rw $rh $cur ([bool][DT]::IsIconic($h)))
+  return (Get-SidecarRectVerdict ([string]$map.HostTitle) $rx $ry $rw $rh $obs.Rect ([bool]$obs.Iconic))
 }
 
 # --- OCR (Windows.Media.Ocr via WinRT, zero third-party deps) -------------
@@ -10121,7 +10171,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.6 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.7 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

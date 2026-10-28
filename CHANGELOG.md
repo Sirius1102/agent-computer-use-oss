@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.7 - 2026-10-28
+
+- **A bound crop keeps the geometry it was captured against.** The rect/zoom handlers already
+  resolved the host (identity and visible rect) before grabbing pixels, but the sidecar writer
+  re-read the rect afterwards and could record a window that had moved in between as the new
+  baseline; every later stale check then compared the moved window with itself and answered
+  `ok`. The pre-capture snapshot now travels with the image, and both `rect` and `zoom` re-read
+  the host after the save: a moved, resized, minimized, vanished or unreadable host refuses to
+  publish the sidecar at all. A script-style capture still publishes no binding.
+- **A strict click re-checks the same baseline immediately before input.** `imgclick` verified
+  staleness before `Resolve-Target` ran; activation and the landing/block guards cost time, and
+  a host that moved in that window made the old mapped point a lie even while it still sat
+  inside the window rect. The handler now re-checks the original sidecar basis after activation
+  and the guards, immediately before `Move-Click`; a moved host is refused (default and
+  `--require-verified`) with a re-capture message, and `--stale-ok` remains the explicit
+  permission to map against the old origin. The old point is never translated by the delta.
+
 ## v4.6.6 - 2026-10-28
 
 - **One deadline covers every OCR stage return, hits included.** `wait-cond --text` used to
