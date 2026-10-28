@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.9 - 2026-10-28
+
+- **Hashing no longer depends on module autoload.** Every SHA-256 the tool computes (the sidecar
+  writer and reader, the quarantine manifest rows, `capabilities`, and the A1-b controls) now
+  calls `System.Security.Cryptography.SHA256` directly instead of `Get-FileHash`. On Windows
+  PowerShell 5.1 that command is a function of Microsoft.PowerShell.Utility, and a PS 5.1 child
+  started with `Start-Process` from a PowerShell 7 host inherits a PSModulePath in which the PS 7
+  module directory wins: the module cannot load, the command is missing, and the installed-layout
+  self-check aborted at the sidecar writer. The BCL call needs no module. Sidecar fields, hashes
+  and file formats are unchanged.
+
 ## v4.6.8 - 2026-10-28
 
 - **A refused capture never overwrites a still-valid image, and a sidecar names the bytes it

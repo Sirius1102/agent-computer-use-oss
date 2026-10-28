@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.8  (version sync list lives in the project overview doc)
+# version: 4.6.9  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.8'
+$script:ToolVersion = '4.6.9'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -2347,7 +2347,9 @@ $script:StFamilyCounts = @{
   'capture-ocr' = 'banners=9,lines=824'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=1528'
+  # v4.6.9 fix-up (CU-467 install smoke): window-targeting gains the five-line .NET hash note and
+  # helper the A1-b reused-output controls now use (+5).
+  'window-targeting' = 'banners=11,lines=1533'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=190'
   'docs-contract' = 'banners=12,lines=646'
@@ -3085,7 +3087,9 @@ function Move-ShotsToQuarantine($moveItems, [string]$quar, [string]$prefix, [str
     $mEntry = $null
     $fileMoved = $false
     try {
-      $sha = (Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash
+      # v4.6.9 fix-up: .NET, not Get-FileHash - see the note in Write-MapSidecar (a PS 5.1 child
+      # launched from a PS 7 host cannot autoload that module function).
+      $sha = ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($m.FullName))) -replace '-','')
       # v3.1.0 (P-05): build the manifest line BEFORE the move. The content descriptor opens the
       # ORIGINAL path to read a sidecar's first line; after Move-Item that path is empty and the
       # read fails inside its own catch{}, so every .map.txt row has been printing
@@ -3963,7 +3967,13 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
   # failed after the PNG landed, or any out-of-band replacement of one of the two files. Read
   # time compares it and refuses a mismatched pair instead of mapping through it.
   if (-not (Test-Path -LiteralPath $imagePath)) { throw "map sidecar: the image it must describe does not exist: $imagePath - the sidecar is written only right after a capture saved its PNG; re-capture" }
-  $pngSha = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLower()
+  # v4.6.9 fix-up (CU-467 install smoke): the hash comes from .NET, not Get-FileHash. On this
+  # engine Get-FileHash is a MODULE FUNCTION, and a PS 5.1 child launched with Start-Process from
+  # a PS 7 host inherits a PSModulePath whose PS 7 module directories win the race: autoload
+  # resolves Microsoft.PowerShell.Utility to the Core package, loading fails, and this capture
+  # path would throw "Get-FileHash is not recognized". The BCL call needs no module at all.
+  $shaH = [System.Security.Cryptography.SHA256]::Create()
+  try { $shaS = [System.IO.File]::OpenRead($imagePath); try { $pngSha = ([BitConverter]::ToString($shaH.ComputeHash($shaS)) -replace '-','').ToLower() } finally { $shaS.Dispose() } } finally { $shaH.Dispose() }
   $text += "png_sha256=$pngSha`r`n"
   [System.IO.File]::WriteAllText(($imagePath + '.map.txt'), $text, (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -4022,7 +4032,11 @@ function Read-MapSidecar([string]$imagePath) {
   if ($raw -match '(?m)^png_sha256=([0-9a-f]{64})\s*$') { $pngSha = $Matches[1].ToLower() }
   if ($pngSha) {
     if (-not (Test-Path -LiteralPath $imagePath)) { throw "map sidecar describes an image that is not there: $mapPath (png_sha256=$($pngSha.Substring(0, 12))...) - re-capture the image" }
-    $pngNow = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLower()
+    # v4.6.9 fix-up: the same .NET SHA-256 as the writer, for the reason stated there - a reader
+    # that depended on an autoloaded module function would refuse every pair on a host where the
+    # module cannot autoload, and the refusal would name the wrong cause.
+    $shaH = [System.Security.Cryptography.SHA256]::Create()
+    try { $shaS = [System.IO.File]::OpenRead($imagePath); try { $pngNow = ([BitConverter]::ToString($shaH.ComputeHash($shaS)) -replace '-','').ToLower() } finally { $shaS.Dispose() } } finally { $shaH.Dispose() }
     if ($pngNow -ne $pngSha) {
       throw "map sidecar describes a DIFFERENT image: $mapPath records png_sha256=$($pngSha.Substring(0, 12))... but '$imagePath' hashes to $($pngNow.Substring(0, 12))... - the PNG was replaced after this sidecar was written (a failed re-capture, or a file copied over it); re-capture under a new name and do not use this pair"
     }
@@ -12028,7 +12042,7 @@ function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
       $entryPath = [string]$script:ToolEntryPath
       $sha = ''
       if ($entryPath -ne '' -and (Test-Path -LiteralPath $entryPath -PathType Leaf)) {
-        try { $sha = (Get-FileHash -LiteralPath $entryPath -Algorithm SHA256).Hash.ToLowerInvariant() } catch { $sha = 'unreadable' }
+        try { $sha = ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($entryPath))) -replace '-','').ToLowerInvariant() } catch { $sha = 'unreadable' }
       }
       $dpi = [string]$script:DpiMode
       if ($dpi -eq '') { $dpi = 'unreadable' }
@@ -20593,6 +20607,11 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   foreach ($a1bn in $a1bNames) { $a1bOrig[$a1bn] = (Get-Item ("function:" + $a1bn)).ScriptBlock }
   $a1bBase = Join-Path $env:TEMP ('dtx-a1-' + [guid]::NewGuid().ToString('N'))
   $a1bFakeWin = [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' }
+  # v4.6.9: these controls hash files with .NET, not Get-FileHash. On this engine that
+  # command is a module function, and a PS 5.1 child launched with Start-Process from a PS 7 host
+  # cannot autoload it (the PS 7 module directory wins PSModulePath) - the same environment the
+  # installed-layout smoke test runs in. The subject code uses the identical .NET call.
+  $a1Sha = { param([string]$p) $h = [System.Security.Cryptography.SHA256]::Create(); try { $s = [System.IO.File]::OpenRead($p); try { ([BitConverter]::ToString($h.ComputeHash($s)) -replace '-','').ToLower() } finally { $s.Dispose() } } finally { $h.Dispose() } }
   try {
     $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
     Set-Item -Path 'function:Get-WindowObservation' -Value { param($h) return $script:a1bObs }
@@ -20642,14 +20661,14 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1bObs = $a1bStillRect
     $a1rB = $a1bBase + '-reuse.png'
     [void](Save-RectEx 10 20 2 2 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
-    $a1rPng0 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
-    $a1rMap0 = (Get-FileHash -LiteralPath ($a1rB + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1rPng0 = & $a1Sha $a1rB
+    $a1rMap0 = & $a1Sha ($a1rB + '.map.txt')
     $script:a1bObs = $a1bMovedRect
     $a1rErr = ''
     try { [void](Save-RectEx 210 220 4 4 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1rErr = "$($_.Exception.Message)" }
     $script:a1bObs = $a1bStillRect
-    $a1rPng1 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
-    $a1rMap1 = (Get-FileHash -LiteralPath ($a1rB + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1rPng1 = & $a1Sha $a1rB
+    $a1rMap1 = & $a1Sha ($a1rB + '.map.txt')
     $a1rBack = Read-MapSidecar $a1rB
     $a1rVerdict = Test-MapSidecarStale $a1rBack
     ST-Check 'unit (A1-b): a refused re-capture into an EXISTING name keeps the old PNG and map byte-identical (an old map never rides new pixels)' (
@@ -20663,7 +20682,7 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1bObs = $a1bStillRect
     [void](Save-RectEx 30 40 2 2 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
     $a1rBack2 = Read-MapSidecar $a1rB
-    $a1rPng2 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
+    $a1rPng2 = & $a1Sha $a1rB
     ST-Check 'unit (A1-b): a successful re-capture to the same name refreshes the sidecar origin AND records the new PNG hash' (
       $a1rBack2.OriginX -eq 30 -and $a1rBack2.OriginY -eq 40 -and $a1rBack2.PngSha.Length -eq 64 -and $a1rBack2.PngSha -eq $a1rPng2)
     $a1hPng = $a1bBase + '-hashmismatch.png'
@@ -20708,14 +20727,14 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1zObs = $a1zStillObs
     $a1zReuse = $a1bBase + '-zoom-reuse.png'
     [void](Invoke-DesktopCommand 'zoom' @('100', '200', '4', '4', '2', $a1zReuse, '--to', 'a1-host'))
-    $a1zPng0 = (Get-FileHash -LiteralPath $a1zReuse -Algorithm SHA256).Hash.ToLower()
-    $a1zMap0 = (Get-FileHash -LiteralPath ($a1zReuse + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1zPng0 = & $a1Sha $a1zReuse
+    $a1zMap0 = & $a1Sha ($a1zReuse + '.map.txt')
     $script:a1zObs = $a1zMovedObs
     $a1zReuseErr = ''
     try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '6', '6', '2', $a1zReuse, '--to', 'a1-host')) } catch { $a1zReuseErr = "$($_.Exception.Message)" }
     $script:a1zObs = $a1zStillObs
-    $a1zPng1 = (Get-FileHash -LiteralPath $a1zReuse -Algorithm SHA256).Hash.ToLower()
-    $a1zMap1 = (Get-FileHash -LiteralPath ($a1zReuse + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1zPng1 = & $a1Sha $a1zReuse
+    $a1zMap1 = & $a1Sha ($a1zReuse + '.map.txt')
     $a1zBack = Read-MapSidecar $a1zReuse
     ST-Check 'unit (A1-b): a refused re-capture into an EXISTING zoom name keeps the old PNG and map byte-identical' (
       $a1zReuseErr.Contains('DURING capture') -and $a1zPng1 -eq $a1zPng0 -and $a1zMap1 -eq $a1zMap0 -and $a1zBack.OriginX -eq 100 -and $a1zBack.OriginY -eq 200 -and (Test-MapSidecarStale $a1zBack).Verdict -eq 'ok')
@@ -23738,7 +23757,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # the A-14b context lint forbids a lifted body from reading a variable it did not declare, and writing
   # $PID was caught by it first-hand (`A-14b state gap: pid=free-read-at-19777`).
   $g23EvidenceDir = Join-Path $env:TEMP ('json-probe-evidence-' + [System.Diagnostics.Process]::GetCurrentProcess().Id)
-  $g23SourceTag = 'entry=' + $script:ToolEntryPath + ' entry-sha=' + $(try { (Get-FileHash -LiteralPath $script:ToolEntryPath -Algorithm SHA256).Hash.Substring(0, 12) } catch { 'unreadable' }) + ' declared=' + [string]$script:DeclaredCheckTotal
+  $g23SourceTag = 'entry=' + $script:ToolEntryPath + ' entry-sha=' + $(try { ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($script:ToolEntryPath))) -replace '-','').Substring(0, 12) } catch { 'unreadable' }) + ' declared=' + [string]$script:DeclaredCheckTotal
 
   $cnpRun = {
     param([string[]]$ChildArgs)
@@ -30520,7 +30539,7 @@ exit 0
     foreach ($m in $items) {
       $target = Join-Path $dest $m.Name
       try {
-        $sha = (Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash
+        $sha = ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($m.FullName))) -replace '-','')
         $mEntry = Get-QuarantineManifestEntry $m.FullName $target $sha $m
         Move-Item -LiteralPath $m.FullName -Destination $target -Force
         [void]$logLines.Add($mEntry)
@@ -31258,7 +31277,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.8 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.9 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

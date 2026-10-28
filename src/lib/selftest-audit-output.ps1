@@ -330,7 +330,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # the A-14b context lint forbids a lifted body from reading a variable it did not declare, and writing
   # $PID was caught by it first-hand (`A-14b state gap: pid=free-read-at-19777`).
   $g23EvidenceDir = Join-Path $env:TEMP ('json-probe-evidence-' + [System.Diagnostics.Process]::GetCurrentProcess().Id)
-  $g23SourceTag = 'entry=' + $script:ToolEntryPath + ' entry-sha=' + $(try { (Get-FileHash -LiteralPath $script:ToolEntryPath -Algorithm SHA256).Hash.Substring(0, 12) } catch { 'unreadable' }) + ' declared=' + [string]$script:DeclaredCheckTotal
+  $g23SourceTag = 'entry=' + $script:ToolEntryPath + ' entry-sha=' + $(try { ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($script:ToolEntryPath))) -replace '-','').Substring(0, 12) } catch { 'unreadable' }) + ' declared=' + [string]$script:DeclaredCheckTotal
 
   $cnpRun = {
     param([string[]]$ChildArgs)

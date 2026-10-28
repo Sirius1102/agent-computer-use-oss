@@ -1945,7 +1945,7 @@ exit 0
     foreach ($m in $items) {
       $target = Join-Path $dest $m.Name
       try {
-        $sha = (Get-FileHash -LiteralPath $m.FullName -Algorithm SHA256).Hash
+        $sha = ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($m.FullName))) -replace '-','')
         $mEntry = Get-QuarantineManifestEntry $m.FullName $target $sha $m
         Move-Item -LiteralPath $m.FullName -Destination $target -Force
         [void]$logLines.Add($mEntry)

@@ -1844,7 +1844,7 @@ function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
       $entryPath = [string]$script:ToolEntryPath
       $sha = ''
       if ($entryPath -ne '' -and (Test-Path -LiteralPath $entryPath -PathType Leaf)) {
-        try { $sha = (Get-FileHash -LiteralPath $entryPath -Algorithm SHA256).Hash.ToLowerInvariant() } catch { $sha = 'unreadable' }
+        try { $sha = ([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($entryPath))) -replace '-','').ToLowerInvariant() } catch { $sha = 'unreadable' }
       }
       $dpi = [string]$script:DpiMode
       if ($dpi -eq '') { $dpi = 'unreadable' }

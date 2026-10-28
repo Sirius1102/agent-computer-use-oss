@@ -252,6 +252,11 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   foreach ($a1bn in $a1bNames) { $a1bOrig[$a1bn] = (Get-Item ("function:" + $a1bn)).ScriptBlock }
   $a1bBase = Join-Path $env:TEMP ('dtx-a1-' + [guid]::NewGuid().ToString('N'))
   $a1bFakeWin = [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' }
+  # v4.6.9: these controls hash files with .NET, not Get-FileHash. On this engine that
+  # command is a module function, and a PS 5.1 child launched with Start-Process from a PS 7 host
+  # cannot autoload it (the PS 7 module directory wins PSModulePath) - the same environment the
+  # installed-layout smoke test runs in. The subject code uses the identical .NET call.
+  $a1Sha = { param([string]$p) $h = [System.Security.Cryptography.SHA256]::Create(); try { $s = [System.IO.File]::OpenRead($p); try { ([BitConverter]::ToString($h.ComputeHash($s)) -replace '-','').ToLower() } finally { $s.Dispose() } } finally { $h.Dispose() } }
   try {
     $script:a1bObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
     Set-Item -Path 'function:Get-WindowObservation' -Value { param($h) return $script:a1bObs }
@@ -301,14 +306,14 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1bObs = $a1bStillRect
     $a1rB = $a1bBase + '-reuse.png'
     [void](Save-RectEx 10 20 2 2 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
-    $a1rPng0 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
-    $a1rMap0 = (Get-FileHash -LiteralPath ($a1rB + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1rPng0 = & $a1Sha $a1rB
+    $a1rMap0 = & $a1Sha ($a1rB + '.map.txt')
     $script:a1bObs = $a1bMovedRect
     $a1rErr = ''
     try { [void](Save-RectEx 210 220 4 4 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1rErr = "$($_.Exception.Message)" }
     $script:a1bObs = $a1bStillRect
-    $a1rPng1 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
-    $a1rMap1 = (Get-FileHash -LiteralPath ($a1rB + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1rPng1 = & $a1Sha $a1rB
+    $a1rMap1 = & $a1Sha ($a1rB + '.map.txt')
     $a1rBack = Read-MapSidecar $a1rB
     $a1rVerdict = Test-MapSidecarStale $a1rBack
     ST-Check 'unit (A1-b): a refused re-capture into an EXISTING name keeps the old PNG and map byte-identical (an old map never rides new pixels)' (
@@ -322,7 +327,7 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1bObs = $a1bStillRect
     [void](Save-RectEx 30 40 2 2 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
     $a1rBack2 = Read-MapSidecar $a1rB
-    $a1rPng2 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
+    $a1rPng2 = & $a1Sha $a1rB
     ST-Check 'unit (A1-b): a successful re-capture to the same name refreshes the sidecar origin AND records the new PNG hash' (
       $a1rBack2.OriginX -eq 30 -and $a1rBack2.OriginY -eq 40 -and $a1rBack2.PngSha.Length -eq 64 -and $a1rBack2.PngSha -eq $a1rPng2)
     $a1hPng = $a1bBase + '-hashmismatch.png'
@@ -367,14 +372,14 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1zObs = $a1zStillObs
     $a1zReuse = $a1bBase + '-zoom-reuse.png'
     [void](Invoke-DesktopCommand 'zoom' @('100', '200', '4', '4', '2', $a1zReuse, '--to', 'a1-host'))
-    $a1zPng0 = (Get-FileHash -LiteralPath $a1zReuse -Algorithm SHA256).Hash.ToLower()
-    $a1zMap0 = (Get-FileHash -LiteralPath ($a1zReuse + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1zPng0 = & $a1Sha $a1zReuse
+    $a1zMap0 = & $a1Sha ($a1zReuse + '.map.txt')
     $script:a1zObs = $a1zMovedObs
     $a1zReuseErr = ''
     try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '6', '6', '2', $a1zReuse, '--to', 'a1-host')) } catch { $a1zReuseErr = "$($_.Exception.Message)" }
     $script:a1zObs = $a1zStillObs
-    $a1zPng1 = (Get-FileHash -LiteralPath $a1zReuse -Algorithm SHA256).Hash.ToLower()
-    $a1zMap1 = (Get-FileHash -LiteralPath ($a1zReuse + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1zPng1 = & $a1Sha $a1zReuse
+    $a1zMap1 = & $a1Sha ($a1zReuse + '.map.txt')
     $a1zBack = Read-MapSidecar $a1zReuse
     ST-Check 'unit (A1-b): a refused re-capture into an EXISTING zoom name keeps the old PNG and map byte-identical' (
       $a1zReuseErr.Contains('DURING capture') -and $a1zPng1 -eq $a1zPng0 -and $a1zMap1 -eq $a1zMap0 -and $a1zBack.OriginX -eq 100 -and $a1zBack.OriginY -eq 200 -and (Test-MapSidecarStale $a1zBack).Verdict -eq 'ok')
