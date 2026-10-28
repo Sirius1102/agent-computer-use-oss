@@ -472,12 +472,17 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
   ST-Check 'unit: an explicit --grid step still wins over any default' (
     $gExplicit.Grid -eq 25 -and $gExplicit.GridUser -eq $true)
   $gSide = Join-Path $env:TEMP ('dtx-grid-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  $gSide2 = Join-Path $env:TEMP ('dtx-grid-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  # v4.6.8: a sidecar binds to the image bytes it describes, so these synthetic maps need images.
+  $gPng = New-Object System.Drawing.Bitmap(2, 2)
+  $gPng.Save($gSide, [System.Drawing.Imaging.ImageFormat]::Png)
   Write-MapSidecar $gSide 10 20 0.5 100 80 'rect' $null 50
   $gBack = Read-MapSidecar $gSide
-  $gSide2 = Join-Path $env:TEMP ('dtx-grid-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  $gPng.Save($gSide2, [System.Drawing.Imaging.ImageFormat]::Png)
   Write-MapSidecar $gSide2 10 20 1.0 100 80 'rect'
   $gBack2 = Read-MapSidecar $gSide2
-  Remove-Item -LiteralPath @(($gSide + '.map.txt'), ($gSide2 + '.map.txt')) -Force -ErrorAction SilentlyContinue
+  $gPng.Dispose()
+  Remove-Item -LiteralPath @(($gSide + '.map.txt'), ($gSide2 + '.map.txt'), $gSide, $gSide2) -Force -ErrorAction SilentlyContinue
   ST-Check 'unit: a grid step round-trips through the sidecar, and its absence reads as 0' (
     $gBack.Grid -eq 50 -and $gBack2.Grid -eq 0)
   # the bitmap is the only thing imgclick reads, so every capture that can auto-grid must

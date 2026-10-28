@@ -194,6 +194,9 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   $a1Names = @('Resolve-Window', 'Emit-ResolveNote', 'Get-WindowVisibleRect', 'Save-RectEx', 'Invoke-OcclusionOwners')
   $a1Orig = @{}
   foreach ($a1n in $a1Names) { $a1Orig[$a1n] = (Get-Item ("function:" + $a1n)).ScriptBlock }
+  # v4.6.8: a sidecar now binds to the PNG bytes it describes, so every synthetic sidecar in
+  # this family needs a real image beside it - the reader checks the hash, not our intention.
+  $a1Png = { param($p) $pb = New-Object System.Drawing.Bitmap(2, 2); $pg = [System.Drawing.Graphics]::FromImage($pb); $pg.Clear([System.Drawing.Color]::FromArgb(255, 7, 8, 9)); $pg.Dispose(); $pb.Save($p, [System.Drawing.Imaging.ImageFormat]::Png); $pb.Dispose() }
   $script:a1RectArgs = $null
   $a1Side = Join-Path $env:TEMP ('dtx-a1-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
   $a1Bad = Join-Path $env:TEMP ('dtx-a1-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
@@ -217,6 +220,7 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { [void](Invoke-DesktopCommand 'zoom' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1ZoomErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1): zoom --to is parsed out (not taken as the outPath) and refuses an outside region before capture' (
       $a1ZoomErr.Contains('outside the visible rect'))
+    & $a1Png $a1Side
     Write-MapSidecar $a1Side 110 210 1.0 50 40 'rect' ([pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' }) 0 ([pscustomobject]@{ X = 100; Y = 200; W = 300; H = 400 })
     $a1Back = Read-MapSidecar $a1Side
     ST-Check 'unit (A1): a bound rect sidecar round-trips its host identity AND host rect (what the strict check compares)' (
@@ -263,6 +267,7 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1bReads = 0
     Set-Item -Path 'function:Get-WindowVisibleRect' -Value { param($h) $script:a1bReads++; return @{ X = 200; Y = 200; W = 300; H = 400 } }
     $a1bSide = $a1bBase + '-snap.png'
+    & $a1Png $a1bSide
     Write-MapSidecar $a1bSide 10 20 1.0 30 40 'rect' $a1bFakeWin 0 $a1bSnap
     $a1bBack = Read-MapSidecar $a1bSide
     ST-Check 'unit (A1-b): Write-MapSidecar records the PRE-capture rect and makes zero live rect reads' (
@@ -286,10 +291,53 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     [void](Save-RectEx 0 0 1 1 $a1bImgScript 1.0 -1 @() '' $null $null)
     ST-Check 'unit (A1-b): a script-style capture publishes no bound sidecar at all' (
       -not (Test-Path -LiteralPath ($a1bImgScript + '.map.txt')))
+    # CU-467-REVIEW-20261028-01 A1-b: the reviewer's reused-output counterexample, end to end on
+    # the REAL Save-RectEx. First capture succeeds at a fixed name; the second, into the SAME
+    # name, is refused after the host moved. The old order had already overwritten the PNG at
+    # that point. Whatever remains must still be the OLD, self-consistent pair - the image bytes
+    # are unchanged, so no reader can map the old sidecar through new pixels.
+    $a1bStillRect = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+    $a1bMovedRect = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+    $script:a1bObs = $a1bStillRect
+    $a1rB = $a1bBase + '-reuse.png'
+    [void](Save-RectEx 10 20 2 2 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1rPng0 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
+    $a1rMap0 = (Get-FileHash -LiteralPath ($a1rB + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $script:a1bObs = $a1bMovedRect
+    $a1rErr = ''
+    try { [void](Save-RectEx 210 220 4 4 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1rErr = "$($_.Exception.Message)" }
+    $script:a1bObs = $a1bStillRect
+    $a1rPng1 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
+    $a1rMap1 = (Get-FileHash -LiteralPath ($a1rB + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1rBack = Read-MapSidecar $a1rB
+    $a1rVerdict = Test-MapSidecarStale $a1rBack
+    ST-Check 'unit (A1-b): a refused re-capture into an EXISTING name keeps the old PNG and map byte-identical (an old map never rides new pixels)' (
+      $a1rErr.Contains('DURING capture') -and $a1rPng1 -eq $a1rPng0 -and $a1rMap1 -eq $a1rMap0 -and $a1rBack.OriginX -eq 10 -and $a1rBack.OriginY -eq 20 -and $a1rVerdict.Verdict -eq 'ok')
+    $script:a1bObs = $a1bMovedRect
+    $a1rNew = $a1bBase + '-reuse-newfail.png'
+    $a1rNewErr = ''
+    try { [void](Save-RectEx 10 20 4 4 $a1rNew 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1rNewErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): a refused capture to a NEW name publishes neither the PNG nor a sidecar (no half frame on disk)' (
+      $a1rNewErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath $a1rNew)) -and (-not (Test-Path -LiteralPath ($a1rNew + '.map.txt'))))
+    $script:a1bObs = $a1bStillRect
+    [void](Save-RectEx 30 40 2 2 $a1rB 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1rBack2 = Read-MapSidecar $a1rB
+    $a1rPng2 = (Get-FileHash -LiteralPath $a1rB -Algorithm SHA256).Hash.ToLower()
+    ST-Check 'unit (A1-b): a successful re-capture to the same name refreshes the sidecar origin AND records the new PNG hash' (
+      $a1rBack2.OriginX -eq 30 -and $a1rBack2.OriginY -eq 40 -and $a1rBack2.PngSha.Length -eq 64 -and $a1rBack2.PngSha -eq $a1rPng2)
+    $a1hPng = $a1bBase + '-hashmismatch.png'
+    [void](Save-RectEx 10 20 2 2 $a1hPng 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1hBmp = New-Object System.Drawing.Bitmap(3, 3)
+    $a1hBmp.Save($a1hPng, [System.Drawing.Imaging.ImageFormat]::Png)
+    $a1hBmp.Dispose()
+    $a1hErr = ''
+    try { [void](Read-MapSidecar $a1hPng) } catch { $a1hErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): a sidecar whose png_sha256 no longer matches the file is refused at read time (the old map never blesses a replaced PNG)' (
+      $a1hErr.Contains('DIFFERENT image') -and $a1hErr.Contains('png_sha256'))
   } finally {
     foreach ($a1bn in $a1bNames) { Set-Item -Path ("function:" + $a1bn) -Value $a1bOrig[$a1bn] }
-    Remove-Item -LiteralPath @(($a1bBase + '-snap.png.map.txt'), ($a1bImgMove + '.map.txt'), ($a1bImgStill + '.map.txt')) -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath @(($a1bBase + '-snap.png'), $a1bImgMove, $a1bImgStill, $a1bImgScript) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @(($a1bBase + '-snap.png.map.txt'), ($a1bImgMove + '.map.txt'), ($a1bImgStill + '.map.txt'), ($a1rB + '.map.txt'), ($a1hPng + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @(($a1bBase + '-snap.png'), $a1bImgMove, $a1bImgStill, $a1bImgScript, $a1rB, $a1hPng) -Force -ErrorAction SilentlyContinue
   }
   # A1-b end-to-end on zoom: Resolve-CropHost reads the rect BEFORE the grab; the post-save
   # re-check uses the same observation seam. Only the window lookup/observation is replaced.
@@ -306,17 +354,40 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $a1zErr = ''
     try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '10', '10', '2', $a1zMove, '--to', 'a1-host')) } catch { $a1zErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-b): zoom refuses the frame when the host moved between the grab and the sidecar write' (
-      $a1zErr.Contains('zoom :') -and $a1zErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath ($a1zMove + '.map.txt'))))
+      $a1zErr.Contains('zoom :') -and $a1zErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath ($a1zMove + '.map.txt'))) -and (-not (Test-Path -LiteralPath $a1zMove)))
     $script:a1zObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
     $a1zStill = $a1bBase + '-zoom-still.png'
     [void](Invoke-DesktopCommand 'zoom' @('100', '200', '10', '10', '2', $a1zStill, '--to', 'a1-host'))
     $a1zMap = Read-MapSidecar $a1zStill
     ST-Check 'unit (A1-b): a stationary zoom records the pre-capture host rect in its sidecar' (
       $a1zMap.HostPid -eq 7 -and $a1zMap.HostX -eq 100 -and $a1zMap.HostY -eq 200 -and $a1zMap.HostW -eq 300 -and $a1zMap.HostH -eq 400)
+    # CU-467-REVIEW-20261028-01 A1-b: the same reused-output counterexample on the ZOOM path.
+    $a1zStillObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 100; Y = 200; W = 300; H = 400 } }
+    $a1zMovedObs = @{ Alive = $true; Pid = 7; Iconic = $false; Rect = @{ X = 200; Y = 200; W = 300; H = 400 } }
+    $script:a1zObs = $a1zStillObs
+    $a1zReuse = $a1bBase + '-zoom-reuse.png'
+    [void](Invoke-DesktopCommand 'zoom' @('100', '200', '4', '4', '2', $a1zReuse, '--to', 'a1-host'))
+    $a1zPng0 = (Get-FileHash -LiteralPath $a1zReuse -Algorithm SHA256).Hash.ToLower()
+    $a1zMap0 = (Get-FileHash -LiteralPath ($a1zReuse + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $script:a1zObs = $a1zMovedObs
+    $a1zReuseErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '6', '6', '2', $a1zReuse, '--to', 'a1-host')) } catch { $a1zReuseErr = "$($_.Exception.Message)" }
+    $script:a1zObs = $a1zStillObs
+    $a1zPng1 = (Get-FileHash -LiteralPath $a1zReuse -Algorithm SHA256).Hash.ToLower()
+    $a1zMap1 = (Get-FileHash -LiteralPath ($a1zReuse + '.map.txt') -Algorithm SHA256).Hash.ToLower()
+    $a1zBack = Read-MapSidecar $a1zReuse
+    ST-Check 'unit (A1-b): a refused re-capture into an EXISTING zoom name keeps the old PNG and map byte-identical' (
+      $a1zReuseErr.Contains('DURING capture') -and $a1zPng1 -eq $a1zPng0 -and $a1zMap1 -eq $a1zMap0 -and $a1zBack.OriginX -eq 100 -and $a1zBack.OriginY -eq 200 -and (Test-MapSidecarStale $a1zBack).Verdict -eq 'ok')
+    $script:a1zObs = $a1zMovedObs
+    $a1zNew = $a1bBase + '-zoom-newfail.png'
+    $a1zNewErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '4', '4', '2', $a1zNew, '--to', 'a1-host')) } catch { $a1zNewErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): a refused zoom to a NEW name publishes neither the PNG nor a sidecar' (
+      $a1zNewErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath $a1zNew)) -and (-not (Test-Path -LiteralPath ($a1zNew + '.map.txt'))))
   } finally {
     foreach ($a1zn in $a1zNames) { Set-Item -Path ("function:" + $a1zn) -Value $a1zOrig[$a1zn] }
-    Remove-Item -LiteralPath @(($a1zMove + '.map.txt'), ($a1zStill + '.map.txt')) -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath @($a1zMove, $a1zStill) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @(($a1zMove + '.map.txt'), ($a1zStill + '.map.txt'), ($a1zReuse + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @($a1zMove, $a1zStill, $a1zReuse) -Force -ErrorAction SilentlyContinue
   }
   # A1-a: the real handler, real sidecar read, real stale verdict. Resolve-Target only flips a
   # flag and the observation seam returns the moved rect afterwards - the exact review shape:
@@ -328,7 +399,11 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   foreach ($a1an in $a1aNames) { $a1aOrig[$a1an] = (Get-Item ("function:" + $a1an)).ScriptBlock }
   try {
     $a1aSide = $a1bBase + '-click.png'
-    Write-MapSidecar $a1aSide 110 210 1.0 50 40 'rect' $a1bFakeWin 0 $a1bSnap
+    & $a1Png $a1aSide
+    # CU-467: the click point is now (150,300) -> screen (260,510), which stays inside the window
+    # after activation moves X 100 -> 200 (200..500 by 200..600). The old (10,10) -> (120,220)
+    # left the frame and did not exercise the shape the review describes.
+    Write-MapSidecar $a1aSide 110 210 1.0 300 400 'rect' $a1bFakeWin 0 $a1bSnap
     Set-Item -Path 'function:Get-WindowObservation' -Value { param($h) $r = @{ X = 100; Y = 200; W = 300; H = 400 }; if ($script:a1aMove -and $script:a1aActivated) { $r = @{ X = 200; Y = 200; W = 300; H = 400 } }; return @{ Alive = $true; Pid = 7; Iconic = $false; Rect = $r } }
     Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $eh, $created) $script:a1aActivated = $true; return [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; Left = 100; Top = 200; W = 300; H = 400 } }
     Set-Item -Path 'function:Emit-ResolveNote' -Value { }
@@ -343,32 +418,47 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $script:a1aActivated = $false
     $script:a1aClicked = 0
     $a1aErr = ''
-    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host', '--require-verified')) } catch { $a1aErr = "$($_.Exception.Message)" }
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '150', '300', '--to', 'a1-host', '--require-verified')) } catch { $a1aErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-a): strict imgclick refuses when activation moved the host, even though the old point is still inside it' (
       $script:a1aClicked -eq 0 -and $a1aErr.Contains('immediately before input') -and $a1aErr.Contains('STALE'))
     $script:a1aMove = $false
     $script:a1aActivated = $false
     $script:a1aClicked = 0
     $a1aOk = $true
-    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host', '--require-verified')) } catch { $a1aOk = $false }
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '150', '300', '--to', 'a1-host', '--require-verified')) } catch { $a1aOk = $false }
     ST-Check 'unit (A1-a): the stationary control still clicks once' ($a1aOk -and $script:a1aClicked -eq 1)
     $script:a1aMove = $true
     $script:a1aActivated = $false
     $script:a1aClicked = 0
     $a1aDefErr = ''
-    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host')) } catch { $a1aDefErr = "$($_.Exception.Message)" }
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '150', '300', '--to', 'a1-host')) } catch { $a1aDefErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-a): the default path (no --stale-ok) also refuses a late move before input' (
       $script:a1aClicked -eq 0 -and $a1aDefErr.Contains('immediately before input'))
     $script:a1aMove = $true
     $script:a1aActivated = $false
     $script:a1aClicked = 0
     $a1aStaleOk = $true
-    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '10', '10', '--to', 'a1-host', '--stale-ok')) } catch { $a1aStaleOk = $false }
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aSide, '150', '300', '--to', 'a1-host', '--stale-ok')) } catch { $a1aStaleOk = $false }
     ST-Check 'unit (A1-a): --stale-ok remains the explicit permission to map against the old origin' (
       $a1aStaleOk -and $script:a1aClicked -eq 1)
+    # CU-467-REVIEW-20261028-01 A1-b: the reader-side guard for an injected publication failure -
+    # a PNG replaced out of band while the old sidecar stays. Strict imgclick must stop at the
+    # read, with no target work and no input.
+    $a1aBadPair = $a1bBase + '-click-badpair.png'
+    $script:a1aMove = $false
+    $script:a1aActivated = $false
+    [void](Save-RectEx 110 210 2 2 $a1aBadPair 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1aBadBmp = New-Object System.Drawing.Bitmap(5, 5)
+    $a1aBadBmp.Save($a1aBadPair, [System.Drawing.Imaging.ImageFormat]::Png)
+    $a1aBadBmp.Dispose()
+    $script:a1aClicked = 0
+    $a1aBadErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @($a1aBadPair, '150', '300', '--to', 'a1-host', '--require-verified')) } catch { $a1aBadErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1-b): strict imgclick refuses a sidecar/PNG pair whose hash no longer matches (0 clicks)' (
+      $script:a1aClicked -eq 0 -and $a1aBadErr.Contains('DIFFERENT image'))
   } finally {
     foreach ($a1an in $a1aNames) { Set-Item -Path ("function:" + $a1an) -Value $a1aOrig[$a1an] }
-    Remove-Item -LiteralPath @(($a1aSide + '.map.txt'), $a1aSide) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath @(($a1aSide + '.map.txt'), $a1aSide, ($a1aBadPair + '.map.txt'), $a1aBadPair) -Force -ErrorAction SilentlyContinue
   }
   # CU-EXTERNAL-EXPERIENCE-20261028 B2: the pre-input block verdict. owner is a WINDOW
   # RELATION, not a modality: an owned visible window that UIA reads as modeless must stay

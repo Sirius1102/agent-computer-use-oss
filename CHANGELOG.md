@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.8 - 2026-10-28
+
+- **A refused capture never overwrites a still-valid image, and a sidecar names the bytes it
+  describes.** Both `rect` and `zoom` re-checked the frozen host geometry only after the PNG
+  had been saved, so a failed re-capture into an existing name replaced the image and left the
+  old `.map.txt` behind; once the window returned, strict `imgclick` read `ok` for a pair whose
+  picture was no longer the one the sidecar had measured. The check now runs before the save:
+  a refused frame leaves the previous PNG and sidecar byte-identical, and a brand-new path gets
+  neither file. Every sidecar additionally records `png_sha256`, checked by `Read-MapSidecar`,
+  so a PNG replaced out of band (or a sidecar write that failed after the image landed) is
+  refused at read time instead of being mapped through. Sidecars written before this version
+  carry no hash and keep their old read behaviour.
+
 ## v4.6.7 - 2026-10-28
 
 - **A bound crop keeps the geometry it was captured against.** The rect/zoom handlers already

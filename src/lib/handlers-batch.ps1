@@ -132,10 +132,14 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       $gd.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
       $gd.DrawImage($src, 0, 0, $ow, $oh)
       $gd.Dispose(); $src.Dispose()
+      # v4.6.8 (CU-467-REVIEW-20261028-01 A1-b): re-check the frozen baseline BEFORE the PNG is
+      # written. The old order saved first and refused afterwards, so a failed re-capture into an
+      # existing name replaced the image while the old .map.txt stayed behind - a pair that read
+      # 'ok' once the window returned. Refuse first, then publish.
+      if ($null -ne $hostSnap) { [void](Assert-CaptureHostStable $hostSnap 'zoom') }
       $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
       $dst.Dispose()
       $size = (Get-Item -LiteralPath $path).Length
-      if ($null -ne $hostSnap) { [void](Assert-CaptureHostStable $hostSnap 'zoom') }
       Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
