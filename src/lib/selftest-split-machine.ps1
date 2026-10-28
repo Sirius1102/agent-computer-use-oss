@@ -518,7 +518,10 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     # pinned body banner count is 166, measured - not the old 165. The row stays a pin: the
     # family agreement table must still be exactly empty, so a drift in any single family is
     # still named instead of absorbed by the total.
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 166) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b): the capture-ocr family gained the W-1 budget
+    # banner, so the pin moves to 167 - again measured, and the agreement table still has to
+    # be empty for the row to pass.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 167) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')

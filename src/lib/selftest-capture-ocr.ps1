@@ -772,4 +772,71 @@ function Invoke-SelftestFamily-CaptureOcr($Ctx) {
   $curFHay.Dispose()
   $curFTpl.Dispose()
 
+  # ---------- CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b): one budget, checked on EVERY exit ----------
+  # The reviewer reproduced two holes against the real functions: a first-read HIT returned
+  # before the budget check (1000ms request, answer at 1852ms, still reported "met"), and the
+  # poll sleep always took the full interval (timeout 1s, interval 5000ms, real 5009ms). These
+  # checks bind the FIX, not a rewritten copy: the REAL Find-OcrHitsScaled runs with only the
+  # low-level OCR read stubbed, and the REAL wait-cond handler runs with only its read stubbed.
+  # Stubs go through a Set-Item seam, not the ${function:...} table A-07 registers.
+  $w1Names = @('Invoke-OcrRegion', 'Resolve-Window', 'Get-TargetRect', 'Find-OcrHitsScaled')
+  $w1Orig = @{}
+  foreach ($w1n in $w1Names) { $w1Orig[$w1n] = (Get-Item ("function:" + $w1n)).ScriptBlock }
+  try {
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs)
+      Start-Sleep -Milliseconds 1800
+      return ,@([pscustomobject]@{ Text = 'W1NEEDLE'; X = 0; Y = 0; W = 10; H = 10 }) }
+    $w1LateHit = Find-OcrHitsScaled 0 0 100 40 'W1NEEDLE' 'auto' 16 $false 1000
+    ST-Check 'unit (W-1a): a FIRST-READ hit that lands past the declared budget is TimedOut, not a met read - the hit is kept for diagnosis and the note says it came back past the 1000ms budget' (
+      ([bool]$w1LateHit.TimedOut) -and (@($w1LateHit.Hits).Count -eq 1) -and ("$($w1LateHit.Note)" -like '*past the 1000ms budget*') -and ($w1LateHit.Ms -ge 1500))
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs)
+      Start-Sleep -Milliseconds 1800
+      return ,@([pscustomobject]@{ Text = 'other text'; X = 0; Y = 0; W = 10; H = 10 }) }
+    $w1LateMiss = Find-OcrHitsScaled 0 0 100 40 'W1NEEDLE' 'auto' 16 $false 1000
+    ST-Check 'unit (W-1a): a FIRST-READ miss that lands past the budget is TimedOut too - a late miss is not evidence that the text is absent' (
+      ([bool]$w1LateMiss.TimedOut) -and (@($w1LateMiss.Hits).Count -eq 0) -and ("$($w1LateMiss.Note)" -like '*past the 1000ms budget*'))
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs)
+      Start-Sleep -Milliseconds 100
+      return ,@([pscustomobject]@{ Text = 'W1NEEDLE'; X = 0; Y = 0; W = 10; H = 10 }) }
+    $w1InBudget = Find-OcrHitsScaled 0 0 100 40 'W1NEEDLE' 'auto' 16 $false 1000
+    ST-Check 'unit (W-1a): the same read inside the budget stays a clean hit (TimedOut false, Hits 1) - the new check does not turn ordinary reads into timeouts' (
+      (-not [bool]$w1InBudget.TimedOut) -and (@($w1InBudget.Hits).Count -eq 1))
+    Set-Item -Path 'function:Find-OcrHitsScaled' -Value { param($x, $y, $w, $h, $needle, $scale, $maxTiles, $noTile, $deadline)
+      Start-Sleep -Milliseconds 1200
+      return @{ Hits = @([pscustomobject]@{ X = 1; Y = 1; W = 2; H = 2 }); Lines = @('late-hit'); Scaled = $false; Tiled = $false; TileCount = 0; Retried = $false; Note = ''; Ms = 1200.0; TimedOut = $false } }
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return [pscustomobject]@{ Handle = [IntPtr]1; Pid = 4242; Title = 'w1-fake'; Left = 0; Top = 0; W = 100; H = 40 } }
+    Set-Item -Path 'function:Get-TargetRect' -Value { param($w) return @{ X = 0; Y = 0; W = 100; H = 40 } }
+    $w1LateErr = ''
+    $w1LateOut = ''
+    try { $w1LateOut = Invoke-Handler-wait-cond 'wait-cond' @('w1-fake', '--text', 'W1NEEDLE', '--timeout', '1', '--interval', '100') }
+    catch { $w1LateErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (W-1a): the REAL wait-cond handler does NOT print "met" for a late hit - the expired read is counted as a read failure and reaches the caller as an error' (
+      ($w1LateOut -notlike '*met after*') -and ($w1LateErr -like '*late result is not accepted as met*') -and ($w1LateErr -like '*EVERY poll failed*'))
+    if (-not ($w1LateOut -notlike '*met after*' -and $w1LateErr -like '*late result*')) { Write-Output ("      W-1a handler: out=[" + $w1LateOut + "] err=[" + $w1LateErr + "]") }
+    Set-Item -Path 'function:Find-OcrHitsScaled' -Value $w1Orig['Find-OcrHitsScaled']
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return $null }
+    $w1SleepErr = ''
+    $w1SleepSw = [System.Diagnostics.Stopwatch]::StartNew()
+    try { Invoke-Handler-wait-cond 'wait-cond' @('w1-gone', '--win', '--timeout', '1', '--interval', '5000') | Out-Null }
+    catch { $w1SleepErr = "$($_.Exception.Message)" }
+    $w1SleepSw.Stop()
+    ST-Check 'unit (W-1b): an interval (5000ms) larger than the whole budget (1s) cannot buy extra time - the poll sleep is capped to what is LEFT, so the command exits near 1s, not 5s' (
+      ($w1SleepSw.ElapsedMilliseconds -lt 3000) -and ($w1SleepErr -like '*timeout after 1s*'))
+    if ($w1SleepSw.ElapsedMilliseconds -ge 3000) { Write-Output ("      W-1b sleep: elapsed=" + $w1SleepSw.ElapsedMilliseconds + "ms") }
+    $script:w1WinSeq = 0
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel)
+      $script:w1WinSeq++
+      if ($script:w1WinSeq -lt 3) { return $null }
+      return [pscustomobject]@{ Handle = [IntPtr]1; Pid = 4242; Title = 'w1-fake'; Left = 0; Top = 0; W = 100; H = 40 } }
+    $w1MetOut = ''
+    $w1MetErr = ''
+    try { $w1MetOut = Invoke-Handler-wait-cond 'wait-cond' @('w1-fake', '--win', '--timeout', '3', '--interval', '100') }
+    catch { $w1MetErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (W-1b): the normal false -> false -> true sequence still reports met, at the third poll, with no error - capping the sleep did not break the ordinary wait' (
+      ($w1MetOut -like 'wait-cond win met after*') -and ($w1MetOut -like '*(3 polls)*') -and ($w1MetErr -eq ''))
+    if (-not ($w1MetOut -like 'wait-cond win met after*')) { Write-Output ("      W-1b met: out=[" + $w1MetOut + "] err=[" + $w1MetErr + "]") }
+  } finally {
+    foreach ($w1n in $w1Names) { Set-Item -Path ('function:' + $w1n) -Value $w1Orig[$w1n] }
+  }
+
 }

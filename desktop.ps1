@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.5  (version sync list lives in the project overview doc)
+# version: 4.6.6  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.5'
+$script:ToolVersion = '4.6.6'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -466,7 +466,11 @@ Set-StrictMode -Version Latest
 # disabled+IsModal blocked, disabled+modeless/unsupported unknown, disabled+no-owner unknown,
 # vanished gone), the null-target no-op, the click-level refusal and clear wiring pair, the
 # thirteen-command call-site census and its commented-out control (1073 -> 1083). Measured.
-$script:DeclaredCheckTotal = 1083
+# CU-OPS-464-REVIEW-20261028-01 W-1a/W-1b: +6 - three budget checks against the REAL
+# Find-OcrHitsScaled with only the low-level OCR read stubbed (first-read late hit, first-read
+# late miss, in-budget hit), and three against the REAL wait-cond handler (late hit never met,
+# 5000ms interval capped to a 1s budget, ordinary false->false->true still met) (1083 -> 1089).
+$script:DeclaredCheckTotal = 1089
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2314,7 +2318,7 @@ $script:StFamilyFragments = @{
   'repo-contract' = @('version number sync', 'v4.5.5 (TB-1)', 'tracked-file count', 'tracked in the INDEX', 'offline-check total')
   'popup-occlusion' = @('same-process popup', 'no---to send path must take the SAME popup baseline', 'occlusion self-proof', 'popup survival guard', 'popup delta merge', 'red-1/red-2', 'the operating rule, made mechanical')
   'window-targeting' = @('window label, including the anonymous', 'the main-window rule is a pure function', 'Resolve-Window selector semantics', 'the composite locator', 'idempotent activation', 'uia-tree file route', 'open-and-pick', 'the take-a-coordinate ladder', 'find --region''s inverted validator', 'the UIA-driven Chrome exit menu', 'the landing identity check and the post-activation state read')
-  'capture-ocr' = @('OCR a saved capture', 'CJK spacing', 'OCR retry decision', 'tiled OCR planner', 'one OCR tail for every miss', 'sparse-read hint', 'needle sub-span aiming', 'folded-long-payload', 'folded long payload receipt')
+  'capture-ocr' = @('OCR a saved capture', 'CJK spacing', 'OCR retry decision', 'tiled OCR planner', 'one OCR tail for every miss', 'sparse-read hint', 'needle sub-span aiming', 'folded-long-payload', 'folded long payload receipt', 'CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b)')
   'expect-family' = @('the expect family names its patience', 'B-1/B-2/B-3', 'autoexpect', 'wiring (default-on must stay WIRED', 'the expectation anchor is fail-closed', 'the verbatim expectation legs', 'every verify call site passes the patience', '--verify-timeout', 'F-02: the 7th positional argument')
   'flags-grammar' = @('a flag must be REACHABLE', 'the named-stub conversion is machine-checked', 'Strip-OwnFlags', 'sibling-flag hint', 'Bool flags, per-command shared routing', 'the auto-grid decision', 'no miss message writes its own tail', 'truncation must self-report', 'the case shape is judged from the AST', 'a miss carries every premise', 'numeric arguments fail readably', 'the same hole elsewhere', 'the chrome family''s own promises', 'menu-pick target predicate', 'menu-pick''s extracted parser', 'the six "do not lose" contracts')
   'audit-output' = @('audit-log redaction + rotation', 'the two OCR --json top-level key sets', 'covering list is rendered in ONE place', 'the action family''s --json envelope', '--json must never be accepted and ignored', '--dump (write the bulk to a file', 'a stamp that CLAIMS UTC', 'resource hygiene', 'the line/occurrence gap must be spoken out loud', 'residual resolve sentences must not enter the envelope')
@@ -2327,11 +2331,11 @@ $script:StFamilyFragments = @{
 }
 $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive delete is gated and bounded', 'the outward docs must not teach a send into a real conversation')
 $script:StFamilyCounts = @{
-  'split-machine' = 'banners=23,lines=1327'
+  'split-machine' = 'banners=23,lines=1330'
   'repo-contract' = 'banners=5,lines=322'
   'gate-meta' = 'banners=30,lines=2808'
   'flags-grammar' = 'banners=16,lines=882'
-  'capture-ocr' = 'banners=8,lines=757'
+  'capture-ocr' = 'banners=9,lines=824'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
   'window-targeting' = 'banners=11,lines=1298'
@@ -2399,7 +2403,7 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # the MEASURED one, and the row still requires an exact match.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
-  'Invoke-SelftestFamily-CaptureOcr=101',
+  'Invoke-SelftestFamily-CaptureOcr=107',
   'Invoke-SelftestFamily-FlagsGrammar=91',
   'Invoke-SelftestFamily-WindowTargeting=177',
   'Invoke-SelftestFamily-DocsContract=62',
@@ -4905,6 +4909,16 @@ function Test-OcrRetryFits([int]$w, [int]$h, [long]$maxDim) {
 # Tiled (retry was tiled); TileCount; Note (machine-usable refusal/notes);
 # Ms (tiled wall time); TimedOut (the caller's declared budget ran out before
 # the read finished, so a miss does NOT mean the needle is absent).
+# W-1a (CU-OPS-464-REVIEW-20261028-01): a stage result - hit OR miss - is only usable
+# while the SAME overall budget still covers it. A hit that arrives after the deadline
+# is a late read, not a met condition, and a miss that arrives after it is not evidence
+# of absence. The slack is finite scheduling jitter, declared once here, NOT a second
+# budget handed to a stage.
+function Test-OcrBudgetExpired([System.Diagnostics.Stopwatch]$sw, [int]$DeadlineMs) {
+  if ($DeadlineMs -le 0) { return $false }
+  return ($sw.ElapsedMilliseconds -gt ($DeadlineMs + 50))
+}
+
 function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle, [string]$scaleMode = 'auto', [int]$maxTiles = 16, [bool]$noTile = $false, [int]$DeadlineMs = 0) {
   # W-1: an optional budget covers the WHOLE read across stages. Each stage is handed
   # only what is left of it, and a stage that cannot start marks TimedOut rather than
@@ -4912,6 +4926,9 @@ function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle,
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $l1 = Invoke-OcrRegion $x $y $w $h 0 $DeadlineMs
   $h1 = Find-OcrHits $l1 $needle
+  if (Test-OcrBudgetExpired $sw $DeadlineMs) {
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = "[the first read returned at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget - its result is neither a met read nor evidence of absence]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true }
+  }
   if ($h1.Count -gt 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ''; Ms = 0.0; TimedOut = $false } }
   if ($scaleMode -eq '1') { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0; TimedOut = $false } }
   $remain = 0
@@ -4921,10 +4938,14 @@ function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle,
   }
   if ($scaleMode -eq '2' -or $scaleMode -eq 'tiled') {
     $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles $remain
-    if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
+    $late = Test-OcrBudgetExpired $sw $DeadlineMs
+    if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ((@($t.Notes) -join ' ') + $(if ($late) { " [the tiled read came back at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget]" } else { '' })); Ms = $t.Ms; TimedOut = ([bool]$t.TimedOut -or $late) } }
     $h2 = Find-OcrHits $t.Lines $needle
-    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
+    if ($h2.Count -gt 0) {
+      if ($late) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = "[the tiled read found the needle at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget - a late hit is not a met read]"; Ms = $t.Ms; TimedOut = $true } }
+      return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
+    }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ((@($t.Notes) -join ' ') + $(if ($late) { " [the tiled read came back at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget]" } else { '' })); Ms = $t.Ms; TimedOut = ([bool]$t.TimedOut -or $late) }
   }
   if ($noTile) {
     # explicit v1.4.1 contrast mode: single-2x when it fits, otherwise skip
@@ -4933,6 +4954,8 @@ function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle,
     if (Test-OcrRetryFits $w $h $maxDim) {
       $l2 = Invoke-OcrRegion $x $y $w $h 2.0 $remain
       $h2 = Find-OcrHits $l2 $needle
+      $late = Test-OcrBudgetExpired $sw $DeadlineMs
+      if ($late) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = "[the 2x read came back at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget - its result is neither a met read nor evidence of absence]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
       if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false } }
       return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false }
     }
@@ -4944,6 +4967,8 @@ function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle,
   if (Test-OcrRetryFits $w $h $maxDim) {
     $l2 = Invoke-OcrRegion $x $y $w $h 2.0 $remain
     $h2 = Find-OcrHits $l2 $needle
+    $late = Test-OcrBudgetExpired $sw $DeadlineMs
+    if ($late) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = "[the 2x read came back at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget - its result is neither a met read nor evidence of absence]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
     if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false } }
     return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false }
   }
@@ -4953,10 +4978,14 @@ function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle,
     if ($remain -lt 1) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = "[budget of ${DeadlineMs}ms used up before the tiled read]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
   }
   $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles $remain
-  if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
+  $late = Test-OcrBudgetExpired $sw $DeadlineMs
+  if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ((@($t.Notes) -join ' ') + $(if ($late) { " [the tiled read came back at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget]" } else { '' })); Ms = $t.Ms; TimedOut = ([bool]$t.TimedOut -or $late) } }
   $h2 = Find-OcrHits $t.Lines $needle
-  if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
-  return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
+  if ($h2.Count -gt 0) {
+    if ($late) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = "[the tiled read found the needle at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget - a late hit is not a met read]"; Ms = $t.Ms; TimedOut = $true } }
+    return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
+  }
+  return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ((@($t.Notes) -join ' ') + $(if ($late) { " [the tiled read came back at $($sw.ElapsedMilliseconds)ms, past the ${DeadlineMs}ms budget]" } else { '' })); Ms = $t.Ms; TimedOut = ([bool]$t.TimedOut -or $late) }
 }
 
 # Three-state retry verdict for miss messages (v1.5.0 WP-1 2.6) - must match
@@ -11844,12 +11873,28 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
           $readErrors++
           $lastRead = 'read error: ' + $_.Exception.Message
         }
+        # W-1a (CU-OPS-464-REVIEW-20261028-01): a read result is usable only while the SAME
+        # total budget still covers it. A hit that lands after the deadline is not "met",
+        # and a miss that lands after it is not evidence that the condition stayed false.
+        # The 50ms slack is the same finite scheduling allowance Find-OcrHitsScaled uses.
+        $expired = ($sw.Elapsed.TotalMilliseconds -gt (($timeout * 1000) + 50))
+        if ($ok -and $expired) {
+          $readErrors++
+          $lastRead = "the read came back $([int]$sw.ElapsedMilliseconds)ms after start, past the ${timeout}s deadline - a late result is not accepted as met; last read: $lastRead"
+          $ok = $false
+        }
         if ($ok) {
           $mode = $(if ($wantWin) { 'win' } elseif ($wantGone) { 'gone' } elseif ($wantFg) { 'foreground' } elseif ($needle -ne '') { 'text' } else { 'uia' })
           "wait-cond $mode met after $([math]::Round($sw.Elapsed.TotalSeconds,1))s ($polls polls): $lastRead"
           return
         }
-        Start-Sleep -Milliseconds $interval
+        # W-1b: never sleep past the deadline - recompute what is LEFT after the read and
+        # cap the interval to it. An interval larger than the remaining budget cannot buy
+        # extra time; an exhausted budget exits immediately instead of sleeping first.
+        $leftMs = [int][math]::Floor(($timeout * 1000) - $sw.Elapsed.TotalMilliseconds)
+        if ($leftMs -le 0) { break }
+        $sleepMs = [math]::Min($interval, $leftMs)
+        if ($sleepMs -gt 0) { Start-Sleep -Milliseconds $sleepMs }
       }
       if ($readErrors -gt 0 -and $readErrors -eq $polls) {
         throw "wait-cond: timed out after ${timeout}s but EVERY poll failed to read ($lastRead) - this is a read failure, not evidence the condition stayed false"
@@ -17147,7 +17192,10 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     # pinned body banner count is 166, measured - not the old 165. The row stays a pin: the
     # family agreement table must still be exactly empty, so a drift in any single family is
     # still named instead of absorbed by the total.
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 166) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b): the capture-ocr family gained the W-1 budget
+    # banner, so the pin moves to 167 - again measured, and the agreement table still has to
+    # be empty for the row to pass.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 167) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')
@@ -19197,6 +19245,73 @@ function Invoke-SelftestFamily-CaptureOcr($Ctx) {
     $curFTolEdgeA -and $curFTolIn -and (-not $curFTolOut))
   $curFHay.Dispose()
   $curFTpl.Dispose()
+
+  # ---------- CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b): one budget, checked on EVERY exit ----------
+  # The reviewer reproduced two holes against the real functions: a first-read HIT returned
+  # before the budget check (1000ms request, answer at 1852ms, still reported "met"), and the
+  # poll sleep always took the full interval (timeout 1s, interval 5000ms, real 5009ms). These
+  # checks bind the FIX, not a rewritten copy: the REAL Find-OcrHitsScaled runs with only the
+  # low-level OCR read stubbed, and the REAL wait-cond handler runs with only its read stubbed.
+  # Stubs go through a Set-Item seam, not the ${function:...} table A-07 registers.
+  $w1Names = @('Invoke-OcrRegion', 'Resolve-Window', 'Get-TargetRect', 'Find-OcrHitsScaled')
+  $w1Orig = @{}
+  foreach ($w1n in $w1Names) { $w1Orig[$w1n] = (Get-Item ("function:" + $w1n)).ScriptBlock }
+  try {
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs)
+      Start-Sleep -Milliseconds 1800
+      return ,@([pscustomobject]@{ Text = 'W1NEEDLE'; X = 0; Y = 0; W = 10; H = 10 }) }
+    $w1LateHit = Find-OcrHitsScaled 0 0 100 40 'W1NEEDLE' 'auto' 16 $false 1000
+    ST-Check 'unit (W-1a): a FIRST-READ hit that lands past the declared budget is TimedOut, not a met read - the hit is kept for diagnosis and the note says it came back past the 1000ms budget' (
+      ([bool]$w1LateHit.TimedOut) -and (@($w1LateHit.Hits).Count -eq 1) -and ("$($w1LateHit.Note)" -like '*past the 1000ms budget*') -and ($w1LateHit.Ms -ge 1500))
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs)
+      Start-Sleep -Milliseconds 1800
+      return ,@([pscustomobject]@{ Text = 'other text'; X = 0; Y = 0; W = 10; H = 10 }) }
+    $w1LateMiss = Find-OcrHitsScaled 0 0 100 40 'W1NEEDLE' 'auto' 16 $false 1000
+    ST-Check 'unit (W-1a): a FIRST-READ miss that lands past the budget is TimedOut too - a late miss is not evidence that the text is absent' (
+      ([bool]$w1LateMiss.TimedOut) -and (@($w1LateMiss.Hits).Count -eq 0) -and ("$($w1LateMiss.Note)" -like '*past the 1000ms budget*'))
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs)
+      Start-Sleep -Milliseconds 100
+      return ,@([pscustomobject]@{ Text = 'W1NEEDLE'; X = 0; Y = 0; W = 10; H = 10 }) }
+    $w1InBudget = Find-OcrHitsScaled 0 0 100 40 'W1NEEDLE' 'auto' 16 $false 1000
+    ST-Check 'unit (W-1a): the same read inside the budget stays a clean hit (TimedOut false, Hits 1) - the new check does not turn ordinary reads into timeouts' (
+      (-not [bool]$w1InBudget.TimedOut) -and (@($w1InBudget.Hits).Count -eq 1))
+    Set-Item -Path 'function:Find-OcrHitsScaled' -Value { param($x, $y, $w, $h, $needle, $scale, $maxTiles, $noTile, $deadline)
+      Start-Sleep -Milliseconds 1200
+      return @{ Hits = @([pscustomobject]@{ X = 1; Y = 1; W = 2; H = 2 }); Lines = @('late-hit'); Scaled = $false; Tiled = $false; TileCount = 0; Retried = $false; Note = ''; Ms = 1200.0; TimedOut = $false } }
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return [pscustomobject]@{ Handle = [IntPtr]1; Pid = 4242; Title = 'w1-fake'; Left = 0; Top = 0; W = 100; H = 40 } }
+    Set-Item -Path 'function:Get-TargetRect' -Value { param($w) return @{ X = 0; Y = 0; W = 100; H = 40 } }
+    $w1LateErr = ''
+    $w1LateOut = ''
+    try { $w1LateOut = Invoke-Handler-wait-cond 'wait-cond' @('w1-fake', '--text', 'W1NEEDLE', '--timeout', '1', '--interval', '100') }
+    catch { $w1LateErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (W-1a): the REAL wait-cond handler does NOT print "met" for a late hit - the expired read is counted as a read failure and reaches the caller as an error' (
+      ($w1LateOut -notlike '*met after*') -and ($w1LateErr -like '*late result is not accepted as met*') -and ($w1LateErr -like '*EVERY poll failed*'))
+    if (-not ($w1LateOut -notlike '*met after*' -and $w1LateErr -like '*late result*')) { Write-Output ("      W-1a handler: out=[" + $w1LateOut + "] err=[" + $w1LateErr + "]") }
+    Set-Item -Path 'function:Find-OcrHitsScaled' -Value $w1Orig['Find-OcrHitsScaled']
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return $null }
+    $w1SleepErr = ''
+    $w1SleepSw = [System.Diagnostics.Stopwatch]::StartNew()
+    try { Invoke-Handler-wait-cond 'wait-cond' @('w1-gone', '--win', '--timeout', '1', '--interval', '5000') | Out-Null }
+    catch { $w1SleepErr = "$($_.Exception.Message)" }
+    $w1SleepSw.Stop()
+    ST-Check 'unit (W-1b): an interval (5000ms) larger than the whole budget (1s) cannot buy extra time - the poll sleep is capped to what is LEFT, so the command exits near 1s, not 5s' (
+      ($w1SleepSw.ElapsedMilliseconds -lt 3000) -and ($w1SleepErr -like '*timeout after 1s*'))
+    if ($w1SleepSw.ElapsedMilliseconds -ge 3000) { Write-Output ("      W-1b sleep: elapsed=" + $w1SleepSw.ElapsedMilliseconds + "ms") }
+    $script:w1WinSeq = 0
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel)
+      $script:w1WinSeq++
+      if ($script:w1WinSeq -lt 3) { return $null }
+      return [pscustomobject]@{ Handle = [IntPtr]1; Pid = 4242; Title = 'w1-fake'; Left = 0; Top = 0; W = 100; H = 40 } }
+    $w1MetOut = ''
+    $w1MetErr = ''
+    try { $w1MetOut = Invoke-Handler-wait-cond 'wait-cond' @('w1-fake', '--win', '--timeout', '3', '--interval', '100') }
+    catch { $w1MetErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (W-1b): the normal false -> false -> true sequence still reports met, at the third poll, with no error - capping the sleep did not break the ordinary wait' (
+      ($w1MetOut -like 'wait-cond win met after*') -and ($w1MetOut -like '*(3 polls)*') -and ($w1MetErr -eq ''))
+    if (-not ($w1MetOut -like 'wait-cond win met after*')) { Write-Output ("      W-1b met: out=[" + $w1MetOut + "] err=[" + $w1MetErr + "]") }
+  } finally {
+    foreach ($w1n in $w1Names) { Set-Item -Path ('function:' + $w1n) -Value $w1Orig[$w1n] }
+  }
 
 }
 
@@ -30798,7 +30913,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.5 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.6 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

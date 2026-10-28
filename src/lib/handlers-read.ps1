@@ -1773,12 +1773,28 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
           $readErrors++
           $lastRead = 'read error: ' + $_.Exception.Message
         }
+        # W-1a (CU-OPS-464-REVIEW-20261028-01): a read result is usable only while the SAME
+        # total budget still covers it. A hit that lands after the deadline is not "met",
+        # and a miss that lands after it is not evidence that the condition stayed false.
+        # The 50ms slack is the same finite scheduling allowance Find-OcrHitsScaled uses.
+        $expired = ($sw.Elapsed.TotalMilliseconds -gt (($timeout * 1000) + 50))
+        if ($ok -and $expired) {
+          $readErrors++
+          $lastRead = "the read came back $([int]$sw.ElapsedMilliseconds)ms after start, past the ${timeout}s deadline - a late result is not accepted as met; last read: $lastRead"
+          $ok = $false
+        }
         if ($ok) {
           $mode = $(if ($wantWin) { 'win' } elseif ($wantGone) { 'gone' } elseif ($wantFg) { 'foreground' } elseif ($needle -ne '') { 'text' } else { 'uia' })
           "wait-cond $mode met after $([math]::Round($sw.Elapsed.TotalSeconds,1))s ($polls polls): $lastRead"
           return
         }
-        Start-Sleep -Milliseconds $interval
+        # W-1b: never sleep past the deadline - recompute what is LEFT after the read and
+        # cap the interval to it. An interval larger than the remaining budget cannot buy
+        # extra time; an exhausted budget exits immediately instead of sleeping first.
+        $leftMs = [int][math]::Floor(($timeout * 1000) - $sw.Elapsed.TotalMilliseconds)
+        if ($leftMs -le 0) { break }
+        $sleepMs = [math]::Min($interval, $leftMs)
+        if ($sleepMs -gt 0) { Start-Sleep -Milliseconds $sleepMs }
       }
       if ($readErrors -gt 0 -and $readErrors -eq $polls) {
         throw "wait-cond: timed out after ${timeout}s but EVERY poll failed to read ($lastRead) - this is a read failure, not evidence the condition stayed false"

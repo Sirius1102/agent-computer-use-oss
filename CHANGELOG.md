@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.6 - 2026-10-28
+
+- **One deadline covers every OCR stage return, hits included.** `wait-cond --text` used to
+  return a first-read HIT as `met` even when the read came back after the request's deadline
+  (the old budget check only guarded misses and retries). `Find-OcrHitsScaled` now re-checks
+  the SAME overall budget before every return - first read, 2x, and tiled, hit or miss - and
+  marks a late result `TimedOut` with a note naming the elapsed time; a late hit is kept for
+  diagnosis but is neither a met read nor evidence of absence. `wait-cond` also refuses to
+  print `met` for a poll that came back past the deadline, counts it as a read failure, and
+  says so in the error. The 50ms allowance is scheduling slack on the single budget, not a
+  second budget.
+- **A poll sleep is capped to the time that is left.** `--timeout 1 --interval 5000` used to
+  sleep the full 5000ms and exit at ~5s while claiming a 1s timeout. The remaining time is now
+  recomputed after every read, the loop exits when it is exhausted, and the sleep is at most
+  what remains - so the met and timeout exits share one clock. Ordinary false->true waits are
+  unchanged.
+
 ## v4.6.5 - 2026-10-28
 
 - **A crop can name the window it came from, and a strict click can demand that proof.**
