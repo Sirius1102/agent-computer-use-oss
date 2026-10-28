@@ -1,10 +1,10 @@
-﻿# Agent Computer Use 开源版 v4.6.4
+﻿# Agent Computer Use 开源版 v4.6.5
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1052%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1083%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -49,7 +49,7 @@
 - **默认带守卫。** 按键物理上永远落在"当前焦点窗口"上，所以 `type` / `keys` / `paste` / `paste-file` 带 `--to <sel>` 时，会**先校验目标确实拿到了前台，才发第一个键**；校验不过直接 `ERROR` + 退出码 1，一个键都不发（`--force` 可跳过，退回旧行为）。发完之后**还会再查一次前台**，中途被抢走焦点同样算失败并告警。这条规则来自真实事故：`SetForegroundWindow` 可能被系统前台锁静默拒绝，盲发的按键落进了别的程序。
 - **知道自己是怎么知道的，并且说出来。** 这是整套功能围绕生长的设计准则：一个数字、一句"没找到"，如果不同时打印它来自哪次测量，就没有价值。于是 `find` 会报 `source=uia|ocr`；落空时会说出两条路各自量到了什么；`hit-window:` 打印你的点击**真实落在**哪个窗口；截图类命令回显图像→屏幕的换算式；`--expect` 的判词会写明实际生效的耐心值与轮询间隔；`paste` 会点名它凭哪种"回执"接受了一个被折叠成附件条的长文本。**0 从来不是"不存在"的证据**，一个只可能通过的检查不算检查。
 - **有审计。** 每条实际执行的 act/text/clipboard/uia-settext 命令向 `shots/actions.log` 追加一行：UTC 时间戳、命令、参数、解析到的目标。键入内容与守卫串以 `<redacted:Nchars>` 存（要原文就显式传 `--log-payload`）；只记文件**路径**，绝不记剪贴板内容和文件正文。日志 512KB 轮转，保留最新 5 个 `actions_*.log` 存档；`replay` 会**拒绝**正文已被脱敏的步骤——把占位符重放出去就等于把占位符打进目标。
-- **自带回归。** `selftest` 跑离线门禁（当前 1052 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
+- **自带回归。** `selftest` 跑离线门禁（当前 1061 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
 - **DPI 安全。** 读取任何坐标前，进程先声明 **Per-Monitor V2** DPI 感知（Windows 10 1703+；更老的系统自动回退 System-aware）。不做这一步，Windows 会按显示缩放比例虚拟化所有数值（150% 缩放下，2100×1350 的窗口会被读成 1400×900），截图裁切、点击偏移。Per-Monitor V2 还额外保证多块显示器**缩放比例不一致**（混合 DPI 多屏）时，副屏上的坐标与截图同样逐像素准确。用 `dpi` 命令可查看实际拿到的感知模式和每块显示器的物理像素边界。
 - **源码纯 ASCII。** PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 误读，所以脚本里没有任何非 ASCII 字面量（文件本身带 UTF-8 BOM，这正是 5.1 按 UTF-8 解码的原因）。中文等非 ASCII 文本一律通过 `paste <file>` 或 `uia-settext <sel> <name> <file>` 从外部 UTF-8 文件进入。
 
@@ -144,8 +144,8 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 |---|---|
 | `shot [outPath] [--fit px] [--grid [步长]] [--mark x,y]` | 整屏截图（虚拟屏全范围） |
 | `win <sel> [outPath] [--fit px] [--grid] [--mark x,y]` | 单窗口截图；回显自带图像→屏幕换算式与 `occluded=N%` 遮挡判词 |
-| `rect <x> <y> <w> <h> [outPath] [--fit px] [--grid] [--mark x,y]` | 区域截图（默认 `--fit 900`，肉眼量坐标能扛住查看器的下采样） |
-| `zoom <x> <y> <w> <h> [scale] [outPath]` | 小区域截图并**放大**（默认 2x，最近邻）+ 回显 `screen = (x + ix/scale, y + iy/scale)` |
+| `rect <x> <y> <w> <h> [outPath] [--fit px] [--grid] [--mark x,y] [--to <sel>]` | 区域截图（默认 `--fit 900`，肉眼量坐标能扛住查看器的下采样）；`--to` 把这张裁剪绑定到窗口，`imgclick --require-verified` 才能证明它现在仍然有效 |
+| `zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]` | 小区域截图并**放大**（默认 2x，最近邻）+ 回显 `screen = (x + ix/scale, y + iy/scale)`；`--to` 的绑定语义与 `rect` 相同 |
 | `wins` | 列出可见窗口：`pid proc class popup owner main rect size title` |
 | `info <sel>` | pid / 句柄 / 进程名 / 类 / owner / main / 矩形 / `pick=`（为什么选中它） |
 | `rect-of <sel>` | 只输出 `x y w h`，方便算相对坐标 |
@@ -216,7 +216,7 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `wheel <amount> [x y | --at <sel>] [--focus-first]` | 滚轮（负数向下）；回显会说明这个滚轮事件真正落在哪个窗口上 |
 | `relclick <sel> <dx> <dy>` | 窗口内相对坐标点击（窗口移动了也不用重算） |
 | `find-click <sel|x y w h> <文本...> [--index n] [--aim-line]` | OCR 定位文本，并点击命中行里**该文本自己那一段**（一次调用顶替 find-text → 读回显 → click） |
-| `imgclick <outPath> <ix> <iy> [--dry] [--stale-ok]` | 通过图像旁边的 `.map.txt` 把你在图上看到的像素反算成屏幕坐标再点击；窗口自截图后移动/缩放超过 2px 时**直接失败** |
+| `imgclick <outPath> <ix> <iy> [--dry] [--stale-ok] [--require-verified]` | 通过图像旁边的 `.map.txt` 把你在图上看到的像素反算成屏幕坐标再点击；窗口自截图后移动/缩放超过 2px 时**直接失败**；只有 `rect`/`zoom --to <sel>` 截出的裁剪才带宿主，`--require-verified` 对无宿主的侧车在输入前直接拒绝 |
 | `unmap <outPath> <ix> <iy>` | 同一套换算，只打印不点击、不写日志 |
 | `win-move <sel> <x> <y>` | 移动窗口（可见左上角落在 x,y） |
 | `win-resize <sel> <w> <h>` | 设置**可见**尺寸（已按 DWM 边框校正） |
@@ -306,6 +306,23 @@ CDP 通道只与 `127.0.0.1` 通信；`0.0.0.0`、局域网地址、裸端口、
 | `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]` | 一个进程内连跑一个 JSON 步骤数组：每步的 `to` 是硬前台守卫（守卫失败整串中止），assert 作为检查点，支持每步 `retry`/`intervalMs` 与内容守卫。`require-popup <sel>` 挂载弹层存活守卫，后续每一步执行前重查；`release-popup` 解除 |
 | `replay [<actions.log>] [--last n] [--grep s] [--go]` | 重放日志里记录的 act/text/clipboard 命令——**默认空跑**，`--go` 才执行。正文被脱敏的步骤会被拒绝；带弹层守卫中止标记的日志片段整段拒绝（半执行状态不该重放） |
 | `selftest [--live]` | 工具自身的回归门禁：源码 lint + 纯函数单元检查 + 契约检查，加 `--live` 后对自己创建的 `DTX-*` 夹具窗口做真实往返 |
+
+### 按日期找动作日志
+
+每个动作向 `shots/actions.log` 追加一行（`2026-10-27 16:56:46 UTC | relclick | ...`）。文件到
+512 KiB 会轮转成 `shots/actions_<UTC时间戳>.log`，同目录保留最近五份，所以"今天的
+`actions.log` 里没有那次会话"**不等于**那次没被记录——先读轮转档再下结论。时间戳是 **UTC**，
+北京时间是 UTC+8：本地 2026-10-26 对应 UTC 的 `2026-10-25 16:00` 到 `2026-10-26 16:00`。
+工具不会替你扫轮转档，按文件名显式读取：
+
+```powershell
+# 逐份读保留的切片（不要只读活动文件）
+Get-ChildItem shots\actions*.log | Sort-Object Name | ForEach-Object {
+  Select-String -LiteralPath $_.FullName -Pattern '^2026-10-2[56]' | ForEach-Object { "$($_.Filename):$($_.Line)" }
+}
+# 查看旧切片而不碰活动日志（replay 默认空跑）
+desktop.ps1 replay shots\actions_20261028T005646.log --last 50
+```
 
 ### script 步骤文件结构
 

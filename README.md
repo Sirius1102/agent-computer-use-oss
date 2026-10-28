@@ -1,10 +1,10 @@
-﻿# Agent Computer Use (Open Source Edition) v4.6.4
+﻿# Agent Computer Use (Open Source Edition) v4.6.5
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1052%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1083%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -49,7 +49,7 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. The foreground is re-checked *after* sending, so a mid-flight focus steal is a loud failure too. (`--force` opts out, legacy behavior.)
 - **It says how it knows what it knows.** This is the design rule the whole feature set grew around: a number or a "not found" is worthless unless the command also prints the measurement it came from. So `find` reports `source=uia|ocr`; a miss names what *both* roads measured; `hit-window:` prints the window your click actually landed on; capture echoes print the image→screen mapping they used; `--expect` verdicts name the patience and polling interval that were really applied; `paste` names which receipt leg accepted a folded payload. **Zero is never evidence of absence**, and a check that can only pass is not a check.
 - **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives, and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
-- **Self-testing.** `selftest` runs the offline gate (currently 1052 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
+- **Self-testing.** `selftest` runs the offline gate (currently 1083 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
 - **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
@@ -252,8 +252,8 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 |---|---|
 | `shot [outPath] [--fit px] [--grid [step]] [--mark x,y]` | capture the whole virtual screen |
 | `win <sel> [outPath] [--fit px] [--grid] [--mark x,y]` | capture one window; echoes the image→screen mapping and a labelled `occluded=N%` verdict |
-| `rect <x> <y> <w> <h> [outPath] [--fit px] [--grid] [--mark x,y]` | capture a region (default `--fit 900`, so eyeballed coordinates survive viewer downsampling) |
-| `zoom <x> <y> <w> <h> [scale] [outPath]` | capture a small region **enlarged** (default 2x, nearest-neighbor) + echo the `screen = (x + ix/scale, y + iy/scale)` mapping |
+| `rect <x> <y> <w> <h> [outPath] [--fit px] [--grid] [--mark x,y] [--to <sel>]` | capture a region (default `--fit 900`, so eyeballed coordinates survive viewer downsampling); `--to` binds the crop to a window so `imgclick --require-verified` can prove it is still current |
+| `zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]` | capture a small region **enlarged** (default 2x, nearest-neighbor) + echo the `screen = (x + ix/scale, y + iy/scale)` mapping; `--to` binds it to a host window exactly like `rect` |
 | `wins` | list visible windows: `pid proc class popup owner main rect size title` |
 | `info <sel>` | pid / handle / proc / class / owner / main / rects / `pick=` (why this window was chosen) |
 | `rect-of <sel>` | print `x y w h` only — handy for relative math |
@@ -324,7 +324,7 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `wheel <amount> [x y | --at <sel>] [--focus-first]` | scroll (negative = down); echoes the window the event actually lands on |
 | `relclick <sel> <dx> <dy>` | click inside a window, relative to its top-left — survives window moves |
 | `find-click <sel|x y w h> <needle...> [--index n] [--aim-line]` | OCR locates the text and clicks the needle's own sub-span of the matched line (one call instead of find-text → read echo → click) |
-| `imgclick <outPath> <ix> <iy> [--dry] [--stale-ok]` | reverse-map a pixel you read off a saved image through its `.map.txt` sidecar and click it; a sidecar whose window moved >2 px since capture **fails** |
+| `imgclick <outPath> <ix> <iy> [--dry] [--stale-ok] [--require-verified]` | reverse-map a pixel you read off a saved image through its `.map.txt` sidecar and click it; a sidecar whose window moved >2 px since capture **fails**; only a crop captured with `rect`/`zoom --to <sel>` carries a host, and `--require-verified` refuses an unbound sidecar before any input |
 | `unmap <outPath> <ix> <iy>` | the same mapping, printed — no click, no log line |
 | `win-move <sel> <x> <y>` | place the window (visible top-left at x,y) |
 | `win-resize <sel> <w> <h>` | set the **visible** size (DWM-border corrected) |
@@ -413,6 +413,24 @@ The CDP route only ever talks to `127.0.0.1`; `0.0.0.0`, LAN addresses, bare por
 | `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]` | run a JSON array of steps **in one process**: per-step `to` is a hard foreground guard (a guard failure aborts everything), asserts are checkpoints, `retry`/`intervalMs` per step, content guards. `require-popup <sel>` arms a popup-survival guard; `release-popup` disarms it |
 | `replay [<actions.log>] [--last n] [--grep s] [--go]` | re-run recorded act/text/clipboard commands — **dry run by default**, `--go` executes. Redacted payloads are refused, and a log slice carrying a popup-guard abort marker is refused outright |
 | `selftest [--live]` | the tool's own regression gate: source lints, unit checks of every pure helper, contract checks, and with `--live` real round-trips against synthetic `DTX-*` windows |
+
+### finding the action log for a date
+
+Every action appends one line to `shots/actions.log` (`2026-10-27 16:56:46 UTC | relclick | ...`).
+At 512 KiB the file rolls to `shots/actions_<UTC timestamp>.log` and the five newest rolls stay
+alongside it, so "today's file has no line from that session" does **not** mean the session was
+never logged — read the rolls before concluding anything was lost. Timestamps are **UTC**; Beijing
+time is UTC+8, so local date 2026-10-26 covers UTC lines from `2026-10-25 16:00` through
+`2026-10-26 16:00`. Nothing scans the rolls for you; name them explicitly:
+
+```powershell
+# every retained slice, one file at a time (never the live file only)
+Get-ChildItem shots\actions*.log | Sort-Object Name | ForEach-Object {
+  Select-String -LiteralPath $_.FullName -Pattern '^2026-10-2[56]' | ForEach-Object { "$($_.Filename):$($_.Line)" }
+}
+# inspect an archived slice without touching the live log (replay is dry-run by default)
+desktop.ps1 replay shots\actions_20261028T005646.log --last 50
+```
 
 ### script step schema
 

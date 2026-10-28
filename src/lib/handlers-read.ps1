@@ -91,19 +91,30 @@ function Invoke-Handler-info([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): rect - the case body, verbatim
 function Invoke-Handler-rect([string]$Cmd, [string[]]$Rest) {
-      # rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--occlude off|warn|strict]
+      # rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--occlude off|warn|strict] [--to <sel>]
       # Default fit=900: a crop wider than 900px is saved downscaled with the
       # explicit scale in the echo, so the image->screen formula is always
       # concrete. --fit 0 keeps the full-resolution crop (then expect the
       # wide-image WARN).
-      $of = Split-OcclusionFlags $Rest
+      # CU-EXTERNAL-EXPERIENCE-20261028 (A1): --to BINDS the crop to the window it
+      # was taken from. Without it the sidecar has no host and imgclick can only say
+      # 'unverifiable' - and used to click anyway. The binding is refused before any
+      # pixels are grabbed when the region lies outside that window.
+      $hb = Resolve-CaptureTargetArgs $Rest
+      $of = Split-OcclusionFlags @($hb.Words)
       $pf = Parse-CaptureFlags @($of.Words) $true
-      if ($pf.Rest.Count -lt 4) { throw 'usage: rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y]' }
+      if ($pf.Rest.Count -lt 4) { throw 'usage: rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--to <sel>]' }
+      $x = [int]$pf.Rest[0]; $y = [int]$pf.Rest[1]; $w = [int]$pf.Rest[2]; $h = [int]$pf.Rest[3]
       $path = if ($pf.Rest.Count -ge 5 -and $pf.Rest[4]) { $pf.Rest[4] } else { Default-ShotName 'rect' }
-      Save-RectEx ([int]$pf.Rest[0]) ([int]$pf.Rest[1]) ([int]$pf.Rest[2]) ([int]$pf.Rest[3]) $path $pf.Fit $pf.Grid $pf.Marks 'rect' $null $pf | Write-Output
+      $hostWin = $null
+      if ($hb.Sel) {
+        $hostWin = (Resolve-CropHost $hb.Sel $x $y $w $h 'rect').Win
+        "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it"
+      }
+      Save-RectEx $x $y $w $h $path $pf.Fit $pf.Grid $pf.Marks 'rect' $hostWin $pf | Write-Output
       # v1.5.1 WP-A owners mode (see shot for the rationale).
       $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
-      $own = Invoke-OcclusionOwners @{ X = [int]$pf.Rest[0]; Y = [int]$pf.Rest[1]; W = [int]$pf.Rest[2]; H = [int]$pf.Rest[3] } $occAct $of.OcclGrid
+      $own = Invoke-OcclusionOwners @{ X = $x; Y = $y; W = $w; H = $h } $occAct $of.OcclGrid
       if ($own.Ran) { Write-Output ("occ: " + $own.Echo) }
 }
 

@@ -85,6 +85,7 @@ function Invoke-Handler-click([string]$Cmd, [string[]]$Rest) {
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
       $origin = Get-PointSpaceOrigin $space $tgt
       $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       $clickLogArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
@@ -119,6 +120,7 @@ function Invoke-Handler-rclick([string]$Cmd, [string[]]$Rest) {
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
       $origin = Get-PointSpaceOrigin $space $tgt
       $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
@@ -151,6 +153,7 @@ function Invoke-Handler-dblclick([string]$Cmd, [string[]]$Rest) {
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
       $origin = Get-PointSpaceOrigin $space $tgt
       $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
@@ -443,6 +446,7 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
         $tgt = Resolve-Target $targetSel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
       }
+      Invoke-TargetBlockGuard $tgt
       $origin = Get-PointSpaceOrigin $space $tgt
       $posInfo = 'at current cursor position'
       if ($wordCount -eq 3) {
@@ -623,6 +627,7 @@ function Invoke-Handler-relclick([string]$Cmd, [string[]]$Rest) {
       $rcDy = [int]$p.Words[2]
       $tgt = Resolve-Target $rcSel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      Invoke-TargetBlockGuard $tgt
       # v4.4.1 CU-REL-01: the rect is read again, by handle, AFTER the activation above - restoring
       # or re-raising a window moves it, and Get-TargetRect prefers the snapshot taken at select
       # time. The six geometry fields are pinned onto the target so every reader in this call (the
@@ -700,6 +705,7 @@ function Invoke-Handler-drag([string]$Cmd, [string[]]$Rest) {
           Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
         }
       }
+      Invoke-TargetBlockGuard $tgt
       $rx1 = [int]$p.Words[0]; $ry1 = [int]$p.Words[1]; $rx2 = [int]$p.Words[2]; $ry2 = [int]$p.Words[3]
       $origin = Get-PointSpaceOrigin $space $tgt
       $dpt1 = Convert-PointSpace $rx1 $ry1 $origin
@@ -776,6 +782,7 @@ function Invoke-Handler-drag-to([string]$Cmd, [string[]]$Rest) {
         Emit-ResolveNote
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
+      Invoke-TargetBlockGuard $tgt
       $dg = Get-PressGate 'drag-to' 'drag-to' (Get-LeftButtonDown)
       if ($dg.Refuse) {
         if (Test-PressHoldFired) { Close-PressHold @("$($p.Words[0])", "$($p.Words[1])") '' $Cmd }
@@ -830,6 +837,7 @@ function Invoke-Handler-press-down([string]$Cmd, [string[]]$Rest) {
         Emit-ResolveNote
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
       $pg = Get-PressGate 'press-down' 'press-down' (Get-LeftButtonDown)
       if ($pg.Refuse) { throw "press-down: $($pg.Reason)" }
@@ -887,6 +895,7 @@ function Invoke-Handler-press-up([string]$Cmd, [string[]]$Rest) {
         if (Test-PressHoldFired) { Close-PressHold @($p.Words[0], $p.Words[1]) '' $Cmd }
         throw "press-up: $($pu.Reason)"
       }
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       [void][DT]::SetCursorPos([int]$p.Words[0], [int]$p.Words[1])
@@ -922,6 +931,7 @@ function Invoke-Handler-find-click([string]$Cmd, [string[]]$Rest) {
         Emit-ResolveNote
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
+      Invoke-TargetBlockGuard $tgt
       $f = Find-OcrHitsScaled $region.X $region.Y $region.W $region.H $needle $p.Scale $p.MaxTiles $p.NoTile
       $hits = $f.Hits
       if ($hits.Count -eq 0) {
@@ -1098,6 +1108,7 @@ function Invoke-Handler-menu-pick([string]$Cmd, [string[]]$Rest) {
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }
       Emit-ResolveNote
+      Invoke-TargetBlockGuard $w
       # Pointing this at a whole application window (or the desktop) turns "pick
       # the menu row" into "click the first pixel anywhere that happens to contain
       # the text", which is how a send ends up in the wrong conversation. The
@@ -1159,6 +1170,7 @@ function Invoke-Handler-open-and-pick([string]$Cmd, [string[]]$Rest) {
       $ox = [int]$p.Words[1]; $oy = [int]$p.Words[2]
       $tgt = Resolve-Target $p.Words[0] $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      Invoke-TargetBlockGuard $tgt
       $irect = Get-TargetRect $tgt
       if ($null -eq $irect) { throw 'open-and-pick: cannot determine target window rect' }
       if ($region) {

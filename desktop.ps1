@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.4  (version sync list lives in the project overview doc)
+# version: 4.6.5  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.4'
+$script:ToolVersion = '4.6.5'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -452,7 +452,21 @@ Set-StrictMode -Version Latest
 # loosened bound (the contract row still requires the run to equal it exactly).
 # v4.6.4 (G-1, correction review 20261028): +2 for the unreadable-clipboard branch - the unknown
 # restorable verdict / write gate and the unknown-snapshot restore note (1050 -> 1052).
-$script:DeclaredCheckTotal = 1052
+# CU-EXTERNAL-EXPERIENCE-20261028 B5: +4 handler-level checks - imgclick --expect-change really
+# samples before/after (changed, identical, not requested, --dry samples nothing) (1052 -> 1056).
+# CU-EXTERNAL-EXPERIENCE-20261028 A3: +5 for the per-command check summary - handler-body
+# attribution of the advertised checks, its planted control, the unroutable-family guard and the
+# two rendered-entry pins (1056 -> 1061).
+# CU-EXTERNAL-EXPERIENCE-20261028 A1: +12 - five require-verified/identity-contract checks around
+# imgclick and seven for the rect/zoom host binding (the minimized-first verdict, the 3px move,
+# the equal-rect ok, the unbound unverifiable map, the --to strip + path-not-selector pin, the
+# outside-rect refusal before Save-RectEx, and the bound sidecar round-trip + malformed-host
+# refusal) (1061 -> 1073). Measured on the clean-host run.
+# CU-EXTERNAL-EXPERIENCE-20261028 B2: +10 - five verdict shapes (enabled-with-owned clear,
+# disabled+IsModal blocked, disabled+modeless/unsupported unknown, disabled+no-owner unknown,
+# vanished gone), the null-target no-op, the click-level refusal and clear wiring pair, the
+# thirteen-command call-site census and its commented-out control (1073 -> 1083). Measured.
+$script:DeclaredCheckTotal = 1083
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2320,10 +2334,10 @@ $script:StFamilyCounts = @{
   'capture-ocr' = 'banners=8,lines=757'
   'popup-occlusion' = 'banners=7,lines=348'
   'audit-output' = 'banners=10,lines=940'
-  'window-targeting' = 'banners=11,lines=1086'
+  'window-targeting' = 'banners=11,lines=1298'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=190'
-  'docs-contract' = 'banners=12,lines=586'
+  'docs-contract' = 'banners=12,lines=646'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
@@ -2387,8 +2401,8 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=101',
   'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=151',
-  'Invoke-SelftestFamily-DocsContract=57',
+  'Invoke-SelftestFamily-WindowTargeting=177',
+  'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
   'Invoke-SelftestFamily-ClipboardInput=32',
@@ -2704,6 +2718,10 @@ public class DT {
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  // CU-EXTERNAL-EXPERIENCE-20261028 (B2): a disabled top-level does not receive mouse input,
+  // which is the FACT the block guard refuses on; the dialog's own modality is a separate
+  // question answered (or not) by UIA, never inferred from the owner relation alone.
+  [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
@@ -3655,6 +3673,48 @@ function Default-ShotName([string]$base) {
 # echoed mapping formula this turns "eyeball coordinates on a downscaled
 # viewer" (which silently mislocated clicks twice in real use) into "read the
 # label" or "apply the formula".
+# CU-EXTERNAL-EXPERIENCE-20261028 (A1): rect/zoom can BIND the crop to the window it was
+# taken from (--to <sel>). The flag is stripped BEFORE the capture parsers run: otherwise
+# '--to' ends up in the positional words and is mistaken for the output path. The value is
+# taken verbatim - a selector may legitimately look like a number - and a missing value or
+# a repeat is refused here, by name. Named Resolve-...Args so the flag-reachability lint
+# can follow the delegation instead of demanding a copy of this branch in each handler.
+function Resolve-CaptureTargetArgs([string[]]$words) {
+  $out = New-Object System.Collections.ArrayList
+  $sel = ''
+  $i = 0
+  while ($i -lt $words.Count) {
+    $t = "$($words[$i])"
+    if ($t -eq '--to') {
+      if ($i + 1 -ge $words.Count) { throw '--to needs a window selector (rect/zoom ... --to <sel>)' }
+      if ($sel) { throw '--to given twice - one crop binds to one window' }
+      $sel = "$($words[$i + 1])"
+      $i += 2
+      continue
+    }
+    [void]$out.Add($t)
+    $i++
+  }
+  return @{ Words = @($out); Sel = $sel }
+}
+
+# CU-EXTERNAL-EXPERIENCE-20261028 (A1): resolves the --to selector for a crop and refuses
+# a region that lies OUTSIDE the window's visible rect. Binding a host while capturing
+# somewhere else would record an identity that proves nothing about this crop - and the
+# refusal happens before any pixels are grabbed, so no misleading PNG is left behind.
+# Returns @{ Win; Rect; Sel }.
+function Resolve-CropHost([string]$sel, [int]$x, [int]$y, [int]$w, [int]$h, [string]$cmd) {
+  $win = Resolve-Window $sel
+  if (-not $win) { throw (Format-WindowMissMessage $sel) }
+  Emit-ResolveNote
+  $r = Get-WindowVisibleRect $win.Handle
+  if ($null -eq $r) { throw "$cmd : --to '$sel' resolved but its visible rect is unreadable - re-select or drop --to" }
+  if ($x -lt $r.X -or $y -lt $r.Y -or ($x + $w) -gt ($r.X + $r.W) -or ($y + $h) -gt ($r.Y + $r.H)) {
+    throw "$cmd : region ($x,$y,${w}x${h}) lies outside the visible rect of '--to $sel' (($($r.X),$($r.Y)) $($r.W)x$($r.H)) - capture inside the bound window or drop --to"
+  }
+  return @{ Win = $win; Rect = $r; Sel = $sel }
+}
+
 function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
   $rest = New-Object System.Collections.ArrayList
   $fit = $null; $grid = -1
@@ -3827,6 +3887,19 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
     $tb = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$hostWin.Title))
     $text += "pid=$hp`r`nhandle=$hh`r`ntitle_b64=$tb`r`n"
   }
+  # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a rect/zoom crop can be BOUND to the window it
+  # was taken from (--to <sel>). A crop is only a sub-region, so its own origin says nothing
+  # about the window; the sidecar records the window's identity AND its visible rect AT
+  # CAPTURE TIME, which is exactly what a later imgclick compares against. Without this a
+  # crop lifted out of a window was 'unverifiable' forever and got clicked anyway.
+  if ($kind -ne 'win' -and $null -ne $hostWin) {
+    $hp2 = [int]$hostWin.Pid
+    $hh2 = ([IntPtr]$hostWin.Handle).ToInt64()
+    $tb2 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$hostWin.Title))
+    $hr = Get-WindowVisibleRect ([IntPtr]$hostWin.Handle)
+    if ($null -eq $hr) { throw 'map sidecar: the --to window vanished before its rect could be recorded - re-run the capture' }
+    $text += "pid=$hp2`r`nhandle=$hh2`r`ntitle_b64=$tb2`r`nhost_x=$($hr.X)`r`nhost_y=$($hr.Y)`r`nhost_w=$($hr.W)`r`nhost_h=$($hr.H)`r`n"
+  }
   [System.IO.File]::WriteAllText(($imagePath + '.map.txt'), $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 
@@ -3852,6 +3925,11 @@ function Read-MapSidecar([string]$imagePath) {
   if ($raw -match '(?m)^pid=(\d+)\s*$') { $hPid = [int]$Matches[1] }
   if ($raw -match '(?m)^handle=(-?\d+)\s*$') { $hHnd = [long]$Matches[1] }
   if ($raw -match '(?m)^title_b64=([A-Za-z0-9+/=]+)\s*$') { $hTb = $Matches[1] }
+  $hx = $null; $hy = $null; $hwd = $null; $hht = $null
+  if ($raw -match '(?m)^host_x=(-?\d+)\s*$') { $hx = [int]$Matches[1] }
+  if ($raw -match '(?m)^host_y=(-?\d+)\s*$') { $hy = [int]$Matches[1] }
+  if ($raw -match '(?m)^host_w=(\d+)\s*$') { $hwd = [int]$Matches[1] }
+  if ($raw -match '(?m)^host_h=(\d+)\s*$') { $hht = [int]$Matches[1] }
   if ($null -eq $ox -or $null -eq $oy -or $null -eq $sc -or $sc -le 0 -or $null -eq $ow -or $null -eq $oh -or $kd -notin @('win', 'rect', 'zoom')) {
     throw "map sidecar malformed: $mapPath - re-capture the image"
   }
@@ -3862,9 +3940,15 @@ function Read-MapSidecar([string]$imagePath) {
   if ($kd -eq 'win' -and ($null -eq $hPid -or $null -eq $hHnd)) {
     throw "map sidecar predates staleness tracking (kind=win without pid/handle): $mapPath - re-capture the image (win <sel>)"
   }
+  # A bound crop must carry its host rect: identity alone would let a checker compare the
+  # window identity and then have nothing to compare geometry against. Half a binding is
+  # refused at read time, never silently downgraded to 'unverifiable'.
+  if ($kd -ne 'win' -and $null -ne $hHnd -and ($null -eq $hx -or $null -eq $hy -or $null -eq $hwd -or $null -eq $hht)) {
+    throw "map sidecar malformed (host identity without host_x/host_y/host_w/host_h): $mapPath - re-capture the image (rect/zoom ... --to <sel>)"
+  }
   $gStep = 0
   if ($raw -match '(?m)^grid=(\d+)\s*$') { $gStep = [int]$Matches[1] }
-  return @{ OriginX = $ox; OriginY = $oy; Scale = $sc; OutW = $ow; OutH = $oh; Kind = $kd; Grid = $gStep; HostPid = $(if ($null -ne $hPid) { $hPid } else { 0 }); HostHwnd = $hHwnd; HostTitle = $title }
+  return @{ OriginX = $ox; OriginY = $oy; Scale = $sc; OutW = $ow; OutH = $oh; Kind = $kd; Grid = $gStep; HostPid = $(if ($null -ne $hPid) { $hPid } else { 0 }); HostHwnd = $hHwnd; HostTitle = $title; HostX = $hx; HostY = $hy; HostW = $hwd; HostH = $hht }
 }
 
 # Image px -> screen px using a sidecar (single formula for win/rect/zoom).
@@ -3888,40 +3972,62 @@ function Get-WindowVisibleRect([IntPtr]$h) {
 #   ok            - window exists, same pid, origin/size within 2px
 #   stale         - window moved/resized beyond 2px (or is minimized)
 #   gone          - handle dead or reused by another process (never guess)
-#   unverifiable  - rect/zoom sidecars have no host window (say so, don't fail)
+#   unverifiable  - no host window is bound to this sidecar (say so, don't fail)
+# v4.6.5 (CU-EXTERNAL-EXPERIENCE-20261028 A1): a rect/zoom crop can be BOUND to its host
+# window (rect/zoom ... --to <sel>). Then the geometry compares against the RECORDED HOST
+# RECT, never the crop origin - a crop is a sub-region and its origin is not the window
+# origin. An unbound crop stays 'unverifiable' exactly as before; the strict contract
+# (imgclick --require-verified) is what turns that into a refusal.
+# The comparison core is pure so the minimized-but-rect-unchanged shape (a minimized
+# window KEEPS its rect, which used to read as 'ok' while every mapped pixel was covered)
+# is testable offline, without a live window.
 # Returns @{ Verdict; Msg; OldX; OldY; NewX; NewY; OldW; OldH; NewW; NewH }.
+function Get-SidecarRectVerdict([string]$title, [int]$rx, [int]$ry, [int]$rw, [int]$rh, $cur, [bool]$iconic) {
+  $r = @{ Verdict = 'ok'; Msg = ''; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
+  if ($iconic) {
+    $r.Verdict = 'stale'
+    $r.Msg = "sidecar is STALE for '$title': the host window is minimized, so the captured pixels are not on screen - restore it and re-capture, or pass --stale-ok to map against the OLD origin anyway (clicks likely land wrong)"
+    return $r
+  }
+  $dx = [math]::Abs($cur.X - $rx)
+  $dy = [math]::Abs($cur.Y - $ry)
+  $dw = [math]::Abs($cur.W - $rw)
+  $dh = [math]::Abs($cur.H - $rh)
+  $r.NewX = $cur.X; $r.NewY = $cur.Y; $r.NewW = $cur.W; $r.NewH = $cur.H
+  if ($dx -gt 2 -or $dy -gt 2 -or $dw -gt 2 -or $dh -gt 2) {
+    $what = New-Object System.Collections.ArrayList
+    if ($dx -gt 2 -or $dy -gt 2) { [void]$what.Add("origin was ($rx,$ry) now ($($cur.X),$($cur.Y))") }
+    if ($dw -gt 2 -or $dh -gt 2) { [void]$what.Add("size was ${rw}x${rh} now $($cur.W)x$($cur.H)") }
+    $r.Verdict = 'stale'
+    $r.Msg = "sidecar is STALE for '$title': $([string]::Join('; ', @($what))) - re-capture (win <sel> / rect|zoom ... --to <sel>) or pass --stale-ok to map against the OLD origin anyway (clicks likely land wrong)"
+  }
+  return $r
+}
+
 function Test-MapSidecarStale($map) {
-  if ($map.Kind -ne 'win') {
-    return @{ Verdict = 'unverifiable'; Msg = 'no host window - staleness not verifiable'; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $null; NewY = $null; OldW = $null; OldH = $null; NewW = $null; NewH = $null }
+  $unv = @{ Verdict = 'unverifiable'; Msg = 'no host window is bound to this image - staleness not verifiable (bind one with rect/zoom ... --to <sel>)'; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $null; NewY = $null; OldW = $null; OldH = $null; NewW = $null; NewH = $null }
+  if ([string]$map.Kind -eq 'win') {
+    $rx = [int]$map.OriginX; $ry = [int]$map.OriginY
+    $rw = [int][math]::Round($map.OutW / $map.Scale); $rh = [int][math]::Round($map.OutH / $map.Scale)
+  } elseif ($null -ne $map.HostW) {
+    $rx = [int]$map.HostX; $ry = [int]$map.HostY; $rw = [int]$map.HostW; $rh = [int]$map.HostH
+  } else {
+    return $unv
   }
   $h = $map.HostHwnd
   if (-not [DT]::IsWindow($h)) {
-    return @{ Verdict = 'gone'; Msg = "the recorded window handle=$($h) no longer exists - re-capture the image (win <sel>)"; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $null; NewY = $null; OldW = $null; OldH = $null; NewW = $null; NewH = $null }
+    return @{ Verdict = 'gone'; Msg = "the recorded window handle=$($h) no longer exists - re-capture the image (win <sel>)"; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
   $curPid = 0
   [void][DT]::GetWindowThreadProcessId($h, [ref]$curPid)
   if ($curPid -ne $map.HostPid) {
-    return @{ Verdict = 'gone'; Msg = "window handle=$($h) now belongs to pid=$curPid (was pid=$($map.HostPid)) - handle reused, refusing to guess; re-capture the image"; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $null; NewY = $null; OldW = $null; OldH = $null; NewW = $null; NewH = $null }
+    return @{ Verdict = 'gone'; Msg = "window handle=$($h) now belongs to pid=$curPid (was pid=$($map.HostPid)) - handle reused, refusing to guess; re-capture the image"; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
-  $r = Get-WindowVisibleRect $h
-  if ($null -eq $r) {
-    return @{ Verdict = 'gone'; Msg = 'window vanished while checking - re-capture the image'; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $null; NewY = $null; OldW = $null; OldH = $null; NewW = $null; NewH = $null }
+  $cur = Get-WindowVisibleRect $h
+  if ($null -eq $cur) {
+    return @{ Verdict = 'gone'; Msg = 'window vanished while checking - re-capture the image'; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
-  $oldW = [int][math]::Round($map.OutW / $map.Scale)
-  $oldH = [int][math]::Round($map.OutH / $map.Scale)
-  $dx = [math]::Abs($r.X - $map.OriginX)
-  $dy = [math]::Abs($r.Y - $map.OriginY)
-  $dw = [math]::Abs($r.W - $oldW)
-  $dh = [math]::Abs($r.H - $oldH)
-  if ($dx -gt 2 -or $dy -gt 2 -or $dw -gt 2 -or $dh -gt 2) {
-    $what = New-Object System.Collections.ArrayList
-    if ($dx -gt 2 -or $dy -gt 2) { [void]$what.Add("origin was ($($map.OriginX),$($map.OriginY)) now ($($r.X),$($r.Y))") }
-    if ($dw -gt 2 -or $dh -gt 2) { [void]$what.Add("size was ${oldW}x${oldH} now $($r.W)x$($r.H)") }
-    $mini = ''
-    if ([DT]::IsIconic($h)) { $mini = ' (window is minimized)' }
-    return @{ Verdict = 'stale'; Msg = "sidecar is STALE for '$($map.HostTitle)': $([string]::Join('; ', @($what)))$mini - re-capture (win <sel>) or pass --stale-ok to map against the OLD origin anyway (clicks likely land wrong)"; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $r.X; NewY = $r.Y; OldW = $oldW; OldH = $oldH; NewW = $r.W; NewH = $r.H }
-  }
-  return @{ Verdict = 'ok'; Msg = ''; OldX = $map.OriginX; OldY = $map.OriginY; NewX = $r.X; NewY = $r.Y; OldW = $oldW; OldH = $oldH; NewW = $r.W; NewH = $r.H }
+  return (Get-SidecarRectVerdict ([string]$map.HostTitle) $rx $ry $rw $rh $cur ([bool][DT]::IsIconic($h)))
 }
 
 # --- OCR (Windows.Media.Ocr via WinRT, zero third-party deps) -------------
@@ -5880,6 +5986,123 @@ function Format-LandingVerdict([int]$x, [int]$y, $hit, $target, [bool]$relaxed) 
     return "  (landing guard RELAXED by --allow-outside: clicking at ($x,$y) where $who sits, while the resolved target is hwnd=$($target.Handle) '$($target.Title)')"
   }
   return "landing guard: the window under ($x,$y) is $who, not the resolved target hwnd=$($target.Handle) '$($target.Title)' - NOTHING was clicked. Move or close the coverer (wins -z lists what is on top), point at the target itself, or pass --allow-outside to send anyway (it will say it relaxed the guard)."
+}
+
+# ---------- CU-EXTERNAL-EXPERIENCE-20261028 (B2): the pre-input block state ----------
+# owner is a WINDOW RELATION; modal is an INPUT RULE, and one does not imply the other: Windows
+# supports dialog boxes that are owned and MODELESS, so "an owned visible window exists" may
+# never, by itself, be reported as "modal". The facts this guard is allowed to use are
+#   (1) the target still exists,
+#   (2) IsWindowEnabled on the target (a disabled top-level receives no mouse input - a fact),
+#   (3) visible top-levels whose GW_OWNER chain reaches the target,
+#   (4) UIA WindowPattern.IsModal on those, TRI-STATE because a toolkit without UIA reads
+#       'unsupported', which is not 'no' and is never upgraded to 'yes'.
+# Verdict 'unknown' is a real answer: the refusal then quotes the FACT it refused on (the target
+# is disabled) and names the candidate it saw WITHOUT calling it modal. Pure over the facts it
+# is handed, so all four shapes are pinned offline without a live dialog.
+function Get-TargetBlockVerdict([bool]$alive, [bool]$enabled, $candidates, [string]$targetLabel) {
+  $cs = @($candidates)
+  if (-not $alive) { return @{ Verdict = 'gone'; Blocking = $null; Candidates = $cs; Msg = '' } }
+  if ($enabled) { return @{ Verdict = 'clear'; Blocking = $null; Candidates = $cs; Msg = '' } }
+  $modal = @($cs | Where-Object { "$($_.UiaModal)" -eq 'yes' })
+  $named = @($cs | ForEach-Object { "$($_.Identity)" }) -join '; '
+  if (@($modal).Count -gt 0) {
+    return @{ Verdict = 'blocked'; Blocking = $modal[0]; Candidates = $cs;
+      Msg = "block guard: target $targetLabel is DISABLED and $($modal[0].Identity) reports UIA WindowPattern.IsModal=true - a modal dialog is up and mouse input to the target goes nowhere. NOTHING was sent and no dialog button was pressed; read the dialog as its own target ('wins -z', 'uia-tree <sel>') and act on it deliberately (system dialogs stay on 'dialog-cancel')." }
+  }
+  if (@($cs).Count -eq 0) {
+    return @{ Verdict = 'unknown'; Blocking = $null; Candidates = $cs;
+      Msg = "block guard: target $targetLabel is DISABLED, but no visible top-level window is owned by it, so what blocks it is UNKNOWN (modal state unconfirmed, not assumed). A disabled window receives no mouse input. NOTHING was sent; read the desktop ('wins -z') before acting." }
+  }
+  return @{ Verdict = 'unknown'; Blocking = $cs[0]; Candidates = $cs;
+    Msg = "block guard: target $targetLabel is DISABLED; visible owned window(s) $named are present but none is CONFIRMED modal (UIA says modeless or unsupported) - modal state unconfirmed, and 'owned' is not evidence of 'modal'. A disabled window receives no mouse input. NOTHING was sent; read the dialog or posture ('wins -z', 'uia-state <sel>') before acting." }
+}
+
+# UIA's own answer to "is this window modal", tri-state on purpose. A toolkit that does not
+# implement WindowPattern (or does not expose UIA at all) answers 'unsupported' - the guard
+# reports that as unknown, because guessing either way would be the owner==modal mistake.
+function Get-UiaModalState([IntPtr]$hwnd) {
+  try {
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+    $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    if ($null -eq $el) { return 'unsupported' }
+    $pat = $null
+    if (-not $el.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$pat)) { return 'unsupported' }
+    if ($null -eq $pat) { return 'unsupported' }
+    if ([bool]$pat.Current.IsModal) { return 'yes' }
+    return 'no'
+  } catch { return 'unsupported' }
+}
+
+# Visible top-level windows whose owner chain (GW_OWNER, bounded walk) reaches the target.
+# Only called when the target is disabled - the UIA probe per candidate is the expensive part
+# and never runs on the happy path.
+function Get-TargetBlockCandidates($target) {
+  $found = New-Object System.Collections.ArrayList
+  if ($null -eq $target) { return @($found) }
+  $th = [IntPtr]$target.Handle
+  if (-not [DT]::IsWindow($th)) { return @($found) }
+  $tops = New-Object System.Collections.ArrayList
+  $cb = [DT+EnumProc] {
+    param($h, $l)
+    [void]$tops.Add($h)
+    return $true
+  }
+  [void][DT]::EnumWindows($cb, [IntPtr]::Zero)
+  foreach ($h in @($tops)) {
+    if ($h -eq $th) { continue }
+    if (-not [DT]::IsWindowVisible($h)) { continue }
+    $owner = [DT]::GetWindow($h, 4)          # GW_OWNER
+    $owned = $false
+    $depth = 0
+    while (([Int64]$owner) -ne 0 -and $depth -lt 8) {
+      if ($owner -eq $th) { $owned = $true; break }
+      $owner = [DT]::GetWindow($owner, 4)
+      $depth++
+    }
+    if (-not $owned) { continue }
+    $cPid = [uint32]0
+    [void][DT]::GetWindowThreadProcessId($h, [ref]$cPid)
+    $cn = New-Object System.Text.StringBuilder 256
+    [void][DT]::GetClassName($h, $cn, 256)
+    $ct = [string][DT]::Text($h)
+    [void]$found.Add([pscustomobject]@{
+      Handle = $h
+      Pid = [int]$cPid
+      Class = $cn.ToString()
+      Title = $ct
+      Identity = ("pid=$([int]$cPid) hwnd=$([Int64]$h) " + (Format-WindowLabel $ct $cn.ToString()))
+      UiaModal = (Get-UiaModalState $h)
+    })
+  }
+  return @($found)
+}
+
+# Live facts for one target. Kept separate from the verdict so the offline checks can feed the
+# verdict all four shapes directly, and so the UIA cost is paid only in the disabled branch.
+function Get-TargetBlockFacts($target) {
+  $f = @{ Alive = $false; Enabled = $false; Candidates = @() }
+  if ($null -eq $target) { return $f }
+  $th = [IntPtr]$target.Handle
+  $f.Alive = [bool][DT]::IsWindow($th)
+  if (-not $f.Alive) { return $f }
+  $f.Enabled = [bool][DT]::IsWindowEnabled($th)
+  if (-not $f.Enabled) { $f.Candidates = @(Get-TargetBlockCandidates $target) }
+  return $f
+}
+
+# The shared pre-input guard. A null target means the command has NO explicit window identity
+# (a bare coordinate click), and the owner ruling is that such a call must not guess an
+# application to judge for the caller - so it prints nothing and sends nothing extra. With an
+# explicit target it refuses before any input on 'blocked' and 'unknown', and stays silent on
+# 'clear'/'gone' (a vanished handle is the other guards' refusal to make).
+function Invoke-TargetBlockGuard($target) {
+  if ($null -eq $target) { return }
+  $f = Get-TargetBlockFacts $target
+  $label = "hwnd=$([Int64]$target.Handle) pid=$($target.Pid) '$($target.Title)'"
+  $v = Get-TargetBlockVerdict ([bool]$f.Alive) ([bool]$f.Enabled) @($f.Candidates) $label
+  if ($v.Verdict -eq 'blocked' -or $v.Verdict -eq 'unknown') { throw $v.Msg }
 }
 
 # CU-REL-01 (v4.4.1): the one renderer for "what state is this window in, and when was that
@@ -9939,19 +10162,30 @@ function Invoke-Handler-info([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): rect - the case body, verbatim
 function Invoke-Handler-rect([string]$Cmd, [string[]]$Rest) {
-      # rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--occlude off|warn|strict]
+      # rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--occlude off|warn|strict] [--to <sel>]
       # Default fit=900: a crop wider than 900px is saved downscaled with the
       # explicit scale in the echo, so the image->screen formula is always
       # concrete. --fit 0 keeps the full-resolution crop (then expect the
       # wide-image WARN).
-      $of = Split-OcclusionFlags $Rest
+      # CU-EXTERNAL-EXPERIENCE-20261028 (A1): --to BINDS the crop to the window it
+      # was taken from. Without it the sidecar has no host and imgclick can only say
+      # 'unverifiable' - and used to click anyway. The binding is refused before any
+      # pixels are grabbed when the region lies outside that window.
+      $hb = Resolve-CaptureTargetArgs $Rest
+      $of = Split-OcclusionFlags @($hb.Words)
       $pf = Parse-CaptureFlags @($of.Words) $true
-      if ($pf.Rest.Count -lt 4) { throw 'usage: rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y]' }
+      if ($pf.Rest.Count -lt 4) { throw 'usage: rect <x> <y> <w> <h> [outPath] [--fit <px|0>] [--grid [step]] [--mark x,y] [--to <sel>]' }
+      $x = [int]$pf.Rest[0]; $y = [int]$pf.Rest[1]; $w = [int]$pf.Rest[2]; $h = [int]$pf.Rest[3]
       $path = if ($pf.Rest.Count -ge 5 -and $pf.Rest[4]) { $pf.Rest[4] } else { Default-ShotName 'rect' }
-      Save-RectEx ([int]$pf.Rest[0]) ([int]$pf.Rest[1]) ([int]$pf.Rest[2]) ([int]$pf.Rest[3]) $path $pf.Fit $pf.Grid $pf.Marks 'rect' $null $pf | Write-Output
+      $hostWin = $null
+      if ($hb.Sel) {
+        $hostWin = (Resolve-CropHost $hb.Sel $x $y $w $h 'rect').Win
+        "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it"
+      }
+      Save-RectEx $x $y $w $h $path $pf.Fit $pf.Grid $pf.Marks 'rect' $hostWin $pf | Write-Output
       # v1.5.1 WP-A owners mode (see shot for the rationale).
       $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
-      $own = Invoke-OcclusionOwners @{ X = [int]$pf.Rest[0]; Y = [int]$pf.Rest[1]; W = [int]$pf.Rest[2]; H = [int]$pf.Rest[3] } $occAct $of.OcclGrid
+      $own = Invoke-OcclusionOwners @{ X = $x; Y = $y; W = $w; H = $h } $occAct $of.OcclGrid
       if ($own.Ran) { Write-Output ("occ: " + $own.Echo) }
 }
 
@@ -11773,6 +12007,7 @@ function Invoke-Handler-click([string]$Cmd, [string[]]$Rest) {
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
       $origin = Get-PointSpaceOrigin $space $tgt
       $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       $clickLogArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
@@ -11807,6 +12042,7 @@ function Invoke-Handler-rclick([string]$Cmd, [string[]]$Rest) {
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
       $origin = Get-PointSpaceOrigin $space $tgt
       $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
@@ -11839,6 +12075,7 @@ function Invoke-Handler-dblclick([string]$Cmd, [string[]]$Rest) {
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
       $origin = Get-PointSpaceOrigin $space $tgt
       $pt = Convert-PointSpace $rx $ry $origin
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
@@ -12131,6 +12368,7 @@ function Invoke-Handler-wheel([string]$Cmd, [string[]]$Rest) {
         $tgt = Resolve-Target $targetSel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
         Emit-ResolveNote
       }
+      Invoke-TargetBlockGuard $tgt
       $origin = Get-PointSpaceOrigin $space $tgt
       $posInfo = 'at current cursor position'
       if ($wordCount -eq 3) {
@@ -12311,6 +12549,7 @@ function Invoke-Handler-relclick([string]$Cmd, [string[]]$Rest) {
       $rcDy = [int]$p.Words[2]
       $tgt = Resolve-Target $rcSel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      Invoke-TargetBlockGuard $tgt
       # v4.4.1 CU-REL-01: the rect is read again, by handle, AFTER the activation above - restoring
       # or re-raising a window moves it, and Get-TargetRect prefers the snapshot taken at select
       # time. The six geometry fields are pinned onto the target so every reader in this call (the
@@ -12388,6 +12627,7 @@ function Invoke-Handler-drag([string]$Cmd, [string[]]$Rest) {
           Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
         }
       }
+      Invoke-TargetBlockGuard $tgt
       $rx1 = [int]$p.Words[0]; $ry1 = [int]$p.Words[1]; $rx2 = [int]$p.Words[2]; $ry2 = [int]$p.Words[3]
       $origin = Get-PointSpaceOrigin $space $tgt
       $dpt1 = Convert-PointSpace $rx1 $ry1 $origin
@@ -12464,6 +12704,7 @@ function Invoke-Handler-drag-to([string]$Cmd, [string[]]$Rest) {
         Emit-ResolveNote
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
+      Invoke-TargetBlockGuard $tgt
       $dg = Get-PressGate 'drag-to' 'drag-to' (Get-LeftButtonDown)
       if ($dg.Refuse) {
         if (Test-PressHoldFired) { Close-PressHold @("$($p.Words[0])", "$($p.Words[1])") '' $Cmd }
@@ -12518,6 +12759,7 @@ function Invoke-Handler-press-down([string]$Cmd, [string[]]$Rest) {
         Emit-ResolveNote
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
       $pg = Get-PressGate 'press-down' 'press-down' (Get-LeftButtonDown)
       if ($pg.Refuse) { throw "press-down: $($pg.Reason)" }
@@ -12575,6 +12817,7 @@ function Invoke-Handler-press-up([string]$Cmd, [string[]]$Rest) {
         if (Test-PressHoldFired) { Close-PressHold @($p.Words[0], $p.Words[1]) '' $Cmd }
         throw "press-up: $($pu.Reason)"
       }
+      Invoke-TargetBlockGuard $tgt
       Invoke-HitWindowCheck ([int]$p.Words[0]) ([int]$p.Words[1]) $tgt ($p.Sel -ne '') $p.AllowOutside
       $ecb = Get-ExpectChangeBaseline $p $tgt
       [void][DT]::SetCursorPos([int]$p.Words[0], [int]$p.Words[1])
@@ -12610,6 +12853,7 @@ function Invoke-Handler-find-click([string]$Cmd, [string[]]$Rest) {
         Emit-ResolveNote
         Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       }
+      Invoke-TargetBlockGuard $tgt
       $f = Find-OcrHitsScaled $region.X $region.Y $region.W $region.H $needle $p.Scale $p.MaxTiles $p.NoTile
       $hits = $f.Hits
       if ($hits.Count -eq 0) {
@@ -12786,6 +13030,7 @@ function Invoke-Handler-menu-pick([string]$Cmd, [string[]]$Rest) {
       $w = Resolve-Window $Rest[0]
       if (-not $w) { throw "no window matching: $($Rest[0])" }
       Emit-ResolveNote
+      Invoke-TargetBlockGuard $w
       # Pointing this at a whole application window (or the desktop) turns "pick
       # the menu row" into "click the first pixel anywhere that happens to contain
       # the text", which is how a send ends up in the wrong conversation. The
@@ -12847,6 +13092,7 @@ function Invoke-Handler-open-and-pick([string]$Cmd, [string[]]$Rest) {
       $ox = [int]$p.Words[1]; $oy = [int]$p.Words[2]
       $tgt = Resolve-Target $p.Words[0] $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      Invoke-TargetBlockGuard $tgt
       $irect = Get-TargetRect $tgt
       if ($null -eq $irect) { throw 'open-and-pick: cannot determine target window rect' }
       if ($region) {
@@ -14873,7 +15119,7 @@ function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): imgclick - the case body, verbatim
 function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
-      # imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok]
+      # imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified]
       # v1.5.0 WP-3: reverse-map an image pixel through <outPath>.map.txt and
       # click the derived screen point. Replaces painted-out ix/scale math;
       # --dry prints the mapping and stops. A missing sidecar is a hard error.
@@ -14882,17 +15128,26 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       # (>2px) is refused instead of silently clicked at the stale position;
       # --stale-ok maps against the old origin anyway. rect/zoom captures have
       # no host window and say so in the echo (staleness not verifiable).
+      # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a crop CAN be bound to a host now
+      # (rect/zoom ... --to <sel>), and --require-verified turns "unverifiable" from a
+      # note into a refusal BEFORE any input. --stale-ok and --require-verified are
+      # contradictory permissions, so asking for both is refused here, by name.
       $own = Strip-OwnFlags $Rest 'imgclick'
       $dry = [bool]$own.Values['--dry']
       $staleOk = [bool]$own.Values['--stale-ok']
+      $requireVer = [bool]$own.Values['--require-verified']
       $p = Split-Target @($own.Rest) 'imgclick'
-      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok]' }
+      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified]' }
+      if ($requireVer -and $staleOk) { throw 'imgclick: --require-verified and --stale-ok contradict each other - one refuses anything not verified, the other explicitly maps against a stale origin; pick one' }
       $img = $p.Words[0]
       $ix = [int]$p.Words[1]; $iy = [int]$p.Words[2]
       $map = Read-MapSidecar $img
       if ($ix -lt 0 -or $ix -ge $map.OutW -or $iy -lt 0 -or $iy -ge $map.OutH) { throw "imgclick: image coords ($ix,$iy) outside $($map.OutW)x$($map.OutH) of $img" }
       $st = Test-MapSidecarStale $map
       if ($st.Verdict -eq 'gone') { throw "imgclick: $($st.Msg)" }
+      if ($requireVer -and $st.Verdict -ne 'ok') {
+        throw "imgclick: --require-verified: this image cannot be verified against its host window ($($st.Verdict)) - $($st.Msg). Re-capture with 'win <sel>' or 'rect/zoom ... --to <sel>', or drop --require-verified to accept the OLD unverified contract"
+      }
       if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "imgclick: $($st.Msg)" }
       $sp = Convert-ImageToScreen $map $ix $iy
       $staleNote = ''
@@ -14915,21 +15170,37 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
           $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
           Emit-ResolveNote
         }
+        # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a strict caller must not click a point that
+        # was mapped from ANOTHER window - the pixel came from $map's host, so a --to that
+        # resolves to a different handle is the same lie as a stale origin.
+        if ($requireVer -and $null -ne $tgt -and ([Int64]$map.HostHwnd -ne 0) -and ([Int64]$tgt.Handle -ne [Int64]$map.HostHwnd)) {
+          throw "imgclick: --require-verified: the image was captured from handle=$(([Int64]$map.HostHwnd)) ('$($map.HostTitle)') but --to resolves to handle=$(([Int64]$tgt.Handle)) ('$($tgt.Title)') - refusing to click a point mapped from another window"
+        }
+        Invoke-TargetBlockGuard $tgt
         Invoke-HitWindowCheck $sp.X $sp.Y $tgt ($p.Sel -ne '') $p.AllowOutside
+        # CU-EXTERNAL-EXPERIENCE-20261028 B5: the shared flag table already admits
+        # --expect-change for imgclick; before this line the handler accepted it and did
+        # nothing. Baseline before the click, verdict after it - same shape as click/rclick.
+        $ecb = Get-ExpectChangeBaseline $p $tgt
         Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "img=$img ix=$ix iy=$iy -> $($sp.X),$($sp.Y)" $Cmd
         Move-Click $sp.X $sp.Y 'left'
         "clicked $($sp.X),$($sp.Y)"
+        Invoke-ExpectChangeCheck $p $ecb 'clicked'
         Invoke-ActionExpectation $p $tgt 'clicked'
       }
 }
 
 # v4.4.0 (A-15): zoom - the case body, verbatim
 function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
-      # zoom <x> <y> <w> <h> [scale] [outPath] - capture a small region and
+      # zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] - capture a small region and
       # enlarge it (NearestNeighbor) so tiny text/buttons are readable in one
       # shot instead of iterating manual rect crops. Echo gives the mapping
       # back to screen pixels: screen = (x + ix/scale, y + iy/scale).
-      if ($Rest.Count -lt 4) { throw 'usage: zoom <x> <y> <w> <h> [scale] [outPath]' }
+      # CU-EXTERNAL-EXPERIENCE-20261028 (A1): --to binds the zoom crop to its host window
+      # exactly like rect --to; the refusal happens before any pixels are grabbed.
+      $hb = Resolve-CaptureTargetArgs $Rest
+      $Rest = @($hb.Words)
+      if ($Rest.Count -lt 4) { throw 'usage: zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]' }
       $x = [int]$Rest[0]; $y = [int]$Rest[1]; $w = [int]$Rest[2]; $h = [int]$Rest[3]
       if ($w -le 0 -or $h -le 0) { throw 'zoom: w and h must be positive' }
       $scale = 2.0; $path = ''
@@ -14941,6 +15212,8 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
       if (-not $path) { $path = Default-ShotName 'zoom' }
+      $hostWin = $null
+      if ($hb.Sel) { $hostWin = (Resolve-CropHost $hb.Sel $x $y $w $h 'zoom').Win }
       Ensure-OutDir
       $src = New-Object System.Drawing.Bitmap($w, $h)
       $gs = [System.Drawing.Graphics]::FromImage($src)
@@ -14956,10 +15229,11 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
       $dst.Dispose()
       $size = (Get-Item -LiteralPath $path).Length
-      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom'
+      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"
+      if ($hostWin) { "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it" }
 }
 
 # v4.4.0 (A-15): ime-en - the case body, verbatim
@@ -19940,6 +20214,218 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     if (-not ($v6SignER -and $v6SignEC -and $v6SignGR)) { $v6SignOk = $false; Write-Output "      signed-rect disagreement for $v6SignProbe : expect-region=$v6SignER expect-change=$v6SignEC guard-region=$v6SignGR" }
   }
   ST-Check 'contract: expect-region, expect-change and guard-region accept the same signed screen rects' ($v6SignOk)
+  # CU-EXTERNAL-EXPERIENCE-20261028 B5: imgclick really runs --expect-change.
+  # The shared flag table has admitted --expect-change on imgclick for as long as the table
+  # has existed, but the handler only ran the TEXT expectation - the external review measured
+  # a delivered click with zero pixel sampling. The handler is exercised here with dynamically
+  # installed stubs (a Set-Item seam, not the ${function:...} table A-07 registers), and the
+  # capture count is what proves the shapes: requested+changed, requested+same, not requested,
+  # and --dry (which must sample nothing at all).
+  $script:b5Captures = 0
+  $script:b5Moves = 0
+  $script:b5Seq = @()
+  $script:a1StaleVerdict = 'ok'
+  $script:a1MapHwnd = [IntPtr]::Zero
+  $script:a1TgtHwnd = [IntPtr]::Zero
+  $b5Names = @('Resolve-Target', 'Emit-ResolveNote', 'Invoke-HitWindowCheck', ('Log-' + 'Action'), 'Move-Click', 'Invoke-ActionExpectation', 'Read-MapSidecar', 'Test-MapSidecarStale', 'Convert-ImageToScreen', 'Get-RegionHash')
+  $b5Orig = @{}
+  foreach ($b5n in $b5Names) { $b5Orig[$b5n] = (Get-Item ("function:" + $b5n)).ScriptBlock }
+  try {
+    Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $eh, $created) return [pscustomobject]@{ Pid = 41998; Title = 'b5-fake'; Handle = $script:a1TgtHwnd; Left = 0; Top = 0; W = 100; H = 100 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Invoke-HitWindowCheck' -Value { param($x, $y, $tgt, $enforce, $allow) }
+    Set-Item -Path ('function:' + $b5Names[3]) -Value { param($la, $detail, $cn) }
+    Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $b) $script:b5Moves++ }
+    Set-Item -Path 'function:Invoke-ActionExpectation' -Value { param($pp, $tt, $what) }
+    Set-Item -Path 'function:Read-MapSidecar' -Value { param($img) return [pscustomobject]@{ OutW = 100; OutH = 100; Kind = 'win'; Scale = 1; OriginX = 10; OriginY = 20; Grid = 0; HostHwnd = $script:a1MapHwnd; HostTitle = 'b5-fake' } }
+    Set-Item -Path 'function:Test-MapSidecarStale' -Value { param($map) return @{ Verdict = $script:a1StaleVerdict; Msg = ('stub verdict: ' + $script:a1StaleVerdict) } }
+    Set-Item -Path 'function:Convert-ImageToScreen' -Value { param($map, $ix, $iy) return [pscustomobject]@{ X = 15; Y = 26 } }
+    Set-Item -Path 'function:Get-RegionHash' -Value { param($x, $y, $w, $h) $script:b5Captures++; $v = [string]$script:b5Seq[0]; if (@($script:b5Seq).Count -gt 1) { $script:b5Seq = @($script:b5Seq | Select-Object -Skip 1) }; return $v }
+    $script:b5Seq = @('b5hash-a', 'b5hash-b'); $script:b5Captures = 0; $script:b5Moves = 0
+    $b5Changed = @(Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--expect-change', '1,2,3,4')) -join "`n"
+    ST-Check 'unit (B5): imgclick --expect-change samples before and after a real click and reports the change' (
+      ($script:b5Captures -eq 2) -and ($script:b5Moves -eq 1) -and ($b5Changed.Contains('clicked 15,26')) -and ($b5Changed -match 'expect-change:.*changed'))
+    $script:b5Seq = @('b5hash-c', 'b5hash-c'); $script:b5Captures = 0; $script:b5Moves = 0
+    $b5Same = @(Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--expect-change', '1,2,3,4')) -join "`n"
+    ST-Check 'unit (B5): a pixel-identical region warns and names the rect it measured (no silent success)' (
+      ($script:b5Captures -eq 2) -and ($script:b5Moves -eq 1) -and ($b5Same -match 'WARN: --expect-change:.*PIXEL-IDENTICAL'))
+    $script:b5Captures = 0; $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake'))
+    ST-Check 'unit (B5): without --expect-change imgclick reads no pixels and still clicks once' (
+      ($script:b5Captures -eq 0) -and ($script:b5Moves -eq 1))
+    $script:b5Captures = 0; $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--expect-change', '1,2,3,4', '--dry'))
+    ST-Check 'unit (B5): --dry with --expect-change neither clicks nor samples pixels' (
+      ($script:b5Captures -eq 0) -and ($script:b5Moves -eq 0))
+    # CU-EXTERNAL-EXPERIENCE-20261028 A1: the strict verification contract. The external
+    # review measured an unbound crop being clicked anyway; --require-verified is the flag
+    # that turns every non-ok verdict into a refusal BEFORE any input, while callers that
+    # do not ask for it keep the OLD note-and-click behaviour (an explicit legacy contract,
+    # not a silent change). The target-identity case is the second lie: a point mapped from
+    # window A must not be clicked on window B.
+    $script:a1StaleVerdict = 'unverifiable'; $script:b5Captures = 0; $script:b5Moves = 0
+    $a1UnvErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified')) } catch { $a1UnvErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): imgclick --require-verified refuses an unverifiable (unbound) crop before any input' (
+      $a1UnvErr.Contains('--require-verified') -and $a1UnvErr.Contains('unverifiable') -and ($script:b5Moves -eq 0) -and ($script:b5Captures -eq 0))
+    $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake'))
+    ST-Check 'unit (A1): without the strict flag the OLD unverified contract still clicks (compatibility kept)' (
+      $script:b5Moves -eq 1)
+    $a1MixErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified', '--stale-ok')) } catch { $a1MixErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): --require-verified together with --stale-ok is refused as contradictory' (
+      $a1MixErr.Contains('contradict') -and ($script:b5Moves -eq 1))
+    $script:a1StaleVerdict = 'ok'; $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified'))
+    ST-Check 'unit (A1): --require-verified with a verified (ok) mapping clicks exactly once' (
+      $script:b5Moves -eq 1)
+    $script:a1MapHwnd = [IntPtr]::new(55); $script:a1TgtHwnd = [IntPtr]::new(66); $script:b5Moves = 0
+    $a1IdErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified')) } catch { $a1IdErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): --require-verified refuses a --to that resolves to a DIFFERENT window than the captured host' (
+      $a1IdErr.Contains('another window') -and ($script:b5Moves -eq 0))
+    $script:a1MapHwnd = [IntPtr]::Zero; $script:a1TgtHwnd = [IntPtr]::Zero
+  } finally {
+    foreach ($b5n in $b5Names) { Set-Item -Path ("function:" + $b5n) -Value $b5Orig[$b5n] }
+  }
+  # CU-EXTERNAL-EXPERIENCE-20261028 A1: the geometry verdict is pure, so the shape that
+  # used to lie - a MINIMIZED window whose rect did not change, which rectangular equality
+  # alone read as 'ok' - is pinned without a live window. A bound crop must also persist
+  # its host rect: half a binding (identity without geometry) is refused at read time.
+  $a1Cur = @{ X = 100; Y = 200; W = 300; H = 400 }
+  $a1Min = Get-SidecarRectVerdict 'a1' 100 200 300 400 $a1Cur $true
+  $a1Same = Get-SidecarRectVerdict 'a1' 100 200 300 400 $a1Cur $false
+  $a1Move = Get-SidecarRectVerdict 'a1' 100 200 300 400 @{ X = 103; Y = 200; W = 300; H = 400 } $false
+  ST-Check 'unit (A1): a minimized host is STALE even when its rect is unchanged; a 3px move is stale; equality is ok' (
+    $a1Min.Verdict -eq 'stale' -and $a1Min.Msg.Contains('minimized') -and $a1Same.Verdict -eq 'ok' -and $a1Move.Verdict -eq 'stale')
+  $a1Unbound = @{ Kind = 'rect'; OriginX = 10; OriginY = 20; Scale = 1; OutW = 100; OutH = 100; HostPid = 0; HostHwnd = [IntPtr]::Zero; HostTitle = ''; HostX = $null; HostY = $null; HostW = $null; HostH = $null }
+  ST-Check 'unit (A1): an unbound rect sidecar stays unverifiable, never a false ok' (
+    (Test-MapSidecarStale $a1Unbound).Verdict -eq 'unverifiable')
+  $a1Names = @('Resolve-Window', 'Emit-ResolveNote', 'Get-WindowVisibleRect', 'Save-RectEx', 'Invoke-OcclusionOwners')
+  $a1Orig = @{}
+  foreach ($a1n in $a1Names) { $a1Orig[$a1n] = (Get-Item ("function:" + $a1n)).ScriptBlock }
+  $script:a1RectArgs = $null
+  $a1Side = Join-Path $env:TEMP ('dtx-a1-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  $a1Bad = Join-Path $env:TEMP ('dtx-a1-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  try {
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; Left = 100; Top = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Get-WindowVisibleRect' -Value { param($h) return @{ X = 100; Y = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Save-RectEx' -Value { param($x, $y, $w, $h, $path, $fit, $grid, $marks, $kind, $mapWin, $cf) $script:a1RectArgs = @{ Path = $path; Kind = $kind; Host = $mapWin; X = [int]$x; Y = [int]$y }; return @('stub-saved') }
+    Set-Item -Path 'function:Invoke-OcclusionOwners' -Value { param($rect, $action, $grid) return @{ Ran = $false; Echo = '' } }
+    # --to must be stripped BEFORE the capture parser: left in place it becomes the
+    # OUTPUT PATH (the first positional after the four numbers) and the binding vanishes.
+    [void](Invoke-DesktopCommand 'rect' @('110', '210', '50', '40', '--to', 'a1-host'))
+    ST-Check 'unit (A1): rect --to is stripped before the capture parser and reaches Save-RectEx as the host (never as the outPath)' (
+      $null -ne $script:a1RectArgs -and $script:a1RectArgs.Path -ne '--to' -and $script:a1RectArgs.Path -like '*rect_*' -and $null -ne $script:a1RectArgs.Host -and $script:a1RectArgs.X -eq 110 -and $script:a1RectArgs.Kind -eq 'rect')
+    $script:a1RectArgs = $null
+    $a1OutErr = ''
+    try { [void](Invoke-DesktopCommand 'rect' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1OutErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): rect --to refuses a region outside the bound window BEFORE any capture is written' (
+      $a1OutErr.Contains('outside the visible rect') -and $null -eq $script:a1RectArgs)
+    $a1ZoomErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1ZoomErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): zoom --to is parsed out (not taken as the outPath) and refuses an outside region before capture' (
+      $a1ZoomErr.Contains('outside the visible rect'))
+    Write-MapSidecar $a1Side 110 210 1.0 50 40 'rect' ([pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' })
+    $a1Back = Read-MapSidecar $a1Side
+    ST-Check 'unit (A1): a bound rect sidecar round-trips its host identity AND host rect (what the strict check compares)' (
+      $a1Back.Kind -eq 'rect' -and $a1Back.HostPid -eq 7 -and ([Int64]$a1Back.HostHwnd -eq 1234) -and $a1Back.HostX -eq 100 -and $a1Back.HostY -eq 200 -and $a1Back.HostW -eq 300 -and $a1Back.HostH -eq 400)
+    [System.IO.File]::WriteAllText(($a1Bad + '.map.txt'), "origin_x=1`r`norigin_y=2`r`nscale=1`r`nout_w=3`r`nout_h=4`r`nkind=rect`r`npid=7`r`nhandle=1234`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $a1BadErr = ''
+    try { [void](Read-MapSidecar $a1Bad) } catch { $a1BadErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): a host identity WITHOUT its rect is refused at read time (half a binding never becomes unverifiable)' (
+      $a1BadErr.Contains('host_x/host_y/host_w/host_h'))
+  } finally {
+    foreach ($a1n in $a1Names) { Set-Item -Path ("function:" + $a1n) -Value $a1Orig[$a1n] }
+    Remove-Item -LiteralPath @(($a1Side + '.map.txt'), ($a1Bad + '.map.txt')) -Force -ErrorAction SilentlyContinue
+  }
+  # CU-EXTERNAL-EXPERIENCE-20261028 B2: the pre-input block verdict. owner is a WINDOW
+  # RELATION, not a modality: an owned visible window that UIA reads as modeless must stay
+  # 'clear' while the target is enabled, and a disabled target whose only candidates read
+  # modeless/unsupported must read 'unknown' - never promoted to 'modal'. Facts in, verdict
+  # out, so both fixtures (a modal dialog and a modeless palette) are pinned without a live
+  # window and the negative control is the enabled case.
+  $b2Cand = {
+    param([int]$h, [string]$cls, [string]$title, [string]$uia)
+    return [pscustomobject]@{ Handle = [IntPtr]::new($h); Pid = 9; Class = $cls; Title = $title
+      Identity = ("pid=9 hwnd=$h " + (Format-WindowLabel $title $cls)); UiaModal = $uia }
+  }
+  $b2ModelessCand = & $b2Cand 11 'Qt63' 'Find' 'no'
+  $b2UnsupportedCand = & $b2Cand 13 'Qt63' 'Palette' 'unsupported'
+  $b2ModalCand = & $b2Cand 12 '#32770' 'Save changes' 'yes'
+  $b2Clear = Get-TargetBlockVerdict $true $true @($b2ModelessCand) 't'
+  $b2Blocked = Get-TargetBlockVerdict $true $false @($b2ModalCand) 't'
+  $b2UnknownModeless = Get-TargetBlockVerdict $true $false @($b2ModelessCand, $b2UnsupportedCand) 't'
+  $b2UnknownNone = Get-TargetBlockVerdict $true $false @() 't'
+  $b2Gone = Get-TargetBlockVerdict $false $false @() 't'
+  ST-Check 'unit (B2): an ENABLED target stays clear even with an owned visible window (owned is not modal - the modeless negative control)' (
+    $b2Clear.Verdict -eq 'clear' -and $b2Clear.Msg -eq '')
+  ST-Check 'unit (B2): a DISABLED target with a UIA IsModal=true candidate reads blocked and names that candidate' (
+    $b2Blocked.Verdict -eq 'blocked' -and $b2Blocked.Blocking.Title -eq 'Save changes' -and
+    $b2Blocked.Msg.Contains('hwnd=12') -and $b2Blocked.Msg.Contains('IsModal=true') -and $b2Blocked.Msg.Contains('NOTHING was sent'))
+  ST-Check 'unit (B2): a DISABLED target whose owned windows read modeless/unsupported reads UNKNOWN - the message never claims IsModal=true' (
+    $b2UnknownModeless.Verdict -eq 'unknown' -and (-not $b2UnknownModeless.Msg.Contains('IsModal=true')) -and
+    $b2UnknownModeless.Msg.Contains('unconfirmed') -and $b2UnknownModeless.Msg.Contains('hwnd=11') -and $b2UnknownModeless.Msg.Contains('hwnd=13'))
+  ST-Check 'unit (B2): a DISABLED target with NO owned window reads UNKNOWN (the cause is not invented)' (
+    $b2UnknownNone.Verdict -eq 'unknown' -and $b2UnknownNone.Msg.Contains('no visible top-level window is owned') -and $null -eq $b2UnknownNone.Blocking)
+  ST-Check 'unit (B2): a vanished target reads gone - the block guard does not manufacture a refusal the other guards own' (
+    $b2Gone.Verdict -eq 'gone' -and $b2Gone.Msg -eq '')
+  $b2Names = @('Resolve-Target', 'Emit-ResolveNote', 'Invoke-HitWindowCheck', ('Log-' + 'Action'), 'Move-Click',
+    'Get-PointSpaceOrigin', 'Convert-PointSpace', 'Get-TargetBlockFacts')
+  $b2Orig = @{}
+  foreach ($b2n in $b2Names) { $b2Orig[$b2n] = (Get-Item ("function:" + $b2n)).ScriptBlock }
+  $script:b2Moves = 0
+  $script:b2Facts = @{ Alive = $true; Enabled = $true; Candidates = @() }
+  try {
+    Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $eh, $created) return [pscustomobject]@{ Pid = 41998; Title = 'b2-fake'; Handle = [IntPtr]::new(77); Left = 0; Top = 0; W = 100; H = 100 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Invoke-HitWindowCheck' -Value { param($x, $y, $tgt, $enforce, $allow) }
+    Set-Item -Path ('function:' + $b2Names[3]) -Value { param($la, $detail, $cn) }
+    Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $b, $m) $script:b2Moves++ }
+    Set-Item -Path 'function:Get-PointSpaceOrigin' -Value { param($space, $tgt) return @{ Space = 'screen'; X = 0; Y = 0; W = 1920; H = 1080 } }
+    Set-Item -Path 'function:Convert-PointSpace' -Value { param($x, $y, $origin) return [pscustomobject]@{ X = [int]$x; Y = [int]$y } }
+    Set-Item -Path 'function:Get-TargetBlockFacts' -Value { param($tgt) return $script:b2Facts }
+    $b2NullOut = @(Invoke-TargetBlockGuard $null)
+    ST-Check 'unit (B2): a bare-coordinate caller (null target) gets no guess and no output from the block guard' (
+      @($b2NullOut).Count -eq 0)
+    $script:b2Facts = @{ Alive = $true; Enabled = $false; Candidates = @($b2ModalCand) }
+    $script:b2Moves = 0
+    $b2RefErr = ''
+    try { [void](Invoke-DesktopCommand 'click' @('10', '20', '--to', 'b2-fake')) } catch { $b2RefErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (B2): click with a blocked target refuses BEFORE any input and quotes the blocking window' (
+      $b2RefErr.Contains('block guard') -and $b2RefErr.Contains('Save changes') -and ($script:b2Moves -eq 0))
+    $script:b2Facts = @{ Alive = $true; Enabled = $true; Candidates = @() }
+    $script:b2Moves = 0
+    [void](Invoke-DesktopCommand 'click' @('10', '20', '--to', 'b2-fake'))
+    ST-Check 'unit (B2): a clear target still reaches the click exactly once (the guard is not a blanket refusal)' (
+      $script:b2Moves -eq 1)
+  } finally {
+    foreach ($b2n in $b2Names) { Set-Item -Path ("function:" + $b2n) -Value $b2Orig[$b2n] }
+  }
+  # The guard is only a contract if every command that CAN carry an explicit window identity
+  # actually calls it. Bodies are read through the same command-ranges helper the rest of this
+  # family uses, and the census counts LIVE lines only - a guard that somebody commented out
+  # must read as missing (the planted pair proves the difference).
+  $b2ClickCmds = @('click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'menu-pick', 'open-and-pick', 'imgclick')
+  $b2Missing = @()
+  $b2Sites = 0
+  foreach ($b2c in $b2ClickCmds) {
+    $b2t = Get-CommandCodeText $codeLines $b2c
+    $b2live = @(@($b2t -split "`n") | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('Invoke-TargetBlockGuard') })
+    $b2Sites += $b2live.Count
+    if ($b2live.Count -eq 0) { $b2Missing += $b2c }
+  }
+  ST-Check 'lint (B2): every click-family command that can carry an explicit window identity calls the shared block guard' (
+    (@($b2Missing).Count -eq 0) -and ($b2Sites -ge 13))
+  if (@($b2Missing).Count -gt 0) { Write-Output ('      B2: block guard missing from ' + (@($b2Missing) -join ', ')) }
+  Write-Output ('      B2 block-guard live call sites: ' + $b2Sites + ' across ' + @($b2ClickCmds).Count + ' commands')
+  $b2Plant = ('  # Invoke-TargetBlockGuard 1' + "`n" + '  Invoke-TargetBlockGuard 2')
+  $b2PlantLive = @(@($b2Plant -split "`n") | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('Invoke-TargetBlockGuard') })
+  ST-Check 'unit (B2): the census refuses a commented-out call and still sees the live one (the scan has teeth)' (
+    (@($b2PlantLive).Count -eq 1))
+
   # single-source lints: these verdicts must be produced in exactly one place, or a new
   # call site can start claiming "activated" / proving nothing without anyone noticing.
   # Every marker below is ASSEMBLED by concatenation on purpose: a scan line that
@@ -21469,6 +21955,66 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
   # option-list pipes inside a synopsis (--occlude off|warn|strict) are NOT commands
   ST-Check 'unit: the help index does not mistake option values for command names' (
     -not (@($hNames) -contains 'warn') -and -not (@($hNames) -contains 'strict') -and (@($hNames) -contains 'shot'))
+  # A3 (CU-EXTERNAL-EXPERIENCE-20261028): the per-command "checks this command really runs"
+  # line is derived from Get-CommandCheckMap, and this scan pins that table against the
+  # handlers themselves. Attribution is by handler BODY (function Invoke-Handler-<cmd>), never
+  # by a name list: a command that gains or loses an executor call changes the verdict here
+  # instead of silently widening what the help page promises. The same scan runs on a planted
+  # map so an empty result cannot read as "nothing to check".
+  $dcScan = {
+    param($map, $lines, $count, $names)
+    $exec = @{ 'guard' = 'Invoke-ContentGuard'; 'text' = 'Invoke-ActionExpectation'; 'change' = 'Invoke-ExpectChangeCheck' }
+    $bad = @()
+    # PS 5.1: $hash.Keys prefers an ITEM named 'keys' over the property (the check map really
+    # has a command called 'keys'), so the enumeration goes through PSBase.
+    foreach ($c in @($map.PSBase.Keys)) {
+      if (-not (@($names) -contains $c)) { $bad += ("not-a-command=" + $c); continue }
+      $st = -1
+      for ($i = 0; $i -lt $count; $i++) {
+        if ($lines[$i] -match ('^function Invoke-Handler-' + [regex]::Escape($c) + '\(')) { $st = $i; break }
+      }
+      if ($st -lt 0) { $bad += ("no-handler=" + $c); continue }
+      $en = $count
+      for ($j = $st + 1; $j -lt $count; $j++) { if ($lines[$j] -match '^function ') { $en = $j; break } }
+      $body = (@($lines[$st..($en - 1)]) -join "`n")
+      foreach ($f in @($map[$c])) {
+        if (-not $exec.ContainsKey($f)) { $bad += ("unknown-family=" + $c + "/" + $f) }
+        elseif (-not $body.Contains([string]$exec[$f])) { $bad += ("family-not-run=" + $c + "/" + $f) }
+      }
+    }
+    return @($bad)
+  }
+  $dcBad = @(& $dcScan (Get-CommandCheckMap) $codeLines $clCount $hNames)
+  ST-Check 'lint (A3): every check the per-command page advertises is executed by that command handler (body attribution, not a name list)' (
+    (@($dcBad).Count -eq 0))
+  if (@($dcBad).Count -gt 0) { Write-Output ('      A3 attribution breaches: ' + (@($dcBad) -join ' ')) }
+  $dcPlant = @{ 'click' = @('text', 'bogus'); 'zz-no-such-command' = @('text') }
+  $dcPlantBad = @(& $dcScan $dcPlant $codeLines $clCount $hNames)
+  ST-Check 'unit (A3): the attribution scan names a planted bogus family and a planted non-command (it cannot pass by finding nothing)' (
+    (@($dcPlantBad) -contains 'unknown-family=click/bogus') -and (@($dcPlantBad) -contains 'not-a-command=zz-no-such-command'))
+  # a mapped family whose flags the parser would refuse is a promise the page cannot keep -
+  # every family in the table must leave at least one routed flag behind the intersection.
+  $dcEmptyFam = @()
+  $dcFam = Get-CommandCheckFamilyFlags
+  foreach ($c in @((Get-CommandCheckMap).PSBase.Keys)) {
+    foreach ($f in @((Get-CommandCheckMap)[$c])) {
+      $routed = @(@($dcFam[$f]) | Where-Object { @(Get-CommandSharedSet $c) -contains $_ })
+      if (@($routed).Count -eq 0) { $dcEmptyFam += ($c + '/' + $f) }
+    }
+  }
+  ST-Check 'lint (A3): no mapped check family is entirely unroutable for its command (help never names a flag the parser refuses)' (
+    (@($dcEmptyFam).Count -eq 0))
+  if (@($dcEmptyFam).Count -gt 0) { Write-Output ('      A3 unroutable families: ' + (@($dcEmptyFam) -join ' ')) }
+  # the rendered entry must carry the line where it is true and stay silent where it is not.
+  $dcClickTxt = @(Format-CommandHelp $hLines 'click') -join "`n"
+  $dcShotTxt = @(Format-CommandHelp $hLines 'shot') -join "`n"
+  $dcImgTxt = @(Format-CommandHelp $hLines 'imgclick') -join "`n"
+  ST-Check 'unit (A3): help click advertises its real post-checks (--expect-change included) while help shot stays silent' (
+    $dcClickTxt.Contains("checks 'click' really runs") -and $dcClickTxt.Contains('--expect-change') -and
+    (-not $dcShotTxt.Contains("checks '")))
+  ST-Check 'unit (A3): help imgclick advertises --expect-change (the B5 flag is no longer a silent accept) and no guard it never runs' (
+    $dcImgTxt.Contains("checks 'imgclick' really runs") -and $dcImgTxt.Contains('--expect-change') -and
+    (-not $dcImgTxt.Contains('--guard-text')))
   # a multi-command synopsis line must resolve for EVERY name on it. These calls are
   # wrapped so a regression produces a NAMED FAIL instead of aborting selftest before its
   # summary (an abort is red too, but it hides every check that comes after it).
@@ -30252,7 +30798,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.5 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -30274,7 +30820,7 @@ desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     (L + ix/scale, T + iy/scale) when fitted)
                                     and the labelled occluded=N% verdict if covered
     rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y]
-              [--occlude off|warn|strict]
+              [--occlude off|warn|strict] [--to <sel>]
                                     capture a region. Default fit=900: wider
                                     crops are saved downscaled with an explicit
                                     scale in the echo, so eyeballed coordinates
@@ -30282,6 +30828,11 @@ desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     full resolution; --grid overlays a grid
                                     labelled in SCREEN pixels; --mark draws a
                                     crosshair at a candidate click point
+                                    --to BINDS the crop to a window: the region
+                                    must lie inside its visible rect, and the
+                                    sidecar records that window's identity and
+                                    rect so imgclick can verify the crop
+                                    against it instead of "unverifiable".
                                     v1.5.7: a capture that the caller asked to fit
                                     AND that still comes out wider than 1000px gets
                                     a grid automatically (the echo says "auto"),
@@ -30291,9 +30842,11 @@ desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     the saved PNG (hash/OCR read screen pixels, so
                                     no judgement is polluted), and imgclick warns
                                     when a sidecar says the image carries one.
-    zoom <x> <y> <w> <h> [scale] [outPath]
+    zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]
                                     small region enlarged (default 2x) + echo
-                                    mapping screen = (x + ix/scale, y + iy/scale)
+                                    mapping screen = (x + ix/scale, y + iy/scale);
+                                    --to binds the crop to a window exactly like
+                                    rect --to (region must lie inside it)
     wins                            list visible windows: pid proc class popup
                                     owner main rect size title (popup=yes marks
                                     context menus - they are their OWN top-level
@@ -30563,6 +31116,21 @@ desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixe
                                       same path, and relclick additionally
                                       refuses when the window under the point
                                       is not the resolved target itself
+                                      CU-EXTERNAL-EXPERIENCE-20261028 (B2): a
+                                      call that carries an explicit --to also
+                                      reads the target's ENABLED state before
+                                      any input. A DISABLED window receives no
+                                      mouse input, so the call is refused and
+                                      the refusal names the owned visible
+                                      window whose UIA WindowPattern reports
+                                      IsModal, or answers UNKNOWN when UIA
+                                      cannot confirm it - an owned window is
+                                      never promoted to "modal" on the owner
+                                      relation alone (modeless dialogs are
+                                      owned too). No dialog button is pressed
+                                      for you. Bare-coordinate calls have no
+                                      window identity to judge and are not
+                                      changed.
                                       --space screen|window|client picks the
                                       coordinate space: screen (default,
                                       physical pixels), window (0-based offset
@@ -30659,15 +31227,23 @@ desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     index default 0; hits are OCR LINES in
                                     reading order (top to bottom), so two
                                     occurrences on one line count as one hit
-    imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok]
+    imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok] [--require-verified]
                                     reverse-map an image pixel through the
                                     <outPath>.map.txt sidecar (written by win/
                                     rect/zoom) and click the screen point;
                                     --dry prints the mapping only - no manual
-                                    ix/scale arithmetic; a win sidecar whose
-                                    window moved/resized >2px since capture
-                                    FAILS (v1.5.1; --stale-ok maps the OLD
-                                    origin anyway)
+                                    ix/scale arithmetic. A sidecar bound to a
+                                    window (win <sel>, or rect/zoom --to <sel>)
+                                    FAILS when that window moved/resized >2px,
+                                    was minimized, died or its handle was
+                                    reused (v1.5.1; --stale-ok maps the OLD
+                                    origin anyway). An UNBOUND rect/zoom crop is
+                                    'unverifiable' and only says so;
+                                    --require-verified refuses BEFORE any input
+                                    unless verification returns ok, so a strict
+                                    caller never clicks through an unverified,
+                                    stale or minimized mapping; it cannot be
+                                    combined with --stale-ok
     unmap <outPath> <ix> <iy> [--stale-ok]
                                     same mapping, print only (no click, no log)
     --expect-change [x,y,w,h]       (v1.5.6, opt-in; click/rclick/dblclick/drag/
@@ -31273,6 +31849,29 @@ function Format-HelpFlagMatches([string[]]$helpLines, [string]$flag) {
   return @($out)
 }
 
+# One bounded line naming the checks this command really runs, or '' when the command is not
+# an acting command the table knows. Wording is derived from the same map the A3 lint pins:
+# guards are BEFORE the input, the expect family and the pixel sample are AFTER it.
+function Format-CommandCheckLine([string]$cmd) {
+  $m = Get-CommandCheckMap
+  if (-not $m.ContainsKey($cmd)) { return '' }
+  $fam = Get-CommandCheckFamilyFlags
+  $shared = @(Get-CommandSharedSet $cmd)
+  # a group is printed only when the map DECLARES that family for this command; the shared set
+  # alone would show guards for imgclick, which routes the flags by default but runs none.
+  $declared = @($m[$cmd])
+  $pre = if ($declared -contains 'guard') { @(@($fam['guard']) | Where-Object { $shared -contains $_ }) } else { @() }
+  $post = if ($declared -contains 'text') { @(@($fam['text']) | Where-Object { $shared -contains $_ }) } else { @() }
+  $pix = if ($declared -contains 'change') { @(@($fam['change']) | Where-Object { $shared -contains $_ }) } else { @() }
+  if ((@($pre).Count + @($post).Count + @($pix).Count) -eq 0) { return '' }
+  $parts = @()
+  if (@($pre).Count -gt 0) { $parts += ('before the input: ' + (@($pre) -join ' ')) }
+  if (@($post).Count -gt 0) { $parts += ('after it: ' + (@($post) -join ' ')) }
+  if (@($pix).Count -gt 0) { $parts += ('pixels: ' + (@($pix) -join ' ')) }
+  $eg = if (@($post).Count -gt 0) { '--expect "Ready" --timeout 5' } elseif (@($pix).Count -gt 0) { '--expect-change 0,0,400,300' } else { '--guard-text "Ready"' }
+  return ("checks '" + $cmd + "' really runs - " + ($parts -join '; ') + "; e.g. desktop.ps1 " + $cmd + " ... " + $eg)
+}
+
 # help <command> | help --<flag>: one entry instead of the whole page. Pure over
 # (lines, token) so the extraction is testable OFFLINE. An unknown name throws WITH
 # candidates - a bare "no such command" is how people stop reading and start guessing.
@@ -31321,6 +31920,10 @@ function Format-CommandHelp([string[]]$helpLines, [string]$token) {
   }
   $out = New-Object System.Collections.ArrayList
   foreach ($b in @($blocks)) { foreach ($ln in @($b)) { [void]$out.Add($ln) } }
+  # A3: the checks this command really runs, derived from the check map (not from a prose
+  # list a human would have to keep in step). Never printed for a command the map omits.
+  $chkLine = Format-CommandCheckLine $token
+  if ($chkLine) { [void]$out.Add($chkLine) }
   # Shared flags are documented ONCE (the click family's --expect-change lives in the
   # shared suffix paragraph, not in every command entry), so a per-command slice must say
   # where the rest of its flags are - otherwise help <cmd> would look thinner than the page
@@ -31565,7 +32168,11 @@ function Get-OwnFlagTable {
     # v3.0.0 (B-5): same escape-hatch shape as menu-pick, same meaning ("I know this is not a
     # dialog shape; take the responsibility anyway"). Never implicit.
     'dialog-cancel' = @{ '--allow-window' = @{ Bool = $true } }
-    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true } }
+    # CU-EXTERNAL-EXPERIENCE-20261028 (A1): --require-verified is the STRICT contract -
+    # anything but 'ok' (no host bound, stale rect, minimized, dead/reused handle) is
+    # refused before any input. It cannot be combined with --stale-ok; the old unverified
+    # crop stays usable only when the caller does NOT ask for verification.
+    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true }; '--require-verified' = @{ Bool = $true } }
     'unmap' = @{ '--stale-ok' = @{ Bool = $true } }
     'type-in' = @{ '--tab' = @{ Min = 0; Max = 20; Default = 0 } }
     # CU-OPS-COMPLETE-20261026-01 (package B): gesture flags. --mods is a verbatim spec
@@ -31615,6 +32222,12 @@ function Get-CommandSharedMap {
     # v2.1.0: 'find' hand-parses (no activation allowed on a locator), and the one
     # shared flag it really routes is the --needle escape for --leading text.
     'find' = @('--needle')
+    # CU-EXTERNAL-EXPERIENCE-20261028 (A1): rect/zoom hand-parse their capture arguments and
+    # the ONLY shared flag they route is --to (the host binding). Declared here so the
+    # "valid here" text names exactly what their parser accepts; the reachability lint
+    # follows the Resolve-CaptureTargetArgs delegation and finds the real branch.
+    'rect' = @('--to')
+    'zoom' = @('--to')
     # CU-REL-03..04: wheel accepts only flags it actually consumes. In particular,
     # --allow-outside and unrelated shared readback flags do not silently disappear.
     'wheel' = @('--to', '--force', '--expect-handle', '--always-activate', '--expect-change')
@@ -31650,6 +32263,44 @@ function Get-CommandSharedSet([string]$cmd) {
   $m = Get-CommandSharedMap
   if ($m.ContainsKey($cmd)) { return @($m[$cmd]) }
   return @(Get-SharedFlagSet)
+}
+
+# CU-EXTERNAL-EXPERIENCE-20261028 (item A3): which pre/post checks each acting command
+# REALLY RUNS - not merely which flags its parser routes. The two are different facts:
+# the B5 review measured imgclick accepting --expect-change and sampling zero pixels, so a
+# help page that derived "checks" from the routing table alone would repeat that lie in
+# documentation form. Families are declared here and expanded to flags by one function, so
+# the page and the lint cannot disagree about what a family means. A command that is absent
+# from this table gets NO check line at all (silence, never a guessed promise).
+function Get-CommandCheckFamilyFlags {
+  return @{
+    'guard'  = @('--guard-text', '--guard-region')
+    'text'   = @('--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-region')
+    'change' = @('--expect-change')
+  }
+}
+
+function Get-CommandCheckMap {
+  return @{
+    'click'         = @('guard', 'text', 'change')
+    'rclick'        = @('guard', 'text', 'change')
+    'dblclick'      = @('guard', 'text', 'change')
+    'wheel'         = @('change')
+    'drag'          = @('guard', 'change')
+    'drag-to'       = @('guard', 'change')
+    'press-down'    = @('guard')
+    'press-up'      = @('guard', 'change')
+    'find-click'    = @('guard', 'text', 'change')
+    'imgclick'      = @('text', 'change')
+    'dialog-cancel' = @('text')
+    'menu-pick'     = @('text')
+    'open-and-pick' = @('guard', 'text', 'change')
+    'type'          = @('guard', 'text')
+    'keys'          = @('guard', 'text')
+    'key'           = @('guard', 'text')
+    'paste'         = @('guard', 'text')
+    'paste-file'    = @('guard', 'text')
+  }
 }
 
 function Get-OwnFlagSpec([string]$cmd) {
@@ -31892,8 +32543,8 @@ function Format-OcrSampleTail($lines, [int]$max, $ctx = $null) {
 # selftest pins the table size so an unnoticed omission goes red.
 function Get-IntArgSpec([string]$cmd) {
   switch ($cmd) {
-    'rect'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step]] [--mark x,y]' } }
-    'zoom'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'zoom <x> <y> <w> <h> [scale] [outPath]' } }
+    'rect'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step]] [--mark x,y] [--to <sel>]' } }
+    'zoom'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]' } }
     'color-at'    { return @{ Indices = @(0, 1); Usage = 'color-at <x> <y>' } }
     'find-color'  { return @{ Indices = @(0, 1, 2, 3); Usage = 'find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n]' } }
     'assert-color' { return @{ Indices = @(0, 1); Usage = 'assert-color <x> <y> <#RRGGBB> [tol]' } }

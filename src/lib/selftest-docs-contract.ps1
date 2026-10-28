@@ -36,6 +36,66 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
   # option-list pipes inside a synopsis (--occlude off|warn|strict) are NOT commands
   ST-Check 'unit: the help index does not mistake option values for command names' (
     -not (@($hNames) -contains 'warn') -and -not (@($hNames) -contains 'strict') -and (@($hNames) -contains 'shot'))
+  # A3 (CU-EXTERNAL-EXPERIENCE-20261028): the per-command "checks this command really runs"
+  # line is derived from Get-CommandCheckMap, and this scan pins that table against the
+  # handlers themselves. Attribution is by handler BODY (function Invoke-Handler-<cmd>), never
+  # by a name list: a command that gains or loses an executor call changes the verdict here
+  # instead of silently widening what the help page promises. The same scan runs on a planted
+  # map so an empty result cannot read as "nothing to check".
+  $dcScan = {
+    param($map, $lines, $count, $names)
+    $exec = @{ 'guard' = 'Invoke-ContentGuard'; 'text' = 'Invoke-ActionExpectation'; 'change' = 'Invoke-ExpectChangeCheck' }
+    $bad = @()
+    # PS 5.1: $hash.Keys prefers an ITEM named 'keys' over the property (the check map really
+    # has a command called 'keys'), so the enumeration goes through PSBase.
+    foreach ($c in @($map.PSBase.Keys)) {
+      if (-not (@($names) -contains $c)) { $bad += ("not-a-command=" + $c); continue }
+      $st = -1
+      for ($i = 0; $i -lt $count; $i++) {
+        if ($lines[$i] -match ('^function Invoke-Handler-' + [regex]::Escape($c) + '\(')) { $st = $i; break }
+      }
+      if ($st -lt 0) { $bad += ("no-handler=" + $c); continue }
+      $en = $count
+      for ($j = $st + 1; $j -lt $count; $j++) { if ($lines[$j] -match '^function ') { $en = $j; break } }
+      $body = (@($lines[$st..($en - 1)]) -join "`n")
+      foreach ($f in @($map[$c])) {
+        if (-not $exec.ContainsKey($f)) { $bad += ("unknown-family=" + $c + "/" + $f) }
+        elseif (-not $body.Contains([string]$exec[$f])) { $bad += ("family-not-run=" + $c + "/" + $f) }
+      }
+    }
+    return @($bad)
+  }
+  $dcBad = @(& $dcScan (Get-CommandCheckMap) $codeLines $clCount $hNames)
+  ST-Check 'lint (A3): every check the per-command page advertises is executed by that command handler (body attribution, not a name list)' (
+    (@($dcBad).Count -eq 0))
+  if (@($dcBad).Count -gt 0) { Write-Output ('      A3 attribution breaches: ' + (@($dcBad) -join ' ')) }
+  $dcPlant = @{ 'click' = @('text', 'bogus'); 'zz-no-such-command' = @('text') }
+  $dcPlantBad = @(& $dcScan $dcPlant $codeLines $clCount $hNames)
+  ST-Check 'unit (A3): the attribution scan names a planted bogus family and a planted non-command (it cannot pass by finding nothing)' (
+    (@($dcPlantBad) -contains 'unknown-family=click/bogus') -and (@($dcPlantBad) -contains 'not-a-command=zz-no-such-command'))
+  # a mapped family whose flags the parser would refuse is a promise the page cannot keep -
+  # every family in the table must leave at least one routed flag behind the intersection.
+  $dcEmptyFam = @()
+  $dcFam = Get-CommandCheckFamilyFlags
+  foreach ($c in @((Get-CommandCheckMap).PSBase.Keys)) {
+    foreach ($f in @((Get-CommandCheckMap)[$c])) {
+      $routed = @(@($dcFam[$f]) | Where-Object { @(Get-CommandSharedSet $c) -contains $_ })
+      if (@($routed).Count -eq 0) { $dcEmptyFam += ($c + '/' + $f) }
+    }
+  }
+  ST-Check 'lint (A3): no mapped check family is entirely unroutable for its command (help never names a flag the parser refuses)' (
+    (@($dcEmptyFam).Count -eq 0))
+  if (@($dcEmptyFam).Count -gt 0) { Write-Output ('      A3 unroutable families: ' + (@($dcEmptyFam) -join ' ')) }
+  # the rendered entry must carry the line where it is true and stay silent where it is not.
+  $dcClickTxt = @(Format-CommandHelp $hLines 'click') -join "`n"
+  $dcShotTxt = @(Format-CommandHelp $hLines 'shot') -join "`n"
+  $dcImgTxt = @(Format-CommandHelp $hLines 'imgclick') -join "`n"
+  ST-Check 'unit (A3): help click advertises its real post-checks (--expect-change included) while help shot stays silent' (
+    $dcClickTxt.Contains("checks 'click' really runs") -and $dcClickTxt.Contains('--expect-change') -and
+    (-not $dcShotTxt.Contains("checks '")))
+  ST-Check 'unit (A3): help imgclick advertises --expect-change (the B5 flag is no longer a silent accept) and no guard it never runs' (
+    $dcImgTxt.Contains("checks 'imgclick' really runs") -and $dcImgTxt.Contains('--expect-change') -and
+    (-not $dcImgTxt.Contains('--guard-text')))
   # a multi-command synopsis line must resolve for EVERY name on it. These calls are
   # wrapped so a regression produces a NAMED FAIL instead of aborting selftest before its
   # summary (an abort is red too, but it hides every check that comes after it).

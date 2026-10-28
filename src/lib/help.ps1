@@ -61,6 +61,29 @@ function Format-HelpFlagMatches([string[]]$helpLines, [string]$flag) {
   return @($out)
 }
 
+# One bounded line naming the checks this command really runs, or '' when the command is not
+# an acting command the table knows. Wording is derived from the same map the A3 lint pins:
+# guards are BEFORE the input, the expect family and the pixel sample are AFTER it.
+function Format-CommandCheckLine([string]$cmd) {
+  $m = Get-CommandCheckMap
+  if (-not $m.ContainsKey($cmd)) { return '' }
+  $fam = Get-CommandCheckFamilyFlags
+  $shared = @(Get-CommandSharedSet $cmd)
+  # a group is printed only when the map DECLARES that family for this command; the shared set
+  # alone would show guards for imgclick, which routes the flags by default but runs none.
+  $declared = @($m[$cmd])
+  $pre = if ($declared -contains 'guard') { @(@($fam['guard']) | Where-Object { $shared -contains $_ }) } else { @() }
+  $post = if ($declared -contains 'text') { @(@($fam['text']) | Where-Object { $shared -contains $_ }) } else { @() }
+  $pix = if ($declared -contains 'change') { @(@($fam['change']) | Where-Object { $shared -contains $_ }) } else { @() }
+  if ((@($pre).Count + @($post).Count + @($pix).Count) -eq 0) { return '' }
+  $parts = @()
+  if (@($pre).Count -gt 0) { $parts += ('before the input: ' + (@($pre) -join ' ')) }
+  if (@($post).Count -gt 0) { $parts += ('after it: ' + (@($post) -join ' ')) }
+  if (@($pix).Count -gt 0) { $parts += ('pixels: ' + (@($pix) -join ' ')) }
+  $eg = if (@($post).Count -gt 0) { '--expect "Ready" --timeout 5' } elseif (@($pix).Count -gt 0) { '--expect-change 0,0,400,300' } else { '--guard-text "Ready"' }
+  return ("checks '" + $cmd + "' really runs - " + ($parts -join '; ') + "; e.g. desktop.ps1 " + $cmd + " ... " + $eg)
+}
+
 # help <command> | help --<flag>: one entry instead of the whole page. Pure over
 # (lines, token) so the extraction is testable OFFLINE. An unknown name throws WITH
 # candidates - a bare "no such command" is how people stop reading and start guessing.
@@ -109,6 +132,10 @@ function Format-CommandHelp([string[]]$helpLines, [string]$token) {
   }
   $out = New-Object System.Collections.ArrayList
   foreach ($b in @($blocks)) { foreach ($ln in @($b)) { [void]$out.Add($ln) } }
+  # A3: the checks this command really runs, derived from the check map (not from a prose
+  # list a human would have to keep in step). Never printed for a command the map omits.
+  $chkLine = Format-CommandCheckLine $token
+  if ($chkLine) { [void]$out.Add($chkLine) }
   # Shared flags are documented ONCE (the click family's --expect-change lives in the
   # shared suffix paragraph, not in every command entry), so a per-command slice must say
   # where the rest of its flags are - otherwise help <cmd> would look thinner than the page
@@ -353,7 +380,11 @@ function Get-OwnFlagTable {
     # v3.0.0 (B-5): same escape-hatch shape as menu-pick, same meaning ("I know this is not a
     # dialog shape; take the responsibility anyway"). Never implicit.
     'dialog-cancel' = @{ '--allow-window' = @{ Bool = $true } }
-    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true } }
+    # CU-EXTERNAL-EXPERIENCE-20261028 (A1): --require-verified is the STRICT contract -
+    # anything but 'ok' (no host bound, stale rect, minimized, dead/reused handle) is
+    # refused before any input. It cannot be combined with --stale-ok; the old unverified
+    # crop stays usable only when the caller does NOT ask for verification.
+    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true }; '--require-verified' = @{ Bool = $true } }
     'unmap' = @{ '--stale-ok' = @{ Bool = $true } }
     'type-in' = @{ '--tab' = @{ Min = 0; Max = 20; Default = 0 } }
     # CU-OPS-COMPLETE-20261026-01 (package B): gesture flags. --mods is a verbatim spec
@@ -403,6 +434,12 @@ function Get-CommandSharedMap {
     # v2.1.0: 'find' hand-parses (no activation allowed on a locator), and the one
     # shared flag it really routes is the --needle escape for --leading text.
     'find' = @('--needle')
+    # CU-EXTERNAL-EXPERIENCE-20261028 (A1): rect/zoom hand-parse their capture arguments and
+    # the ONLY shared flag they route is --to (the host binding). Declared here so the
+    # "valid here" text names exactly what their parser accepts; the reachability lint
+    # follows the Resolve-CaptureTargetArgs delegation and finds the real branch.
+    'rect' = @('--to')
+    'zoom' = @('--to')
     # CU-REL-03..04: wheel accepts only flags it actually consumes. In particular,
     # --allow-outside and unrelated shared readback flags do not silently disappear.
     'wheel' = @('--to', '--force', '--expect-handle', '--always-activate', '--expect-change')
@@ -438,6 +475,44 @@ function Get-CommandSharedSet([string]$cmd) {
   $m = Get-CommandSharedMap
   if ($m.ContainsKey($cmd)) { return @($m[$cmd]) }
   return @(Get-SharedFlagSet)
+}
+
+# CU-EXTERNAL-EXPERIENCE-20261028 (item A3): which pre/post checks each acting command
+# REALLY RUNS - not merely which flags its parser routes. The two are different facts:
+# the B5 review measured imgclick accepting --expect-change and sampling zero pixels, so a
+# help page that derived "checks" from the routing table alone would repeat that lie in
+# documentation form. Families are declared here and expanded to flags by one function, so
+# the page and the lint cannot disagree about what a family means. A command that is absent
+# from this table gets NO check line at all (silence, never a guessed promise).
+function Get-CommandCheckFamilyFlags {
+  return @{
+    'guard'  = @('--guard-text', '--guard-region')
+    'text'   = @('--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-region')
+    'change' = @('--expect-change')
+  }
+}
+
+function Get-CommandCheckMap {
+  return @{
+    'click'         = @('guard', 'text', 'change')
+    'rclick'        = @('guard', 'text', 'change')
+    'dblclick'      = @('guard', 'text', 'change')
+    'wheel'         = @('change')
+    'drag'          = @('guard', 'change')
+    'drag-to'       = @('guard', 'change')
+    'press-down'    = @('guard')
+    'press-up'      = @('guard', 'change')
+    'find-click'    = @('guard', 'text', 'change')
+    'imgclick'      = @('text', 'change')
+    'dialog-cancel' = @('text')
+    'menu-pick'     = @('text')
+    'open-and-pick' = @('guard', 'text', 'change')
+    'type'          = @('guard', 'text')
+    'keys'          = @('guard', 'text')
+    'key'           = @('guard', 'text')
+    'paste'         = @('guard', 'text')
+    'paste-file'    = @('guard', 'text')
+  }
 }
 
 function Get-OwnFlagSpec([string]$cmd) {
@@ -680,8 +755,8 @@ function Format-OcrSampleTail($lines, [int]$max, $ctx = $null) {
 # selftest pins the table size so an unnoticed omission goes red.
 function Get-IntArgSpec([string]$cmd) {
   switch ($cmd) {
-    'rect'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step]] [--mark x,y]' } }
-    'zoom'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'zoom <x> <y> <w> <h> [scale] [outPath]' } }
+    'rect'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step]] [--mark x,y] [--to <sel>]' } }
+    'zoom'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]' } }
     'color-at'    { return @{ Indices = @(0, 1); Usage = 'color-at <x> <y>' } }
     'find-color'  { return @{ Indices = @(0, 1, 2, 3); Usage = 'find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n]' } }
     'assert-color' { return @{ Indices = @(0, 1); Usage = 'assert-color <x> <y> <#RRGGBB> [tol]' } }

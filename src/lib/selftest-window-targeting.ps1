@@ -103,6 +103,218 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     if (-not ($v6SignER -and $v6SignEC -and $v6SignGR)) { $v6SignOk = $false; Write-Output "      signed-rect disagreement for $v6SignProbe : expect-region=$v6SignER expect-change=$v6SignEC guard-region=$v6SignGR" }
   }
   ST-Check 'contract: expect-region, expect-change and guard-region accept the same signed screen rects' ($v6SignOk)
+  # CU-EXTERNAL-EXPERIENCE-20261028 B5: imgclick really runs --expect-change.
+  # The shared flag table has admitted --expect-change on imgclick for as long as the table
+  # has existed, but the handler only ran the TEXT expectation - the external review measured
+  # a delivered click with zero pixel sampling. The handler is exercised here with dynamically
+  # installed stubs (a Set-Item seam, not the ${function:...} table A-07 registers), and the
+  # capture count is what proves the shapes: requested+changed, requested+same, not requested,
+  # and --dry (which must sample nothing at all).
+  $script:b5Captures = 0
+  $script:b5Moves = 0
+  $script:b5Seq = @()
+  $script:a1StaleVerdict = 'ok'
+  $script:a1MapHwnd = [IntPtr]::Zero
+  $script:a1TgtHwnd = [IntPtr]::Zero
+  $b5Names = @('Resolve-Target', 'Emit-ResolveNote', 'Invoke-HitWindowCheck', ('Log-' + 'Action'), 'Move-Click', 'Invoke-ActionExpectation', 'Read-MapSidecar', 'Test-MapSidecarStale', 'Convert-ImageToScreen', 'Get-RegionHash')
+  $b5Orig = @{}
+  foreach ($b5n in $b5Names) { $b5Orig[$b5n] = (Get-Item ("function:" + $b5n)).ScriptBlock }
+  try {
+    Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $eh, $created) return [pscustomobject]@{ Pid = 41998; Title = 'b5-fake'; Handle = $script:a1TgtHwnd; Left = 0; Top = 0; W = 100; H = 100 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Invoke-HitWindowCheck' -Value { param($x, $y, $tgt, $enforce, $allow) }
+    Set-Item -Path ('function:' + $b5Names[3]) -Value { param($la, $detail, $cn) }
+    Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $b) $script:b5Moves++ }
+    Set-Item -Path 'function:Invoke-ActionExpectation' -Value { param($pp, $tt, $what) }
+    Set-Item -Path 'function:Read-MapSidecar' -Value { param($img) return [pscustomobject]@{ OutW = 100; OutH = 100; Kind = 'win'; Scale = 1; OriginX = 10; OriginY = 20; Grid = 0; HostHwnd = $script:a1MapHwnd; HostTitle = 'b5-fake' } }
+    Set-Item -Path 'function:Test-MapSidecarStale' -Value { param($map) return @{ Verdict = $script:a1StaleVerdict; Msg = ('stub verdict: ' + $script:a1StaleVerdict) } }
+    Set-Item -Path 'function:Convert-ImageToScreen' -Value { param($map, $ix, $iy) return [pscustomobject]@{ X = 15; Y = 26 } }
+    Set-Item -Path 'function:Get-RegionHash' -Value { param($x, $y, $w, $h) $script:b5Captures++; $v = [string]$script:b5Seq[0]; if (@($script:b5Seq).Count -gt 1) { $script:b5Seq = @($script:b5Seq | Select-Object -Skip 1) }; return $v }
+    $script:b5Seq = @('b5hash-a', 'b5hash-b'); $script:b5Captures = 0; $script:b5Moves = 0
+    $b5Changed = @(Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--expect-change', '1,2,3,4')) -join "`n"
+    ST-Check 'unit (B5): imgclick --expect-change samples before and after a real click and reports the change' (
+      ($script:b5Captures -eq 2) -and ($script:b5Moves -eq 1) -and ($b5Changed.Contains('clicked 15,26')) -and ($b5Changed -match 'expect-change:.*changed'))
+    $script:b5Seq = @('b5hash-c', 'b5hash-c'); $script:b5Captures = 0; $script:b5Moves = 0
+    $b5Same = @(Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--expect-change', '1,2,3,4')) -join "`n"
+    ST-Check 'unit (B5): a pixel-identical region warns and names the rect it measured (no silent success)' (
+      ($script:b5Captures -eq 2) -and ($script:b5Moves -eq 1) -and ($b5Same -match 'WARN: --expect-change:.*PIXEL-IDENTICAL'))
+    $script:b5Captures = 0; $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake'))
+    ST-Check 'unit (B5): without --expect-change imgclick reads no pixels and still clicks once' (
+      ($script:b5Captures -eq 0) -and ($script:b5Moves -eq 1))
+    $script:b5Captures = 0; $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--expect-change', '1,2,3,4', '--dry'))
+    ST-Check 'unit (B5): --dry with --expect-change neither clicks nor samples pixels' (
+      ($script:b5Captures -eq 0) -and ($script:b5Moves -eq 0))
+    # CU-EXTERNAL-EXPERIENCE-20261028 A1: the strict verification contract. The external
+    # review measured an unbound crop being clicked anyway; --require-verified is the flag
+    # that turns every non-ok verdict into a refusal BEFORE any input, while callers that
+    # do not ask for it keep the OLD note-and-click behaviour (an explicit legacy contract,
+    # not a silent change). The target-identity case is the second lie: a point mapped from
+    # window A must not be clicked on window B.
+    $script:a1StaleVerdict = 'unverifiable'; $script:b5Captures = 0; $script:b5Moves = 0
+    $a1UnvErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified')) } catch { $a1UnvErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): imgclick --require-verified refuses an unverifiable (unbound) crop before any input' (
+      $a1UnvErr.Contains('--require-verified') -and $a1UnvErr.Contains('unverifiable') -and ($script:b5Moves -eq 0) -and ($script:b5Captures -eq 0))
+    $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake'))
+    ST-Check 'unit (A1): without the strict flag the OLD unverified contract still clicks (compatibility kept)' (
+      $script:b5Moves -eq 1)
+    $a1MixErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified', '--stale-ok')) } catch { $a1MixErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): --require-verified together with --stale-ok is refused as contradictory' (
+      $a1MixErr.Contains('contradict') -and ($script:b5Moves -eq 1))
+    $script:a1StaleVerdict = 'ok'; $script:b5Moves = 0
+    [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified'))
+    ST-Check 'unit (A1): --require-verified with a verified (ok) mapping clicks exactly once' (
+      $script:b5Moves -eq 1)
+    $script:a1MapHwnd = [IntPtr]::new(55); $script:a1TgtHwnd = [IntPtr]::new(66); $script:b5Moves = 0
+    $a1IdErr = ''
+    try { [void](Invoke-DesktopCommand 'imgclick' @('b5.png', '10', '20', '--to', 'b5-fake', '--require-verified')) } catch { $a1IdErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): --require-verified refuses a --to that resolves to a DIFFERENT window than the captured host' (
+      $a1IdErr.Contains('another window') -and ($script:b5Moves -eq 0))
+    $script:a1MapHwnd = [IntPtr]::Zero; $script:a1TgtHwnd = [IntPtr]::Zero
+  } finally {
+    foreach ($b5n in $b5Names) { Set-Item -Path ("function:" + $b5n) -Value $b5Orig[$b5n] }
+  }
+  # CU-EXTERNAL-EXPERIENCE-20261028 A1: the geometry verdict is pure, so the shape that
+  # used to lie - a MINIMIZED window whose rect did not change, which rectangular equality
+  # alone read as 'ok' - is pinned without a live window. A bound crop must also persist
+  # its host rect: half a binding (identity without geometry) is refused at read time.
+  $a1Cur = @{ X = 100; Y = 200; W = 300; H = 400 }
+  $a1Min = Get-SidecarRectVerdict 'a1' 100 200 300 400 $a1Cur $true
+  $a1Same = Get-SidecarRectVerdict 'a1' 100 200 300 400 $a1Cur $false
+  $a1Move = Get-SidecarRectVerdict 'a1' 100 200 300 400 @{ X = 103; Y = 200; W = 300; H = 400 } $false
+  ST-Check 'unit (A1): a minimized host is STALE even when its rect is unchanged; a 3px move is stale; equality is ok' (
+    $a1Min.Verdict -eq 'stale' -and $a1Min.Msg.Contains('minimized') -and $a1Same.Verdict -eq 'ok' -and $a1Move.Verdict -eq 'stale')
+  $a1Unbound = @{ Kind = 'rect'; OriginX = 10; OriginY = 20; Scale = 1; OutW = 100; OutH = 100; HostPid = 0; HostHwnd = [IntPtr]::Zero; HostTitle = ''; HostX = $null; HostY = $null; HostW = $null; HostH = $null }
+  ST-Check 'unit (A1): an unbound rect sidecar stays unverifiable, never a false ok' (
+    (Test-MapSidecarStale $a1Unbound).Verdict -eq 'unverifiable')
+  $a1Names = @('Resolve-Window', 'Emit-ResolveNote', 'Get-WindowVisibleRect', 'Save-RectEx', 'Invoke-OcclusionOwners')
+  $a1Orig = @{}
+  foreach ($a1n in $a1Names) { $a1Orig[$a1n] = (Get-Item ("function:" + $a1n)).ScriptBlock }
+  $script:a1RectArgs = $null
+  $a1Side = Join-Path $env:TEMP ('dtx-a1-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  $a1Bad = Join-Path $env:TEMP ('dtx-a1-sidecar-' + [guid]::NewGuid().ToString('N') + '.png')
+  try {
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) return [pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host'; Left = 100; Top = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Get-WindowVisibleRect' -Value { param($h) return @{ X = 100; Y = 200; W = 300; H = 400 } }
+    Set-Item -Path 'function:Save-RectEx' -Value { param($x, $y, $w, $h, $path, $fit, $grid, $marks, $kind, $mapWin, $cf) $script:a1RectArgs = @{ Path = $path; Kind = $kind; Host = $mapWin; X = [int]$x; Y = [int]$y }; return @('stub-saved') }
+    Set-Item -Path 'function:Invoke-OcclusionOwners' -Value { param($rect, $action, $grid) return @{ Ran = $false; Echo = '' } }
+    # --to must be stripped BEFORE the capture parser: left in place it becomes the
+    # OUTPUT PATH (the first positional after the four numbers) and the binding vanishes.
+    [void](Invoke-DesktopCommand 'rect' @('110', '210', '50', '40', '--to', 'a1-host'))
+    ST-Check 'unit (A1): rect --to is stripped before the capture parser and reaches Save-RectEx as the host (never as the outPath)' (
+      $null -ne $script:a1RectArgs -and $script:a1RectArgs.Path -ne '--to' -and $script:a1RectArgs.Path -like '*rect_*' -and $null -ne $script:a1RectArgs.Host -and $script:a1RectArgs.X -eq 110 -and $script:a1RectArgs.Kind -eq 'rect')
+    $script:a1RectArgs = $null
+    $a1OutErr = ''
+    try { [void](Invoke-DesktopCommand 'rect' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1OutErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): rect --to refuses a region outside the bound window BEFORE any capture is written' (
+      $a1OutErr.Contains('outside the visible rect') -and $null -eq $script:a1RectArgs)
+    $a1ZoomErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('10', '10', '50', '40', '--to', 'a1-host')) } catch { $a1ZoomErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): zoom --to is parsed out (not taken as the outPath) and refuses an outside region before capture' (
+      $a1ZoomErr.Contains('outside the visible rect'))
+    Write-MapSidecar $a1Side 110 210 1.0 50 40 'rect' ([pscustomobject]@{ Pid = 7; Handle = [IntPtr]::new(1234); Title = 'a1-host' })
+    $a1Back = Read-MapSidecar $a1Side
+    ST-Check 'unit (A1): a bound rect sidecar round-trips its host identity AND host rect (what the strict check compares)' (
+      $a1Back.Kind -eq 'rect' -and $a1Back.HostPid -eq 7 -and ([Int64]$a1Back.HostHwnd -eq 1234) -and $a1Back.HostX -eq 100 -and $a1Back.HostY -eq 200 -and $a1Back.HostW -eq 300 -and $a1Back.HostH -eq 400)
+    [System.IO.File]::WriteAllText(($a1Bad + '.map.txt'), "origin_x=1`r`norigin_y=2`r`nscale=1`r`nout_w=3`r`nout_h=4`r`nkind=rect`r`npid=7`r`nhandle=1234`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $a1BadErr = ''
+    try { [void](Read-MapSidecar $a1Bad) } catch { $a1BadErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A1): a host identity WITHOUT its rect is refused at read time (half a binding never becomes unverifiable)' (
+      $a1BadErr.Contains('host_x/host_y/host_w/host_h'))
+  } finally {
+    foreach ($a1n in $a1Names) { Set-Item -Path ("function:" + $a1n) -Value $a1Orig[$a1n] }
+    Remove-Item -LiteralPath @(($a1Side + '.map.txt'), ($a1Bad + '.map.txt')) -Force -ErrorAction SilentlyContinue
+  }
+  # CU-EXTERNAL-EXPERIENCE-20261028 B2: the pre-input block verdict. owner is a WINDOW
+  # RELATION, not a modality: an owned visible window that UIA reads as modeless must stay
+  # 'clear' while the target is enabled, and a disabled target whose only candidates read
+  # modeless/unsupported must read 'unknown' - never promoted to 'modal'. Facts in, verdict
+  # out, so both fixtures (a modal dialog and a modeless palette) are pinned without a live
+  # window and the negative control is the enabled case.
+  $b2Cand = {
+    param([int]$h, [string]$cls, [string]$title, [string]$uia)
+    return [pscustomobject]@{ Handle = [IntPtr]::new($h); Pid = 9; Class = $cls; Title = $title
+      Identity = ("pid=9 hwnd=$h " + (Format-WindowLabel $title $cls)); UiaModal = $uia }
+  }
+  $b2ModelessCand = & $b2Cand 11 'Qt63' 'Find' 'no'
+  $b2UnsupportedCand = & $b2Cand 13 'Qt63' 'Palette' 'unsupported'
+  $b2ModalCand = & $b2Cand 12 '#32770' 'Save changes' 'yes'
+  $b2Clear = Get-TargetBlockVerdict $true $true @($b2ModelessCand) 't'
+  $b2Blocked = Get-TargetBlockVerdict $true $false @($b2ModalCand) 't'
+  $b2UnknownModeless = Get-TargetBlockVerdict $true $false @($b2ModelessCand, $b2UnsupportedCand) 't'
+  $b2UnknownNone = Get-TargetBlockVerdict $true $false @() 't'
+  $b2Gone = Get-TargetBlockVerdict $false $false @() 't'
+  ST-Check 'unit (B2): an ENABLED target stays clear even with an owned visible window (owned is not modal - the modeless negative control)' (
+    $b2Clear.Verdict -eq 'clear' -and $b2Clear.Msg -eq '')
+  ST-Check 'unit (B2): a DISABLED target with a UIA IsModal=true candidate reads blocked and names that candidate' (
+    $b2Blocked.Verdict -eq 'blocked' -and $b2Blocked.Blocking.Title -eq 'Save changes' -and
+    $b2Blocked.Msg.Contains('hwnd=12') -and $b2Blocked.Msg.Contains('IsModal=true') -and $b2Blocked.Msg.Contains('NOTHING was sent'))
+  ST-Check 'unit (B2): a DISABLED target whose owned windows read modeless/unsupported reads UNKNOWN - the message never claims IsModal=true' (
+    $b2UnknownModeless.Verdict -eq 'unknown' -and (-not $b2UnknownModeless.Msg.Contains('IsModal=true')) -and
+    $b2UnknownModeless.Msg.Contains('unconfirmed') -and $b2UnknownModeless.Msg.Contains('hwnd=11') -and $b2UnknownModeless.Msg.Contains('hwnd=13'))
+  ST-Check 'unit (B2): a DISABLED target with NO owned window reads UNKNOWN (the cause is not invented)' (
+    $b2UnknownNone.Verdict -eq 'unknown' -and $b2UnknownNone.Msg.Contains('no visible top-level window is owned') -and $null -eq $b2UnknownNone.Blocking)
+  ST-Check 'unit (B2): a vanished target reads gone - the block guard does not manufacture a refusal the other guards own' (
+    $b2Gone.Verdict -eq 'gone' -and $b2Gone.Msg -eq '')
+  $b2Names = @('Resolve-Target', 'Emit-ResolveNote', 'Invoke-HitWindowCheck', ('Log-' + 'Action'), 'Move-Click',
+    'Get-PointSpaceOrigin', 'Convert-PointSpace', 'Get-TargetBlockFacts')
+  $b2Orig = @{}
+  foreach ($b2n in $b2Names) { $b2Orig[$b2n] = (Get-Item ("function:" + $b2n)).ScriptBlock }
+  $script:b2Moves = 0
+  $script:b2Facts = @{ Alive = $true; Enabled = $true; Candidates = @() }
+  try {
+    Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $eh, $created) return [pscustomobject]@{ Pid = 41998; Title = 'b2-fake'; Handle = [IntPtr]::new(77); Left = 0; Top = 0; W = 100; H = 100 } }
+    Set-Item -Path 'function:Emit-ResolveNote' -Value { }
+    Set-Item -Path 'function:Invoke-HitWindowCheck' -Value { param($x, $y, $tgt, $enforce, $allow) }
+    Set-Item -Path ('function:' + $b2Names[3]) -Value { param($la, $detail, $cn) }
+    Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $b, $m) $script:b2Moves++ }
+    Set-Item -Path 'function:Get-PointSpaceOrigin' -Value { param($space, $tgt) return @{ Space = 'screen'; X = 0; Y = 0; W = 1920; H = 1080 } }
+    Set-Item -Path 'function:Convert-PointSpace' -Value { param($x, $y, $origin) return [pscustomobject]@{ X = [int]$x; Y = [int]$y } }
+    Set-Item -Path 'function:Get-TargetBlockFacts' -Value { param($tgt) return $script:b2Facts }
+    $b2NullOut = @(Invoke-TargetBlockGuard $null)
+    ST-Check 'unit (B2): a bare-coordinate caller (null target) gets no guess and no output from the block guard' (
+      @($b2NullOut).Count -eq 0)
+    $script:b2Facts = @{ Alive = $true; Enabled = $false; Candidates = @($b2ModalCand) }
+    $script:b2Moves = 0
+    $b2RefErr = ''
+    try { [void](Invoke-DesktopCommand 'click' @('10', '20', '--to', 'b2-fake')) } catch { $b2RefErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (B2): click with a blocked target refuses BEFORE any input and quotes the blocking window' (
+      $b2RefErr.Contains('block guard') -and $b2RefErr.Contains('Save changes') -and ($script:b2Moves -eq 0))
+    $script:b2Facts = @{ Alive = $true; Enabled = $true; Candidates = @() }
+    $script:b2Moves = 0
+    [void](Invoke-DesktopCommand 'click' @('10', '20', '--to', 'b2-fake'))
+    ST-Check 'unit (B2): a clear target still reaches the click exactly once (the guard is not a blanket refusal)' (
+      $script:b2Moves -eq 1)
+  } finally {
+    foreach ($b2n in $b2Names) { Set-Item -Path ("function:" + $b2n) -Value $b2Orig[$b2n] }
+  }
+  # The guard is only a contract if every command that CAN carry an explicit window identity
+  # actually calls it. Bodies are read through the same command-ranges helper the rest of this
+  # family uses, and the census counts LIVE lines only - a guard that somebody commented out
+  # must read as missing (the planted pair proves the difference).
+  $b2ClickCmds = @('click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'menu-pick', 'open-and-pick', 'imgclick')
+  $b2Missing = @()
+  $b2Sites = 0
+  foreach ($b2c in $b2ClickCmds) {
+    $b2t = Get-CommandCodeText $codeLines $b2c
+    $b2live = @(@($b2t -split "`n") | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('Invoke-TargetBlockGuard') })
+    $b2Sites += $b2live.Count
+    if ($b2live.Count -eq 0) { $b2Missing += $b2c }
+  }
+  ST-Check 'lint (B2): every click-family command that can carry an explicit window identity calls the shared block guard' (
+    (@($b2Missing).Count -eq 0) -and ($b2Sites -ge 13))
+  if (@($b2Missing).Count -gt 0) { Write-Output ('      B2: block guard missing from ' + (@($b2Missing) -join ', ')) }
+  Write-Output ('      B2 block-guard live call sites: ' + $b2Sites + ' across ' + @($b2ClickCmds).Count + ' commands')
+  $b2Plant = ('  # Invoke-TargetBlockGuard 1' + "`n" + '  Invoke-TargetBlockGuard 2')
+  $b2PlantLive = @(@($b2Plant -split "`n") | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('Invoke-TargetBlockGuard') })
+  ST-Check 'unit (B2): the census refuses a commented-out call and still sees the live one (the scan has teeth)' (
+    (@($b2PlantLive).Count -eq 1))
+
   # single-source lints: these verdicts must be produced in exactly one place, or a new
   # call site can start claiming "activated" / proving nothing without anyone noticing.
   # Every marker below is ASSEMBLED by concatenation on purpose: a scan line that

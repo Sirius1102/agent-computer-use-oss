@@ -8,7 +8,7 @@
 
 # v4.4.0 (A-15): imgclick - the case body, verbatim
 function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
-      # imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok]
+      # imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified]
       # v1.5.0 WP-3: reverse-map an image pixel through <outPath>.map.txt and
       # click the derived screen point. Replaces painted-out ix/scale math;
       # --dry prints the mapping and stops. A missing sidecar is a hard error.
@@ -17,17 +17,26 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       # (>2px) is refused instead of silently clicked at the stale position;
       # --stale-ok maps against the old origin anyway. rect/zoom captures have
       # no host window and say so in the echo (staleness not verifiable).
+      # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a crop CAN be bound to a host now
+      # (rect/zoom ... --to <sel>), and --require-verified turns "unverifiable" from a
+      # note into a refusal BEFORE any input. --stale-ok and --require-verified are
+      # contradictory permissions, so asking for both is refused here, by name.
       $own = Strip-OwnFlags $Rest 'imgclick'
       $dry = [bool]$own.Values['--dry']
       $staleOk = [bool]$own.Values['--stale-ok']
+      $requireVer = [bool]$own.Values['--require-verified']
       $p = Split-Target @($own.Rest) 'imgclick'
-      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok]' }
+      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified]' }
+      if ($requireVer -and $staleOk) { throw 'imgclick: --require-verified and --stale-ok contradict each other - one refuses anything not verified, the other explicitly maps against a stale origin; pick one' }
       $img = $p.Words[0]
       $ix = [int]$p.Words[1]; $iy = [int]$p.Words[2]
       $map = Read-MapSidecar $img
       if ($ix -lt 0 -or $ix -ge $map.OutW -or $iy -lt 0 -or $iy -ge $map.OutH) { throw "imgclick: image coords ($ix,$iy) outside $($map.OutW)x$($map.OutH) of $img" }
       $st = Test-MapSidecarStale $map
       if ($st.Verdict -eq 'gone') { throw "imgclick: $($st.Msg)" }
+      if ($requireVer -and $st.Verdict -ne 'ok') {
+        throw "imgclick: --require-verified: this image cannot be verified against its host window ($($st.Verdict)) - $($st.Msg). Re-capture with 'win <sel>' or 'rect/zoom ... --to <sel>', or drop --require-verified to accept the OLD unverified contract"
+      }
       if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "imgclick: $($st.Msg)" }
       $sp = Convert-ImageToScreen $map $ix $iy
       $staleNote = ''
@@ -50,21 +59,37 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
           $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
           Emit-ResolveNote
         }
+        # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a strict caller must not click a point that
+        # was mapped from ANOTHER window - the pixel came from $map's host, so a --to that
+        # resolves to a different handle is the same lie as a stale origin.
+        if ($requireVer -and $null -ne $tgt -and ([Int64]$map.HostHwnd -ne 0) -and ([Int64]$tgt.Handle -ne [Int64]$map.HostHwnd)) {
+          throw "imgclick: --require-verified: the image was captured from handle=$(([Int64]$map.HostHwnd)) ('$($map.HostTitle)') but --to resolves to handle=$(([Int64]$tgt.Handle)) ('$($tgt.Title)') - refusing to click a point mapped from another window"
+        }
+        Invoke-TargetBlockGuard $tgt
         Invoke-HitWindowCheck $sp.X $sp.Y $tgt ($p.Sel -ne '') $p.AllowOutside
+        # CU-EXTERNAL-EXPERIENCE-20261028 B5: the shared flag table already admits
+        # --expect-change for imgclick; before this line the handler accepted it and did
+        # nothing. Baseline before the click, verdict after it - same shape as click/rclick.
+        $ecb = Get-ExpectChangeBaseline $p $tgt
         Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "img=$img ix=$ix iy=$iy -> $($sp.X),$($sp.Y)" $Cmd
         Move-Click $sp.X $sp.Y 'left'
         "clicked $($sp.X),$($sp.Y)"
+        Invoke-ExpectChangeCheck $p $ecb 'clicked'
         Invoke-ActionExpectation $p $tgt 'clicked'
       }
 }
 
 # v4.4.0 (A-15): zoom - the case body, verbatim
 function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
-      # zoom <x> <y> <w> <h> [scale] [outPath] - capture a small region and
+      # zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] - capture a small region and
       # enlarge it (NearestNeighbor) so tiny text/buttons are readable in one
       # shot instead of iterating manual rect crops. Echo gives the mapping
       # back to screen pixels: screen = (x + ix/scale, y + iy/scale).
-      if ($Rest.Count -lt 4) { throw 'usage: zoom <x> <y> <w> <h> [scale] [outPath]' }
+      # CU-EXTERNAL-EXPERIENCE-20261028 (A1): --to binds the zoom crop to its host window
+      # exactly like rect --to; the refusal happens before any pixels are grabbed.
+      $hb = Resolve-CaptureTargetArgs $Rest
+      $Rest = @($hb.Words)
+      if ($Rest.Count -lt 4) { throw 'usage: zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]' }
       $x = [int]$Rest[0]; $y = [int]$Rest[1]; $w = [int]$Rest[2]; $h = [int]$Rest[3]
       if ($w -le 0 -or $h -le 0) { throw 'zoom: w and h must be positive' }
       $scale = 2.0; $path = ''
@@ -76,6 +101,8 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
       if (-not $path) { $path = Default-ShotName 'zoom' }
+      $hostWin = $null
+      if ($hb.Sel) { $hostWin = (Resolve-CropHost $hb.Sel $x $y $w $h 'zoom').Win }
       Ensure-OutDir
       $src = New-Object System.Drawing.Bitmap($w, $h)
       $gs = [System.Drawing.Graphics]::FromImage($src)
@@ -91,10 +118,11 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
       $dst.Dispose()
       $size = (Get-Item -LiteralPath $path).Length
-      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom'
+      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"
+      if ($hostWin) { "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it" }
 }
 
 # v4.4.0 (A-15): ime-en - the case body, verbatim

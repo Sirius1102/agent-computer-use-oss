@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.5 - 2026-10-28
+
+- **A crop can name the window it came from, and a strict click can demand that proof.**
+  `rect` / `zoom --to <sel>` record the host's identity AND its visible rect beside the image,
+  so a later `imgclick --require-verified` compares against the window, never the crop origin
+  (a crop is a sub-region; its origin says nothing about the window). The strict contract
+  refuses a missing host, a dead/reused handle, a minimized window or a moved rect *before any
+  input*; an unbound sidecar stays `unverifiable` and is never promoted to "verified".
+- **A disabled target is not clicked into.** Every clicking command that resolves an explicit
+  window now reads that window's ENABLED state first. A disabled window receives no mouse
+  input, so the call is refused; the refusal names the owned visible window whose UIA
+  `WindowPattern.IsModal` is true, or answers UNKNOWN when UIA cannot confirm it. An owned
+  window is never promoted to "modal" on the owner relation alone - modeless dialogs are owned
+  too - and no dialog button is pressed for you. Bare-coordinate calls have no window identity
+  to judge and are unchanged.
+- **`imgclick --expect-change` now really samples.** The shared flag table admitted it but the
+  handler never read it. It now takes a before/after sample of the target's own region: a
+  change is reported, an identical frame is a WARN (the historical semantics - a pixel change
+  is evidence of *something happening*, not of the business state you wanted), and `--dry`
+  samples nothing.
+- **`help <command>` lists the checks that command really runs.** The per-command page derives
+  its pre/post check summary from the same parameter contract the handlers use, so the
+  advertised `--expect*` family and the strict contracts cannot drift away from the code.
+- **Finding the action log for a date is documented.** `actions.log` rolls at 512 KiB and the
+  five newest rolls stay beside it; "today's file has no line from that session" does not mean
+  the session was never logged. README now shows how to scan the rolls by UTC date (Beijing is
+  UTC+8) and how to inspect an archived slice without touching the live log.
+
 ## v4.6.4 - 2026-10-28
 
 - **A confirmed DOWN is released even when the bookkeeping that recorded it fails.** `key` now
