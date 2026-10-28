@@ -1052,11 +1052,24 @@ $script:ProcSystemNames = @('system', 'idle', 'registry', 'memory compression', 
 
 # One process -> the fields every proc command reports. Each field is read under its own
 # try/catch so a single protected property cannot erase the rest of the identity.
-# R-04: a failed LOOKUP is classified before it is reported. "Cannot find a process" is the
-# only answer that may print exists=false; a permission or unknown failure means existence
-# could not be determined, and saying "no process with that id" there tells the operator the
-# opposite of the truth (a protected process was reported as absent).
-function Get-ProcLookupFailureKind($ex) {
+# R-04 / CU-OPS-CORRECTION-20261028-01: a failed LOOKUP is classified BEFORE it is reported.
+# "Cannot find a process" is the only answer that may print exists=false; a permission or
+# unknown failure means existence could not be determined, and saying "no process with that
+# id" there tells the operator the opposite of the truth (a protected process was reported as
+# absent). The classification uses STABLE identities - exception types and the resource-
+# independent FullyQualifiedErrorId / CategoryInfo - never the message text, which is
+# localized: a zh-CN host prints the same lookup failure in Chinese for the SAME error an
+# en-US host reports as "Cannot find a process with the process identifier N".
+function Get-ProcLookupFailureKind($err) {
+  # Callers pass the ErrorRecord; a bare exception is still accepted for old call sites.
+  $ex = $err
+  $fqid = ''
+  $cat = ''
+  if ($err -is [System.Management.Automation.ErrorRecord]) {
+    try { $fqid = [string]$err.FullyQualifiedErrorId } catch { $fqid = '' }
+    try { $cat = [string]$err.CategoryInfo.Category } catch { $cat = '' }
+    $ex = $err.Exception
+  }
   $e = $ex
   while ($null -ne $e) {
     $tn = "$($e.GetType().FullName)"
@@ -1065,8 +1078,9 @@ function Get-ProcLookupFailureKind($ex) {
     if ($tn -match 'ItemNotFoundException|ObjectNotFoundException|ProcessNotFoundException') { return 'not-found' }
     $e = $e.InnerException
   }
-  if ("$($ex.Message)" -match 'Cannot find a process with (the )?(process )?(identifier|id)') { return 'not-found' }
-  if ("$($ex.Message)" -match 'Access is denied|denied') { return 'denied' }
+  if ($fqid -match '^NoProcessFoundForGiven(Id|Name)(,|$)') { return 'not-found' }
+  if ($cat -eq 'ObjectNotFound' -and "$($ex.GetType().FullName)" -eq 'Microsoft.PowerShell.Commands.ProcessCommandException') { return 'not-found' }
+  if ($cat -eq 'PermissionDenied' -or $cat -eq 'SecurityError') { return 'denied' }
   return 'lookup-failed'
 }
 
@@ -1080,7 +1094,8 @@ function Get-ProcSnapshot([int]$procId) {
   $pr = $null
   try { $pr = Get-Process -Id $procId -ErrorAction Stop }
   catch {
-    $kind = Get-ProcLookupFailureKind $_.Exception
+    # The ErrorRecord (not just its Exception) carries the stable identity the classifier reads.
+    $kind = Get-ProcLookupFailureKind $_
     if ($kind -eq 'not-found') { $snap.exists = $false; $snap.exists_why = 'the process is not running' }
     else { $snap.exists = 'unknown'; $snap.exists_why = "$kind - $($_.Exception.Message)" }
     return $snap
@@ -1456,22 +1471,26 @@ function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
       $own = Strip-OwnFlags $Rest 'clip-info'
       if (@($own.Rest).Count -ne 0) { throw 'usage: clip-info [--json] - it takes no positional arguments (use paste/paste-file/copy-file to change the clipboard)' }
       $formats = @()
+      $readErr = ''
       try {
         $do = [System.Windows.Forms.Clipboard]::GetDataObject()
-        if ($null -ne $do) { $formats = @($do.GetFormats()) }
-      } catch { $formats = @() }
+        if ($null -ne $do) { $formats = @($do.GetFormats()) } else { $readErr = 'GetDataObject returned null (the clipboard could not be opened)' }
+      } catch { $readErr = [string]$_.Exception.Message }
       $plan = Get-ClipboardFormatPlan $formats
       # A plan-shaped state, not a saved snapshot: content fields are deliberately empty
-      # because this command never opened them.
+      # because this command never opened them. G-1: a format-list read that FAILED is
+      # reported as unknown, never as an empty clipboard.
       $st = @{ Kind = $plan.Kind; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @($plan.Formats); Extras = @($plan.Extras) }
+      if ($readErr -ne '') { $st.Kind = 'unknown'; $st.ReadError = $readErr }
       $imgNote = if ($plan.HasImage) { 'Bitmap/DIB format present - content NOT decoded by this read-only command (the writing command saves the carrier)' } else { 'none' }
       $textNote = if ($plan.HasText) { 'present - content NOT read by this read-only command' } else { 'none' }
       $filesNote = if ($plan.HasFiles) { 'FileDrop present - the list was NOT read by this read-only command' } else { 'none' }
-      $extrasNote = if (@($plan.Extras).Count -gt 0) { Format-ClipboardFormatNames $plan.Extras } else { 'none' }
+      $extrasNote = if ($readErr -ne '') { 'NOT READ - the format list could not be opened, so this is not an empty clipboard' } elseif (@($plan.Extras).Count -gt 0) { Format-ClipboardFormatNames $plan.Extras } else { 'none' }
       $restorable = Get-ClipboardRestorableVerdict $st
       if ($script:Json) {
         [pscustomobject]@{
-          kind = $plan.Kind
+          kind = $st.Kind
+          read_error = $readErr
           formats = $formats
           extras = @($plan.Extras)
           text = $textNote
@@ -1480,8 +1499,9 @@ function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
           restorable = $restorable
         } | ConvertTo-Json -Compress -Depth 4
       } else {
-        "clipboard kind=$($plan.Kind) formats=$(@($plan.Formats).Count) unknown=$($extrasNote)"
-        "  formats: " + $(if (@($plan.Formats).Count -gt 0) { (@($plan.Formats) -join ', ') } else { '(none)' })
+        $countText = if ($readErr -ne '') { 'unknown' } else { [string]@($plan.Formats).Count }
+        "clipboard kind=$($st.Kind) formats=$countText unknown=$($extrasNote)"
+        "  formats: " + $(if ($readErr -ne '') { '(not read - the format list could not be opened)' } elseif (@($plan.Formats).Count -gt 0) { (@($plan.Formats) -join ', ') } else { '(none)' })
         "  text: $textNote"
         "  files: $filesNote"
         "  image: $imgNote"
@@ -1520,25 +1540,43 @@ try {
   $hwnd = [IntPtr]([int64]$a.hwnd)
   $want = [string]$a.name
   $el = $null
-  try { $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) } catch { $el = $null }
-  if ($null -eq $el) { Write-Result @{ status = 'no-uia-root'; value = ''; detail = 'FromHandle returned null'; scanned = 0 }; exit 0 }
+  $fhErr = ''
+  try { $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) } catch { $fhErr = $_.Exception.Message }
+  if ($null -eq $el) {
+    if ($fhErr -ne '') { Write-Result @{ status = 'error'; value = ''; detail = ('FromHandle failed: ' + $fhErr); scanned = 0 }; exit 0 }
+    Write-Result @{ status = 'no-uia-root'; value = ''; detail = 'FromHandle returned null without an error'; scanned = 0 }; exit 0
+  }
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $q = New-Object System.Collections.Queue
   $q.Enqueue($el)
   $found = $null
   $n = 0
+  $walkErr = ''
+  $readErrs = 0
+  $readFirst = ''
   while ($q.Count -gt 0 -and $n -lt 6000) {
     $cur = $q.Dequeue()
     $n++
     $nm = ''
-    try { $nm = [string]$cur.Current.Name } catch { $nm = '' }
+    # The property-read form is deliberately the METHOD: PowerShell 5.1 silently answers
+    # $null for a throwing .NET property getter (measured), so a denied Name read through
+    # .Current.Name would look like an empty name and the probe would claim not-found. The
+    # method form raises a catchable exception, which is counted and reported below.
+    try { $nm = [string]$cur.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::NameProperty) } catch { $readErrs++; if ($readFirst -eq '') { $readFirst = $_.Exception.Message } }
     if ($nm -ne '' -and $nm.ToLowerInvariant().Contains($want.ToLowerInvariant())) { $found = $cur; break }
     try {
       $ch = $walker.GetFirstChild($cur)
       while ($null -ne $ch) { $q.Enqueue($ch); $ch = $walker.GetNextSibling($ch) }
-    } catch { }
+    } catch {
+      if ($walkErr -eq '') { $walkErr = $_.Exception.Message }
+      break
+    }
   }
-  if ($null -eq $found) { Write-Result @{ status = 'not-found'; value = ''; detail = ''; scanned = $n }; exit 0 }
+  if ($null -eq $found) {
+    if ($walkErr -ne '') { Write-Result @{ status = 'error'; value = ''; detail = ('the UIA tree walk failed after ' + $n + ' node(s): ' + $walkErr); scanned = $n }; exit 0 }
+    if ($readErrs -gt 0) { Write-Result @{ status = 'error'; value = ''; detail = ('' + $readErrs + ' node(s) could not be read (first: ' + $readFirst + '); no name match among the readable nodes'); scanned = $n }; exit 0 }
+    Write-Result @{ status = 'not-found'; value = ''; detail = ''; scanned = $n }; exit 0
+  }
   $val = ''
   $tp = $null
   try { $tp = $found.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) } catch { $tp = $null }
@@ -1675,9 +1713,21 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
             if (-not $w) { throw "target window '$sel' is gone - a text wait cannot read a window that is not there" }
             $r = Get-TargetRect $w
             if ($null -eq $r) { throw "the target rect for '$sel' could not be read now" }
-            $f = Find-OcrHitsScaled $r.X $r.Y $r.W $r.H $needle 'auto' 16 $false
-            $ok = (@($f.Hits).Count -gt 0)
-            $lastRead = "ocr hits=$(@($f.Hits).Count)"
+            # W-1: the OCR read gets only what is LEFT of the declared timeout, and a read
+            # that runs out of budget is a read ERROR - the miss inside it is not evidence
+            # that the text is absent.
+            $remaining = [int][math]::Floor(($timeout - $sw.Elapsed.TotalSeconds) * 1000)
+            if ($remaining -lt 1) { $remaining = 1 }
+            $f = Find-OcrHitsScaled $r.X $r.Y $r.W $r.H $needle 'auto' 16 $false $remaining
+            if ($f.TimedOut) {
+              $readErrors++
+              $why = $(if ($f.Note) { [string]$f.Note } else { "no complete pass within ${remaining}ms" })
+              $lastRead = "text read timed out: $why - the partial read is not evidence that the text is absent"
+              $ok = $false
+            } else {
+              $ok = (@($f.Hits).Count -gt 0)
+              $lastRead = "ocr hits=$(@($f.Hits).Count)"
+            }
           } else {
             # R-03: the UIA read gets only what is LEFT of the declared timeout, and it runs
             # in a killable probe process, so a blocking provider cannot outlive the budget.

@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.4 - 2026-10-28
+
+- **A confirmed DOWN is released even when the bookkeeping that recorded it fails.** `key` now
+  treats the ledger write and the action body as one ownership boundary: a base key that was
+  confirmed DOWN but could not be registered - or whose action threw - gets a bounded UP on the
+  way out, and the error says the key was released instead of leaving it physically down.
+- **Cleanup failures are no longer silent, and a failed UP is not "never confirmed".** Ledger
+  removal errors are reported; `confirmed` (what this call actually pressed), `last_up` (the
+  result of the UP attempt) and the live physical state are kept as three separate facts, so a
+  `DOWN=1, UP=0` record stays recoverable instead of being rewritten into "this tool never
+  pressed it". A structurally invalid entry is reported as corrupt and refused, not dropped and
+  replaced by the next write.
+- **Process lookups no longer classify by English message text.** Not-exist / access-denied /
+  unknown are decided from the ErrorRecord's stable identity and category, so a zh-CN host
+  reaches the same verdict as en-US, and `proc-info` cannot turn a refused process into one that
+  does not exist. The UIA worker keeps `FromHandle` / property / traversal failures as failures
+  instead of collapsing them into "no root", and `--text` reads run inside the remaining total
+  budget rather than unbounded after the wait.
+- **An unreadable clipboard is unknown, not empty.** When the format list cannot be opened the
+  saved state is `kind=unknown` with the reason; the write gate refuses by default (the explicit
+  `--replace-clipboard` still overrides), restore says it skipped because nothing was preserved,
+  and `clip-info` reports the format list as not read rather than as zero formats. Content that
+  was never read is never treated as absent.
+- **Every clipboard-replacing paste restores on the way out.** `paste` and `paste-file` put the
+  write, the verification and the send inside one `finally` boundary, so a failed write, a failed
+  image/file digest, or a thrown send still restores the previous clipboard. A send that may have
+  partially happened refuses to guide a blind re-send and tells the caller to inspect the target
+  first. `copy-file` keeps its documented overwrite contract and says it does not restore.
+
 ## v4.6.3 - 2026-10-27
 
 - **Keyboard ownership is a state machine, not a hope.** `key` / `key-release` distinguish

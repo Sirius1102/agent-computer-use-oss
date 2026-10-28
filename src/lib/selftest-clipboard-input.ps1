@@ -58,6 +58,15 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   try { Assert-ClipboardReplaceable @{ Kind = 'other'; Extras = @('HTML Format', 'Rich Text Format') } $false 'paste' } catch { $gGateHtml = $_.Exception.Message }
   ST-Check 'unit (G): the write gate names the extra formats so --replace-clipboard is an informed choice' (
     $gGateHtml -like 'paste : the clipboard holds formats this tool cannot restore (HTML Format, Rich Text Format)*--replace-clipboard*')
+  # G-1 (CU-OPS-CORRECTION-REVIEW-20261028-01): a format-list read that FAILED is unknown,
+  # not an empty clipboard. Synthetic states only - the shared clipboard is not touched.
+  $gGateUnknown = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'unknown'; ReadError = 'injected: access denied' } $false 'paste' } catch { $gGateUnknown = $_.Exception.Message }
+  ST-Check 'unit (G-1): an unreadable clipboard is kind=unknown - refused before any write, --replace-clipboard the explicit override' (
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'unknown'; ReadError = 'injected: access denied' }) -like 'unknown*injected: access denied*--replace-clipboard*') -and
+    ($gGateUnknown -like 'paste : the clipboard could not be read*injected: access denied*--replace-clipboard*'))
+  ST-Check 'unit (G-1): an unreadable snapshot says so on restore instead of claiming an empty clipboard' (
+    (Restore-ClipboardState @{ Kind = 'unknown'; ReadError = 'injected: access denied' }) -like 'skipped clipboard restore (the clipboard could not be read*injected: access denied*')
   # The restore note is the only thing paste sees; partial/failed must be mechanically readable so
   # the command can exit non-zero when the previous clipboard did not come back.
   ST-Check 'unit (G): a restore note maps to ok/partial/failed/skipped/unknown without guessing' (

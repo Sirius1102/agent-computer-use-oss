@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.3  (version sync list lives in the project overview doc)
+# version: 4.6.4  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.3'
+$script:ToolVersion = '4.6.4'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -450,7 +450,9 @@ Set-StrictMode -Version Latest
 # v4.6.3 (R-06): the run measures 1050. The source tree already carried 2 emitters the shipped
 # root artifact never contained, so 1044 + 4 was 2 short; this is the MEASURED number, not a
 # loosened bound (the contract row still requires the run to equal it exactly).
-$script:DeclaredCheckTotal = 1050
+# v4.6.4 (G-1, correction review 20261028): +2 for the unreadable-clipboard branch - the unknown
+# restorable verdict / write gate and the unknown-snapshot restore note (1050 -> 1052).
+$script:DeclaredCheckTotal = 1052
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2320,7 +2322,7 @@ $script:StFamilyCounts = @{
   'audit-output' = 'banners=10,lines=940'
   'window-targeting' = 'banners=11,lines=1086'
   'expect-family' = 'banners=9,lines=705'
-  'clipboard-input' = 'banners=4,lines=181'
+  'clipboard-input' = 'banners=4,lines=190'
   'docs-contract' = 'banners=12,lines=586'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
@@ -2379,6 +2381,8 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # Check emitters per selftest body, counted from the AST of the aggregate. Registering the numbers is
 # the point: after A-14b a family of gates can live in a file that never runs, and only a count that a
 # card has to update in the same commit says so.
+# v4.6.4 (G-1): ClipboardInput 30 -> 32 for the unreadable-clipboard pair; the registered number is
+# the MEASURED one, and the row still requires an exact match.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=101',
@@ -2387,7 +2391,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelftestFamily-DocsContract=57',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
-  'Invoke-SelftestFamily-ClipboardInput=30',
+  'Invoke-SelftestFamily-ClipboardInput=32',
   'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
@@ -3971,14 +3975,22 @@ function Get-OcrEngine {
 }
 
 $script:AsTaskM = $null
-function Await-WinRt($op, [type]$resultType) {
+function Await-WinRt($op, [type]$resultType, [int]$MaxWaitMs = 20000, $Deadline = $null) {
   if ($null -eq $script:AsTaskM) {
     $script:AsTaskM = ([System.WindowsRuntimeSystemExtensions].GetMethods() |
       Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
     if ($null -eq $script:AsTaskM) { throw 'WinRT AsTask bridge not found (needs desktop PowerShell 5.1+)' }
   }
   $task = $script:AsTaskM.MakeGenericMethod($resultType).Invoke($null, @($op))
-  if (-not $task.Wait(20000)) { throw 'WinRT async operation timed out' }
+  # W-1: the wait is a bounded managed wait. A caller that owns a deadline passes the time it
+  # has left, so one unresponsive WinRT operation cannot outlive that deadline.
+  $wait = $MaxWaitMs
+  if ($null -ne $Deadline -and [int]$Deadline.Ms -gt 0) {
+    $wait = [int]$Deadline.Ms - [int]$Deadline.Sw.ElapsedMilliseconds
+    if ($wait -lt 1) { throw "OCR read: the $([int]$Deadline.Ms)ms budget was used up before the next WinRT operation" }
+  }
+  if ($wait -lt 1) { $wait = 1 }
+  if (-not $task.Wait($wait)) { throw "WinRT async operation did not answer within ${wait}ms" }
   return $task.Result
 }
 
@@ -4008,9 +4020,13 @@ function Get-ScreenBitmap([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale) {
 # Recognition half of the OCR pipeline: OCRs an in-memory bitmap and returns
 # lines with rects in BITMAP pixel coordinates (caller maps to screen). All
 # null-Text / null-Word guards live here so every path shares them.
-function Invoke-OcrBitmap([System.Drawing.Bitmap]$src) {
+function Invoke-OcrBitmap([System.Drawing.Bitmap]$src, [int]$DeadlineMs = 0) {
   $eng = Get-OcrEngine
   if ($null -eq $eng) { throw 'OCR unavailable: no OCR language pack on this system (Settings > Time & Language > Language, add e.g. zh-CN or en-US)' }
+  # W-1: a caller with a declared budget passes what is left of it; every WinRT wait below is
+  # capped by that remainder so one unresponsive operation cannot outlive the budget.
+  $dl = $null
+  if ($DeadlineMs -gt 0) { $dl = @{ Ms = $DeadlineMs; Sw = [System.Diagnostics.Stopwatch]::StartNew() } }
   $tmp = Join-Path $env:TEMP ("dtocr_" + [guid]::NewGuid().ToString('N') + '.png')
   $stream = $null
   $sbmp = $null
@@ -4023,11 +4039,11 @@ function Invoke-OcrBitmap([System.Drawing.Bitmap]$src) {
     $null = [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]
     $null = [Windows.Storage.FileAccessMode,Windows.Storage,ContentType=WindowsRuntime]
     $null = [Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
-    $sf = Await-WinRt ([Windows.Storage.StorageFile]::GetFileFromPathAsync($tmp)) ([Windows.Storage.StorageFile])
-    $stream = Await-WinRt ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-    $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-    $sbmp = Await-WinRt ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-    $result = Await-WinRt ($eng.RecognizeAsync($sbmp)) ([Windows.Media.Ocr.OcrResult])
+    $sf = Await-WinRt ([Windows.Storage.StorageFile]::GetFileFromPathAsync($tmp)) ([Windows.Storage.StorageFile]) 20000 $dl
+    $stream = Await-WinRt ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream]) 20000 $dl
+    $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder]) 20000 $dl
+    $sbmp = Await-WinRt ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap]) 20000 $dl
+    $result = Await-WinRt ($eng.RecognizeAsync($sbmp)) ([Windows.Media.Ocr.OcrResult]) 20000 $dl
     $lines = New-Object System.Collections.ArrayList
     foreach ($line in $result.Lines) {
       # an OcrLine can transiently report a null Text (seen live mid-animation);
@@ -4068,7 +4084,7 @@ function Invoke-OcrBitmap([System.Drawing.Bitmap]$src) {
   }
 }
 
-function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScale = 0) {
+function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScale = 0, [int]$DeadlineMs = 0) {
   $eng = Get-OcrEngine
   if ($null -eq $eng) { throw 'OCR unavailable: no OCR language pack on this system (Settings > Time & Language > Language, add e.g. zh-CN or en-US)' }
   if ($forceScale -lt 0) { $forceScale = 0 }
@@ -4092,7 +4108,7 @@ function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScal
   }
   $cap = Get-ScreenBitmap $x $y $w $h $scale
   try {
-    $r = Invoke-OcrBitmap $cap.Bitmap
+    $r = Invoke-OcrBitmap $cap.Bitmap $DeadlineMs
     $lines = New-Object System.Collections.ArrayList
     foreach ($ln in $r.Lines) {
       # bitmap px -> screen: screen = origin + px/scale (single offset, by design)
@@ -4438,7 +4454,7 @@ function Get-OcrMaxDimension {
 # recorded and treated as empty (DWM edge of a transient window) instead of
 # killing the whole pass. Returns hashtable @{ Lines; Tiles; Ms; Duplicates;
 # Notes } with Notes listing failed tiles verbatim for the caller's echo.
-function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]$srcH, [double]$scale, [int]$maxTiles, [int]$originX, [int]$originY, [long]$maxDimOverride = 0) {
+function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]$srcH, [double]$scale, [int]$maxTiles, [int]$originX, [int]$originY, [long]$maxDimOverride = 0, [int]$DeadlineMs = 0) {
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $maxDim = 0
   try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
@@ -4451,12 +4467,20 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
   if ($maxDimOverride -gt 0 -and ($maxDim -le 0 -or $maxDimOverride -lt $maxDim)) { $maxDim = $maxDimOverride }
   $plan = Get-OcrTilePlan $srcW $srcH $scale $maxDim 64 $maxTiles
   if ($plan.Error) {
-    return @{ Lines = (New-Object System.Collections.ArrayList); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = 0; Notes = @($plan.Error) }
+    return @{ Lines = (New-Object System.Collections.ArrayList); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = 0; Notes = @($plan.Error); TimedOut = $false }
   }
   $lists = New-Object System.Collections.ArrayList
   $notes = New-Object System.Collections.ArrayList
   $k = 0
+  $timedOut = $false
   foreach ($tile in $plan.Tiles) {
+    # W-1: tiles are stages too. Once the caller's remaining budget is used up no further
+    # tile is started, and the result says so instead of looking like a complete pass.
+    if ($DeadlineMs -gt 0 -and $sw.ElapsedMilliseconds -ge $DeadlineMs) {
+      $timedOut = $true
+      [void]$notes.Add("[budget of ${DeadlineMs}ms used up before tile $($k + 1) of $($plan.Count)]")
+      break
+    }
     $k++
     try {
       $cropRect = New-Object System.Drawing.Rectangle($tile.X, $tile.Y, $tile.W, $tile.H)
@@ -4482,7 +4506,14 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
           $gU.Dispose()
           $srcBmp = $up
         }
-        $r = Invoke-OcrBitmap $srcBmp
+        # W-1: one tile may only use what is left of the caller's budget, so a slow tile
+        # cannot outlive the declared deadline either.
+        $tileBudget = 0
+        if ($DeadlineMs -gt 0) {
+          $tileBudget = $DeadlineMs - [int]$sw.ElapsedMilliseconds
+          if ($tileBudget -lt 1) { $tileBudget = 1 }
+        }
+        $r = Invoke-OcrBitmap $srcBmp $tileBudget
         $mapped = New-Object System.Collections.ArrayList
         foreach ($ln in $r.Lines) {
           [void]$mapped.Add([pscustomobject]@{
@@ -4501,16 +4532,16 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
     }
   }
   $m = Merge-OcrTileLines $lists
-  return @{ Lines = $m.Lines; Tiles = $plan.Count; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = $m.Duplicates; Notes = $notes }
+  return @{ Lines = $m.Lines; Tiles = $plan.Count; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = $m.Duplicates; Notes = $notes; TimedOut = $timedOut }
 }
 
 # Screen wrapper: ONE atomic 1:1 grab of the whole region, then tiled OCR from
 # memory (per-tile screen grabs would see different moments and cost N times
-# the capture). Returns hashtable @{ Lines; Tiles; Ms; Duplicates; Notes }.
-function Invoke-OcrRegionTiled([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale, [int]$maxTiles) {
+# the capture). Returns hashtable @{ Lines; Tiles; Ms; Duplicates; Notes; TimedOut }.
+function Invoke-OcrRegionTiled([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale, [int]$maxTiles, [int]$DeadlineMs = 0) {
   $cap = Get-ScreenBitmap $x $y $w $h 1.0
   try {
-    return Invoke-OcrBitmapTiled $cap.Bitmap $w $h $scale $maxTiles $x $y
+    return Invoke-OcrBitmapTiled $cap.Bitmap $w $h $scale $maxTiles $x $y 0 $DeadlineMs
   } finally { $cap.Bitmap.Dispose() }
 }
 
@@ -4766,45 +4797,60 @@ function Test-OcrRetryFits([int]$w, [int]$h, [long]$maxDim) {
 # Keys: Hits; Lines (the lines the verdict used - miss messages quote the 1x
 # view); Scaled (verdict from an upscaled pass); Retried (any retry ran);
 # Tiled (retry was tiled); TileCount; Note (machine-usable refusal/notes);
-# Ms (tiled wall time).
-function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle, [string]$scaleMode = 'auto', [int]$maxTiles = 16, [bool]$noTile = $false) {
-  $l1 = Invoke-OcrRegion $x $y $w $h
+# Ms (tiled wall time); TimedOut (the caller's declared budget ran out before
+# the read finished, so a miss does NOT mean the needle is absent).
+function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle, [string]$scaleMode = 'auto', [int]$maxTiles = 16, [bool]$noTile = $false, [int]$DeadlineMs = 0) {
+  # W-1: an optional budget covers the WHOLE read across stages. Each stage is handed
+  # only what is left of it, and a stage that cannot start marks TimedOut rather than
+  # letting the earlier miss stand as "the text is not there".
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $l1 = Invoke-OcrRegion $x $y $w $h 0 $DeadlineMs
   $h1 = Find-OcrHits $l1 $needle
-  if ($h1.Count -gt 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ''; Ms = 0.0 } }
-  if ($scaleMode -eq '1') { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0 } }
+  if ($h1.Count -gt 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ''; Ms = 0.0; TimedOut = $false } }
+  if ($scaleMode -eq '1') { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0; TimedOut = $false } }
+  $remain = 0
+  if ($DeadlineMs -gt 0) {
+    $remain = $DeadlineMs - [int]$sw.ElapsedMilliseconds
+    if ($remain -lt 1) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = "[budget of ${DeadlineMs}ms used up before the retry read]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
+  }
   if ($scaleMode -eq '2' -or $scaleMode -eq 'tiled') {
-    $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles
-    if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms } }
+    $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles $remain
+    if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
     $h2 = Find-OcrHits $t.Lines $needle
-    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms } }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms }
+    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
   }
   if ($noTile) {
     # explicit v1.4.1 contrast mode: single-2x when it fits, otherwise skip
     $maxDim = 0
     try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
     if (Test-OcrRetryFits $w $h $maxDim) {
-      $l2 = Invoke-OcrRegion $x $y $w $h 2.0
+      $l2 = Invoke-OcrRegion $x $y $w $h 2.0 $remain
       $h2 = Find-OcrHits $l2 $needle
-      if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 } }
-      return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 }
+      if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false } }
+      return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false }
     }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0 }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0; TimedOut = $false }
   }
   # auto: single 2x when the doubled region fits, else tiled
   $maxDim = 0
   try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
   if (Test-OcrRetryFits $w $h $maxDim) {
-    $l2 = Invoke-OcrRegion $x $y $w $h 2.0
+    $l2 = Invoke-OcrRegion $x $y $w $h 2.0 $remain
     $h2 = Find-OcrHits $l2 $needle
-    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 } }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 }
+    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false } }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false }
   }
-  $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles
-  if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms } }
+  $remain = 0
+  if ($DeadlineMs -gt 0) {
+    $remain = $DeadlineMs - [int]$sw.ElapsedMilliseconds
+    if ($remain -lt 1) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = "[budget of ${DeadlineMs}ms used up before the tiled read]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
+  }
+  $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles $remain
+  if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
   $h2 = Find-OcrHits $t.Lines $needle
-  if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms } }
-  return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms }
+  if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
+  return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
 }
 
 # Three-state retry verdict for miss messages (v1.5.0 WP-1 2.6) - must match
@@ -6744,16 +6790,24 @@ function Get-ClipboardFormatPlan([string[]]$formats) {
 # means the clipboard held a file list when this paste started (e.g. left there
 # on purpose by an earlier copy-file) - restoring it is the correct behaviour.
 function Save-ClipboardState {
-  $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() }
+  # G-1 (CU-OPS-CORRECTION-REVIEW-20261028-01): "could not read" is its OWN answer.
+  # A failing GetDataObject/GetFormats used to be folded into formats=@() and then into
+  # Kind='none', so the write gate answered "replaceable" about content it had never seen.
+  # Kind='unknown' names that failure; only a READABLE, empty format list is 'none'.
+  $st = @{ Kind = 'unknown'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @(); ReadError = '' }
+  $readErr = ''
   try {
     # The FORMAT LIST decides first. A clipboard with formats outside the pure set is not
     # restorable as a whole, so its content is deliberately not read either - nothing this
     # tool could put back is lost by not opening it.
     $formats = @()
-    try {
-      $do = [System.Windows.Forms.Clipboard]::GetDataObject()
-      if ($null -ne $do) { $formats = @($do.GetFormats()) }
-    } catch { $formats = @() }
+    $do = $null
+    try { $do = [System.Windows.Forms.Clipboard]::GetDataObject() } catch { $readErr = [string]$_.Exception.Message }
+    # WinForms answers $null when the clipboard could not be opened/queried after its
+    # retries; an EMPTY clipboard is a READABLE DataObject with zero formats.
+    if ($readErr -eq '' -and $null -eq $do) { $readErr = 'GetDataObject returned null (the clipboard could not be opened)' }
+    if ($readErr -eq '') { try { $formats = @($do.GetFormats()) } catch { $readErr = [string]$_.Exception.Message } }
+    if ($readErr -ne '') { $st.ReadError = $readErr; return $st }
     $plan = Get-ClipboardFormatPlan $formats
     $st.Formats = @($plan.Formats)
     $st.Extras = @($plan.Extras)
@@ -6784,8 +6838,12 @@ function Save-ClipboardState {
         }
       } catch { $imgErr = $true }
     }
-    $st = @{ Kind = $plan.Kind; Text = $txt; Files = $files; ImagePath = $imgPath; ImageSaveError = $imgErr; Formats = @($plan.Formats); Extras = @($plan.Extras) }
-  } catch { $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() } }
+    $st = @{ Kind = $plan.Kind; Text = $txt; Files = $files; ImagePath = $imgPath; ImageSaveError = $imgErr; Formats = @($plan.Formats); Extras = @($plan.Extras); ReadError = '' }
+  } catch {
+    # A content read that threw leaves a HALF snapshot - calling that restorable would be
+    # the same false green this card exists to remove.
+    $st = @{ Kind = 'unknown'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @(); ReadError = [string]$_.Exception.Message }
+  }
   return $st
 }
 
@@ -6843,6 +6901,14 @@ function Get-ClipboardRestoreOutcome([string]$note) {
 function Restore-ClipboardState($st) {
   if ($null -eq $st) { return 'skipped clipboard restore (nothing saved)' }
   $kind = "$($st.Kind)"
+  # G-1: a snapshot that could not be READ was never preserved. Reporting it as
+  # "skipped (empty)" would present an unread clipboard as an empty one.
+  if ($kind -eq 'unknown') {
+    $why = ''
+    try { $why = [string]$st.ReadError } catch { $why = '' }
+    if ($why -ne '') { return ('skipped clipboard restore (the clipboard could not be read when it was saved: ' + $why + '; nothing was preserved)') }
+    return 'skipped clipboard restore (the clipboard could not be read when it was saved; nothing was preserved)'
+  }
   # CU-OPS package G: an image-bearing clipboard is restored through ONE DataObject so
   # text/FileDrop/Bitmap travel together, then EVERY requested part is verified by
   # CONTENT. A part that did not come back makes the answer PARTIALLY, named part by part.
@@ -6980,6 +7046,14 @@ function Get-ClipboardStateExtras($st) {
 function Get-ClipboardRestorableVerdict($st) {
   if ($null -eq $st) { return 'unknown - nothing was read' }
   $kind = "$($st.Kind)"
+  # G-1: the format list could not be read. Its content is unknown, not absent, and a
+  # write would destroy whatever it holds - the same answer as unknown formats.
+  if ($kind -eq 'unknown') {
+    $why = ''
+    try { $why = [string]$st.ReadError } catch { $why = '' }
+    if ($why -ne '') { return ('unknown - the clipboard could not be read (' + $why + '); a write would need --replace-clipboard') }
+    return 'unknown - the clipboard could not be read; a write would need --replace-clipboard'
+  }
   if ($kind -eq 'other') {
     $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
     if ($names -eq '') { return 'no - unknown formats; a write would need --replace-clipboard' }
@@ -6996,6 +7070,14 @@ function Assert-ClipboardReplaceable($st, [bool]$replace, [string]$cmd) {
   if ($replace) { return }
   if ($null -eq $st) { return }
   $kind = "$($st.Kind)"
+  # G-1: the format list could not be read, so the content is UNKNOWN. Default-deny,
+  # exactly like unknown formats: "I could not see it" is not "there is nothing there".
+  if ($kind -eq 'unknown') {
+    $why = ''
+    try { $why = [string]$st.ReadError } catch { $why = '' }
+    $detail = if ($why -ne '') { ' (' + $why + ')' } else { '' }
+    throw "$cmd : the clipboard could not be read$detail, so its content is unknown; overwriting it could destroy content this tool cannot put back. Pass --replace-clipboard to say that is intended"
+  }
   if ($kind -eq 'other') {
     $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
     $detail = if ($names -ne '') { ' (' + $names + ')' } else { '' }
@@ -10818,11 +10900,24 @@ $script:ProcSystemNames = @('system', 'idle', 'registry', 'memory compression', 
 
 # One process -> the fields every proc command reports. Each field is read under its own
 # try/catch so a single protected property cannot erase the rest of the identity.
-# R-04: a failed LOOKUP is classified before it is reported. "Cannot find a process" is the
-# only answer that may print exists=false; a permission or unknown failure means existence
-# could not be determined, and saying "no process with that id" there tells the operator the
-# opposite of the truth (a protected process was reported as absent).
-function Get-ProcLookupFailureKind($ex) {
+# R-04 / CU-OPS-CORRECTION-20261028-01: a failed LOOKUP is classified BEFORE it is reported.
+# "Cannot find a process" is the only answer that may print exists=false; a permission or
+# unknown failure means existence could not be determined, and saying "no process with that
+# id" there tells the operator the opposite of the truth (a protected process was reported as
+# absent). The classification uses STABLE identities - exception types and the resource-
+# independent FullyQualifiedErrorId / CategoryInfo - never the message text, which is
+# localized: a zh-CN host prints the same lookup failure in Chinese for the SAME error an
+# en-US host reports as "Cannot find a process with the process identifier N".
+function Get-ProcLookupFailureKind($err) {
+  # Callers pass the ErrorRecord; a bare exception is still accepted for old call sites.
+  $ex = $err
+  $fqid = ''
+  $cat = ''
+  if ($err -is [System.Management.Automation.ErrorRecord]) {
+    try { $fqid = [string]$err.FullyQualifiedErrorId } catch { $fqid = '' }
+    try { $cat = [string]$err.CategoryInfo.Category } catch { $cat = '' }
+    $ex = $err.Exception
+  }
   $e = $ex
   while ($null -ne $e) {
     $tn = "$($e.GetType().FullName)"
@@ -10831,8 +10926,9 @@ function Get-ProcLookupFailureKind($ex) {
     if ($tn -match 'ItemNotFoundException|ObjectNotFoundException|ProcessNotFoundException') { return 'not-found' }
     $e = $e.InnerException
   }
-  if ("$($ex.Message)" -match 'Cannot find a process with (the )?(process )?(identifier|id)') { return 'not-found' }
-  if ("$($ex.Message)" -match 'Access is denied|denied') { return 'denied' }
+  if ($fqid -match '^NoProcessFoundForGiven(Id|Name)(,|$)') { return 'not-found' }
+  if ($cat -eq 'ObjectNotFound' -and "$($ex.GetType().FullName)" -eq 'Microsoft.PowerShell.Commands.ProcessCommandException') { return 'not-found' }
+  if ($cat -eq 'PermissionDenied' -or $cat -eq 'SecurityError') { return 'denied' }
   return 'lookup-failed'
 }
 
@@ -10846,7 +10942,8 @@ function Get-ProcSnapshot([int]$procId) {
   $pr = $null
   try { $pr = Get-Process -Id $procId -ErrorAction Stop }
   catch {
-    $kind = Get-ProcLookupFailureKind $_.Exception
+    # The ErrorRecord (not just its Exception) carries the stable identity the classifier reads.
+    $kind = Get-ProcLookupFailureKind $_
     if ($kind -eq 'not-found') { $snap.exists = $false; $snap.exists_why = 'the process is not running' }
     else { $snap.exists = 'unknown'; $snap.exists_why = "$kind - $($_.Exception.Message)" }
     return $snap
@@ -11222,22 +11319,26 @@ function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
       $own = Strip-OwnFlags $Rest 'clip-info'
       if (@($own.Rest).Count -ne 0) { throw 'usage: clip-info [--json] - it takes no positional arguments (use paste/paste-file/copy-file to change the clipboard)' }
       $formats = @()
+      $readErr = ''
       try {
         $do = [System.Windows.Forms.Clipboard]::GetDataObject()
-        if ($null -ne $do) { $formats = @($do.GetFormats()) }
-      } catch { $formats = @() }
+        if ($null -ne $do) { $formats = @($do.GetFormats()) } else { $readErr = 'GetDataObject returned null (the clipboard could not be opened)' }
+      } catch { $readErr = [string]$_.Exception.Message }
       $plan = Get-ClipboardFormatPlan $formats
       # A plan-shaped state, not a saved snapshot: content fields are deliberately empty
-      # because this command never opened them.
+      # because this command never opened them. G-1: a format-list read that FAILED is
+      # reported as unknown, never as an empty clipboard.
       $st = @{ Kind = $plan.Kind; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @($plan.Formats); Extras = @($plan.Extras) }
+      if ($readErr -ne '') { $st.Kind = 'unknown'; $st.ReadError = $readErr }
       $imgNote = if ($plan.HasImage) { 'Bitmap/DIB format present - content NOT decoded by this read-only command (the writing command saves the carrier)' } else { 'none' }
       $textNote = if ($plan.HasText) { 'present - content NOT read by this read-only command' } else { 'none' }
       $filesNote = if ($plan.HasFiles) { 'FileDrop present - the list was NOT read by this read-only command' } else { 'none' }
-      $extrasNote = if (@($plan.Extras).Count -gt 0) { Format-ClipboardFormatNames $plan.Extras } else { 'none' }
+      $extrasNote = if ($readErr -ne '') { 'NOT READ - the format list could not be opened, so this is not an empty clipboard' } elseif (@($plan.Extras).Count -gt 0) { Format-ClipboardFormatNames $plan.Extras } else { 'none' }
       $restorable = Get-ClipboardRestorableVerdict $st
       if ($script:Json) {
         [pscustomobject]@{
-          kind = $plan.Kind
+          kind = $st.Kind
+          read_error = $readErr
           formats = $formats
           extras = @($plan.Extras)
           text = $textNote
@@ -11246,8 +11347,9 @@ function Invoke-Handler-clip-info([string]$Cmd, [string[]]$Rest) {
           restorable = $restorable
         } | ConvertTo-Json -Compress -Depth 4
       } else {
-        "clipboard kind=$($plan.Kind) formats=$(@($plan.Formats).Count) unknown=$($extrasNote)"
-        "  formats: " + $(if (@($plan.Formats).Count -gt 0) { (@($plan.Formats) -join ', ') } else { '(none)' })
+        $countText = if ($readErr -ne '') { 'unknown' } else { [string]@($plan.Formats).Count }
+        "clipboard kind=$($st.Kind) formats=$countText unknown=$($extrasNote)"
+        "  formats: " + $(if ($readErr -ne '') { '(not read - the format list could not be opened)' } elseif (@($plan.Formats).Count -gt 0) { (@($plan.Formats) -join ', ') } else { '(none)' })
         "  text: $textNote"
         "  files: $filesNote"
         "  image: $imgNote"
@@ -11286,25 +11388,43 @@ try {
   $hwnd = [IntPtr]([int64]$a.hwnd)
   $want = [string]$a.name
   $el = $null
-  try { $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) } catch { $el = $null }
-  if ($null -eq $el) { Write-Result @{ status = 'no-uia-root'; value = ''; detail = 'FromHandle returned null'; scanned = 0 }; exit 0 }
+  $fhErr = ''
+  try { $el = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd) } catch { $fhErr = $_.Exception.Message }
+  if ($null -eq $el) {
+    if ($fhErr -ne '') { Write-Result @{ status = 'error'; value = ''; detail = ('FromHandle failed: ' + $fhErr); scanned = 0 }; exit 0 }
+    Write-Result @{ status = 'no-uia-root'; value = ''; detail = 'FromHandle returned null without an error'; scanned = 0 }; exit 0
+  }
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $q = New-Object System.Collections.Queue
   $q.Enqueue($el)
   $found = $null
   $n = 0
+  $walkErr = ''
+  $readErrs = 0
+  $readFirst = ''
   while ($q.Count -gt 0 -and $n -lt 6000) {
     $cur = $q.Dequeue()
     $n++
     $nm = ''
-    try { $nm = [string]$cur.Current.Name } catch { $nm = '' }
+    # The property-read form is deliberately the METHOD: PowerShell 5.1 silently answers
+    # $null for a throwing .NET property getter (measured), so a denied Name read through
+    # .Current.Name would look like an empty name and the probe would claim not-found. The
+    # method form raises a catchable exception, which is counted and reported below.
+    try { $nm = [string]$cur.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::NameProperty) } catch { $readErrs++; if ($readFirst -eq '') { $readFirst = $_.Exception.Message } }
     if ($nm -ne '' -and $nm.ToLowerInvariant().Contains($want.ToLowerInvariant())) { $found = $cur; break }
     try {
       $ch = $walker.GetFirstChild($cur)
       while ($null -ne $ch) { $q.Enqueue($ch); $ch = $walker.GetNextSibling($ch) }
-    } catch { }
+    } catch {
+      if ($walkErr -eq '') { $walkErr = $_.Exception.Message }
+      break
+    }
   }
-  if ($null -eq $found) { Write-Result @{ status = 'not-found'; value = ''; detail = ''; scanned = $n }; exit 0 }
+  if ($null -eq $found) {
+    if ($walkErr -ne '') { Write-Result @{ status = 'error'; value = ''; detail = ('the UIA tree walk failed after ' + $n + ' node(s): ' + $walkErr); scanned = $n }; exit 0 }
+    if ($readErrs -gt 0) { Write-Result @{ status = 'error'; value = ''; detail = ('' + $readErrs + ' node(s) could not be read (first: ' + $readFirst + '); no name match among the readable nodes'); scanned = $n }; exit 0 }
+    Write-Result @{ status = 'not-found'; value = ''; detail = ''; scanned = $n }; exit 0
+  }
   $val = ''
   $tp = $null
   try { $tp = $found.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern) } catch { $tp = $null }
@@ -11441,9 +11561,21 @@ function Invoke-Handler-wait-cond([string]$Cmd, [string[]]$Rest) {
             if (-not $w) { throw "target window '$sel' is gone - a text wait cannot read a window that is not there" }
             $r = Get-TargetRect $w
             if ($null -eq $r) { throw "the target rect for '$sel' could not be read now" }
-            $f = Find-OcrHitsScaled $r.X $r.Y $r.W $r.H $needle 'auto' 16 $false
-            $ok = (@($f.Hits).Count -gt 0)
-            $lastRead = "ocr hits=$(@($f.Hits).Count)"
+            # W-1: the OCR read gets only what is LEFT of the declared timeout, and a read
+            # that runs out of budget is a read ERROR - the miss inside it is not evidence
+            # that the text is absent.
+            $remaining = [int][math]::Floor(($timeout - $sw.Elapsed.TotalSeconds) * 1000)
+            if ($remaining -lt 1) { $remaining = 1 }
+            $f = Find-OcrHitsScaled $r.X $r.Y $r.W $r.H $needle 'auto' 16 $false $remaining
+            if ($f.TimedOut) {
+              $readErrors++
+              $why = $(if ($f.Note) { [string]$f.Note } else { "no complete pass within ${remaining}ms" })
+              $lastRead = "text read timed out: $why - the partial read is not evidence that the text is absent"
+              $ok = $false
+            } else {
+              $ok = (@($f.Hits).Count -gt 0)
+              $lastRead = "ocr hits=$(@($f.Hits).Count)"
+            }
           } else {
             # R-03: the UIA read gets only what is LEFT of the declared timeout, and it runs
             # in a killable probe process, so a blocking provider cannot outlive the budget.
@@ -14007,8 +14139,35 @@ function Resolve-LedgerKey([string]$name) {
   return (Resolve-KeyName $name)
 }
 
-# Normalized entry: @{ pid; name; vk; ext; state; owner_started; combo; at }. Legacy name-list
-# entries are expanded to one record per key with state 'down' and no creation stamp.
+# An entry this tool cannot interpret is a corrupt file, not an empty one: silently dropping
+# it on the next write would destroy the only record of a possibly-held key.
+function Get-KeyLedgerEntryProblem($e, [int]$index) {
+  if ($null -eq $e) { return "entry #$index is null" }
+  if (-not ($e -is [System.Management.Automation.PSCustomObject])) { return "entry #$index is not a JSON object" }
+  $hasName = $null -ne $e.PSObject.Properties['name']
+  $hasKeys = $null -ne $e.PSObject.Properties['keys']
+  if (-not $hasName -and -not $hasKeys) { return "entry #$index has neither 'name' nor 'keys'" }
+  # pid is required by both shapes: the reader converts it to [int] and the owner verdict
+  # needs it, so a non-numeric value is a corrupt entry instead of a later cast exception.
+  $num = 0
+  if (-not [int]::TryParse("$($e.pid)", [ref]$num)) { return "entry #$index has a non-numeric pid '$($e.pid)'" }
+  if ($hasKeys) {
+    $ks = @($e.keys)
+    if ($ks.Count -eq 0) { return "entry #$index has an empty 'keys' list" }
+    foreach ($k in $ks) { if ("$k".Trim() -eq '') { return "entry #$index has an empty key name" } }
+    return ''
+  }
+  if ("$($e.name)".Trim() -eq '') { return "entry #$index has an empty 'name'" }
+  if (-not [int]::TryParse("$($e.vk)", [ref]$num)) { return "entry #$index has a non-numeric vk '$($e.vk)'" }
+  return ''
+}
+
+# Normalized entry: @{ pid; name; vk; ext; state; confirmed; last_up; owner_started; combo; at }.
+# 'confirmed' answers "did this owner's DOWN get an acknowledgement" and 'last_up' answers
+# "what happened to the last UP attempt"; keeping them apart is what lets a confirmed DOWN
+# whose UP failed stay recoverable instead of being demoted to "never confirmed".
+# Legacy name-list entries expand to one record per key, state 'down', no creation stamp.
+# Legacy 'unknown' meant "DOWN confirmed, UP failed" and is read back that way.
 function Read-KeyLedgerState {
   $p = Get-KeyLedgerPath
   if (-not (Test-Path -LiteralPath $p)) { return @{ Status = 'absent'; Entries = @(); Error = ''; Path = $p } }
@@ -14022,36 +14181,45 @@ function Read-KeyLedgerState {
   $ver = 1
   if ($obj.PSObject.Properties['schema']) { try { $ver = [int]$obj.schema } catch { $ver = -1 } }
   if ($ver -ne 1) { return @{ Status = 'unknown-version'; Entries = @(); Error = "schema=$ver, this tool reads schema 1 (and legacy records with no schema field)"; Path = $p } }
-  $rawEntries = @()
-  if ($obj.PSObject.Properties['entries']) { $rawEntries = @($obj.entries) }
+  if (-not $obj.PSObject.Properties['entries']) { return @{ Status = 'corrupt'; Entries = @(); Error = "the record has no 'entries' list"; Path = $p } }
+  $rawEntries = @($obj.entries)
   $out = @()
+  $idx = 0
   foreach ($e in $rawEntries) {
-    if ($null -eq $e) { continue }
+    $idx++
+    $prob = Get-KeyLedgerEntryProblem $e $idx
+    if ($prob -ne '') { return @{ Status = 'corrupt'; Entries = @(); Error = $prob; Path = $p } }
     $nm = ''
     if ($e.PSObject.Properties['name']) { $nm = [string]$e.name }
     if ($nm -ne '') {
       $stv = 'down'
       if ($e.PSObject.Properties['state'] -and "$($e.state)" -ne '') { $stv = [string]$e.state }
+      $conf = ($stv -ne 'prepared')
+      if ($e.PSObject.Properties['confirmed']) { $conf = [bool]$e.confirmed }
+      if ($stv -eq 'prepared') { $conf = $false }
+      $lu = ''
+      if ($e.PSObject.Properties['last_up']) { $lu = [string]$e.last_up }
+      if ($lu -eq '' -and ($stv -eq 'unknown' -or $stv -eq 'up-failed')) { $lu = 'failed' }
+      if ($lu -eq '' -and $stv -eq 'released') { $lu = 'ok' }
       $ost = ''
       if ($e.PSObject.Properties['owner_started']) { $ost = [string]$e.owner_started }
       $out += @{
         pid = [int]$e.pid; name = $nm; vk = [int]$e.vk
         ext = $(if ($e.PSObject.Properties['ext']) { [bool]$e.ext } else { $false })
-        state = $stv; owner_started = $ost
+        state = $stv; confirmed = $conf; last_up = $lu; owner_started = $ost
         combo = $(if ($e.PSObject.Properties['combo']) { [string]$e.combo } else { '' })
         at = $(if ($e.PSObject.Properties['at']) { [string]$e.at } else { '' })
       }
       continue
     }
-    if ($e.PSObject.Properties['keys']) {
-      foreach ($k in @($e.keys)) {
-        $info = $null
-        try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
-        $out += @{
-          pid = [int]$e.pid; name = [string]$k
-          vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
-          state = 'down'; owner_started = ''; combo = [string]$e.combo; at = [string]$e.at
-        }
+    foreach ($k in @($e.keys)) {
+      $info = $null
+      try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
+      $out += @{
+        pid = [int]$e.pid; name = [string]$k
+        vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
+        state = 'down'; confirmed = $true; last_up = ''; owner_started = ''
+        combo = [string]$e.combo; at = [string]$e.at
       }
     }
   }
@@ -14086,19 +14254,38 @@ function Write-KeyLedgerAtomic($entries) {
 
 function Clear-KeyLedger {
   $p = Get-KeyLedgerPath
-  if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $p) {
+    # A delete that fails leaves the OLD records in place, so it is an error, not a no-op:
+    # the caller is about to report the key as released.
+    Remove-Item -LiteralPath $p -Force -ErrorAction Stop
+    if (Test-Path -LiteralPath $p) { throw "key ledger: $p still exists after the delete - the old records were not cleared" }
+  }
 }
 
 # Upsert ONE key's record for this owner. Bounded lock, atomic replace, and a corrupt or
 # unreadable ledger is refused instead of being overwritten. Throws on any write failure, so
 # a caller can never mistake a failed registration for a successful one.
-function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state, [string]$combo) {
+function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state, [string]$combo, [string]$confirmed = '', [string]$lastUp = '', [int]$ownerPid = 0, [string]$ownerStarted = '') {
   $owner = Get-KeyLedgerOwnerIdentity
+  $usePid = $owner.pid
+  $useStart = $owner.started_at
+  if ($ownerPid -gt 0) { $usePid = $ownerPid; $useStart = $ownerStarted }
+  # Ownership confirmation and the last UP result are separate answers. 'prepared' is the
+  # only state that never confirmed a DOWN; 'up-failed' still owns a confirmed DOWN.
+  $conf = ($state -ne 'prepared')
+  if ($confirmed -eq 'true' -or $confirmed -eq '1') { $conf = $true }
+  elseif ($confirmed -eq 'false' -or $confirmed -eq '0') { $conf = $false }
+  $lu = $lastUp
+  if ($lu -eq '') {
+    if ($state -eq 'unknown' -or $state -eq 'up-failed') { $lu = 'failed' }
+    elseif ($state -eq 'released') { $lu = 'ok' }
+    else { $lu = 'none' }
+  }
   Invoke-KeyLedgerLocked {
     $st = Read-KeyLedgerState
     if ($st.Status -notin @('absent', 'ok')) { throw "key ledger: cannot record '$name' - the ledger is $($st.Status) at $($st.Path) ($($st.Error)); no record was written" }
-    $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $owner.pid) -and ([string]$_.owner_started -eq $owner.started_at)) })
-    $keep += @{ pid = $owner.pid; name = $name; vk = $vk; ext = $ext; state = $state; owner_started = $owner.started_at; combo = $combo; at = (Get-Date).ToString('o') }
+    $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $usePid) -and ([string]$_.owner_started -eq $useStart)) })
+    $keep += @{ pid = $usePid; name = $name; vk = $vk; ext = $ext; state = $state; confirmed = $conf; last_up = $lu; owner_started = $useStart; combo = $combo; at = (Get-Date).ToString('o') }
     Write-KeyLedgerAtomic $keep
   } | Out-Null
 }
@@ -14107,8 +14294,11 @@ function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state,
 # and other owners survive - a recovery must never erase another call's record.
 function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid = 0, [string]$ownerStarted = '') {
   $owner = Get-KeyLedgerOwnerIdentity
-  $usePid = $(if ($ownerPid -gt 0) { $ownerPid } else { $owner.pid })
-  $useStart = $(if ($ownerStarted -ne '') { $ownerStarted } else { $owner.started_at })
+  $usePid = $owner.pid
+  $useStart = $owner.started_at
+  # A recovery targets the RECORD's identity, including a legacy record with no creation
+  # stamp (empty string): falling back to this process's stamp there would match nothing.
+  if ($ownerPid -gt 0) { $usePid = $ownerPid; $useStart = $ownerStarted }
   Invoke-KeyLedgerLocked {
     $st = Read-KeyLedgerState
     if ($st.Status -eq 'absent') { return }
@@ -14116,6 +14306,23 @@ function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid = 0, [string]$own
     $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $usePid) -and ([string]$_.owner_started -eq $useStart)) })
     if ($keep.Count -eq 0) { Clear-KeyLedger } else { Write-KeyLedgerAtomic $keep }
   } | Out-Null
+}
+
+# A verified UP makes its record harmless BEFORE the file is rewritten: first stamp it
+# 'released' (last_up=ok), then remove it. If the removal fails the record no longer claims
+# 'down', so a later key-release cleans it without sending another UP. Only a failure of
+# BOTH steps leaves a possible 'down' claim, and that is thrown - never swallowed.
+function Complete-KeyLedgerRelease([string]$name, [int]$vk, [bool]$ext, [string]$combo, [int]$ownerPid = 0, [string]$ownerStarted = '') {
+  $markErr = ''
+  try { Set-KeyLedgerState $name $vk $ext 'released' $combo 'true' 'ok' $ownerPid $ownerStarted } catch { $markErr = $_.Exception.Message }
+  $remErr = ''
+  try { Remove-KeyLedgerRecords $name $ownerPid $ownerStarted } catch { $remErr = $_.Exception.Message }
+  if ($markErr -ne '' -and $remErr -ne '') {
+    throw "key ledger: the UP succeeded for '$name' but its record could neither be marked released nor removed ($markErr; $remErr) - the record may still claim 'down'; inspect $((Get-KeyLedgerPath))"
+  }
+  if ($markErr -ne '') { return "record for '$name' was removed, but marking it released first failed ($markErr)" }
+  if ($remErr -ne '') { return "record for '$name' is marked released, but the ledger rewrite failed ($remErr); a later key-release will clean it without sending input" }
+  return ''
 }
 
 # Who wrote this record, judged from the pid AND the creation time it recorded. 'owner-dead'
@@ -14174,9 +14381,12 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
   Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' combo=$($combo.Spec) repeat=$repeat hold=${hold}ms interval=${interval}ms" $Cmd
   $pressed = @()
   $baseDown = $false
+  $baseUpTried = $false
   $inserted = 0
   $fail = ''
   $releaseFail = @()
+  $ledgerNotes = @()
+  $ledgerDanger = @()
   # R-01 phase 1: PREPARE. The intent is on record before any input exists, so a crash
   # between SendInput and its acknowledgement still leaves a trace - but as 'prepared',
   # which is a CLUE, not ownership. key-release reports it and refuses to release it.
@@ -14204,20 +14414,29 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
         throw "key: '$($combo.Key)' DOWN (repeat $r of $repeat): SendInput inserted $n of 1"
       }
       $baseDown = $true
+      $baseUpTried = $false
       $inserted++
       try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'down' $combo.Spec }
-      catch { throw "key: '$($combo.Key)' DOWN succeeded but its ownership record could not be written ($($_.Exception.Message)); the key is still down" }
+      catch { throw "key: '$($combo.Key)' DOWN succeeded but its ownership record could not be written ($($_.Exception.Message)); releasing it now" }
       Start-Sleep -Milliseconds $hold
-      $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
+      $baseUpTried = $true
+      $n = 0
+      try { $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext) }
+      catch {
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($combo.Key)' could not be marked up-failed: $($_.Exception.Message)" }
+        throw "key: '$($combo.Key)' UP (repeat $r of $repeat) threw: $($_.Exception.Message) - the key may still be down; its ledger record is kept, run 'key-release'"
+      }
       if ($n -ne 1) {
-        # The UP was attempted and failed: the physical state is now unknown. The record is
-        # kept and stamped 'unknown' so recovery can report it instead of guessing.
-        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'unknown' $combo.Spec } catch { }
+        # The UP was attempted and failed: ownership stays CONFIRMED (the DOWN was acknowledged)
+        # and only the last UP result is recorded, so key-release can still recover it.
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($combo.Key)' could not be marked up-failed: $($_.Exception.Message)" }
         throw "key: '$($combo.Key)' UP (repeat $r of $repeat): SendInput inserted $n of 1 - the key may still be down; its ledger record is kept, run 'key-release'"
       }
       $baseDown = $false
       $inserted++
-      try { Remove-KeyLedgerRecords $combo.Key } catch { }
+      $cm = ''
+      try { $cm = Complete-KeyLedgerRelease $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) $combo.Spec } catch { $ledgerDanger += $_.Exception.Message }
+      if ($cm -ne '') { $ledgerNotes += $cm }
       if ($r -lt $repeat -and $interval -gt 0) { Start-Sleep -Milliseconds $interval }
     }
   } catch {
@@ -14236,23 +14455,49 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
       } catch { $releaseFail += "$($v.Name)($($_.Exception.Message))" }
       if ($upOk) {
         $rel += $v.Name
-        try { Remove-KeyLedgerRecords $v.Name } catch { }
+        $cm = ''
+        try { $cm = Complete-KeyLedgerRelease $v.Name ([int]$v.Vk) ([bool]$v.Ext) $combo.Spec } catch { $ledgerDanger += $_.Exception.Message }
+        if ($cm -ne '') { $ledgerNotes += $cm }
       } else {
-        try { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'unknown' $combo.Spec } catch { }
+        try { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($v.Name)' could not be marked up-failed: $($_.Exception.Message)" }
       }
       $pos--
     }
-    # The base key's record is only owed while it is actually down; a failed base UP keeps
-    # it so key-release can still recover it (CU-OPS-ADJ-04).
-    if (-not $baseDown) { try { Remove-KeyLedgerRecords $combo.Key } catch { } }
+    # K-1: the base key was already acknowledged DOWN before its record write failed, so the
+    # cleanup path MUST send its UP too. A base whose UP was already attempted is left to
+    # key-release with an 'up-failed' record; re-sending blindly would be a second guess.
+    if ($baseDown -and -not $baseUpTried) {
+      $upOk = $false
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
+        if ($n -eq 1) { $upOk = $true; $inserted++ } else { $releaseFail += "$($combo.Key)(inserted $n/1)" }
+      } catch { $releaseFail += "$($combo.Key)($($_.Exception.Message))" }
+      if ($upOk) {
+        $rel += $combo.Key
+        $cm = ''
+        try { $cm = Complete-KeyLedgerRelease $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) $combo.Spec } catch { $ledgerDanger += $_.Exception.Message }
+        if ($cm -ne '') { $ledgerNotes += $cm }
+      } else {
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($combo.Key)' could not be marked up-failed: $($_.Exception.Message)" }
+      }
+    } elseif (-not $baseDown -and -not $baseUpTried) {
+      # The base never got a confirmed DOWN in this call; only its 'prepared' clue can exist.
+      try { Remove-KeyLedgerRecords $combo.Key } catch { $ledgerNotes += "the clue for '$($combo.Key)' could not be removed: $($_.Exception.Message)" }
+    }
     Start-Sleep -Milliseconds 40
     $script:LastKeyReceipt = ("combo=" + $combo.Spec + " mods=" + $(if ($combo.Mods.Count) { $combo.Mods -join '+' } else { 'none' }) + " repeat=$repeat hold=${hold}ms interval=${interval}ms SendInput-inserted=$inserted released=" + $(if ($rel.Count) { $rel -join '+' } else { 'none' }))
   }
   if ($releaseFail.Count -gt 0) {
-    $msg = "key: modifier UP failed for: $($releaseFail -join ', ') - those keys may still be down and their ledger records are kept; run 'key-release'"
+    $msg = "key: UP failed for: $($releaseFail -join ', ') - those keys may still be down and their ledger records are kept; run 'key-release'"
     if ($fail) { throw ($fail + ' | ' + $msg) }
     throw $msg
   }
+  if ($ledgerDanger.Count -gt 0) {
+    $msg = "key ledger: the gesture finished but an ownership record may still claim 'down': $($ledgerDanger -join ' | ')"
+    if ($fail) { throw ($fail + ' | ' + $msg) }
+    throw $msg
+  }
+  if ($ledgerNotes.Count -gt 0) { Write-Output ("NOTICE: " + ($ledgerNotes -join ' | ')) }
   if ($fail) { throw ($fail + " (any key still down is kept in the ownership ledger: run 'key-state' / 'key-release'; observed now: $(Get-InputStateLine))") }
   Start-Sleep -Milliseconds 250
   $warn = Test-PostSendForeground $target $p.Force
@@ -14273,8 +14518,12 @@ function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
     # would reject ctrl/shift/alt/win (CU-OPS-ADJ-05).
     $vk = [int]$e.vk
     $isDown = ($vk -ne 0) -and ([DT]::IsVkDown($vk) -ne 0)
-    if ([string]$e.state -ne 'down') { $clues += "$($e.name)=$($e.state)$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
-    if ($isDown) { $owned += "$($e.name)(pid=$($e.pid))" }
+    $conf = [bool]$e.confirmed
+    $lu = [string]$e.last_up
+    if (-not $conf) { $clues += "$($e.name)=$($e.state)/unconfirmed$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
+    if ($lu -eq 'ok' -or [string]$e.state -eq 'released') { $clues += "$($e.name)=released-record$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
+    if ($isDown) { $owned += "$($e.name)(pid=$($e.pid))"; continue }
+    $clues += "$($e.name)=$($e.state)/up-now(last-up=$lu)(pid=$($e.pid))"
   }
   $ledgerNote = switch ($st.Status) {
     'absent' { 'absent' }
@@ -14282,7 +14531,7 @@ function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
     default { "$($st.Status): $($st.Error)" }
   }
   "key-state: $(Get-InputStateLine)  owned-held=$(if ($owned.Count) { $owned -join ',' } else { 'none' })  ledger=$ledgerNote"
-  if ($clues.Count) { "  unconfirmed records (state is not 'down' - reported, never released on): $($clues -join ', ')" }
+  if ($clues.Count) { "  records not releasable as-is (unconfirmed, released, or physically up - reported, never force-released): $($clues -join ', ')" }
   "note: every key this tool presses is released inside the same call; a 'down' entry can only outlive a killed process. 'key-release' touches only keys the ledger proves this tool pressed."
 }
 
@@ -14317,11 +14566,14 @@ function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
     $downNow = ($vk -ne 0) -and (([DT]::IsVkDown($vk)) -ne 0)
     $ov = Get-KeyLedgerOwnerVerdict $e
     $state = [string]$e.state
+    $conf = [bool]$e.confirmed
+    $lu = [string]$e.last_up
     $action = ''
     if ($vk -eq 0) { $action = 'REFUSED: unreadable record (no usable vk)' }
-    elseif ($state -ne 'down') { $action = "REFUSED: record state '$state' - this tool never confirmed the DOWN, so it will not release it" }
+    elseif (-not $conf) { $action = "REFUSED: record state '$state' - this tool never confirmed the DOWN, so it will not release it" }
     elseif ($ov.Kind -eq 'other-live') { $action = "REFUSED: $($ov.Detail)" }
     elseif ($ov.Kind -eq 'unknown-owner') { $action = "REFUSED: ownership unprovable - $($ov.Detail)" }
+    elseif ($lu -eq 'ok' -or $state -eq 'released') { $action = 'CLEANUP: a verified UP already released it - record removed, no input sent' }
     elseif (-not $downNow) { $action = 'CLEANUP: already up - record removed, no input sent' }
     else { $action = 'WILL RELEASE' }
     $plan += [pscustomobject]@{ Entry = $e; Vk = $vk; Ext = [bool]$e.ext; Action = $action; Owner = $ov.Kind }
@@ -14334,22 +14586,35 @@ function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
   $released = @()
   $failed = @()
   $refused = 0
+  $notes = @()
+  $danger = @()
   foreach ($p in $plan) {
     if ($p.Action -like 'REFUSED*') { $refused++; continue }
     if ($p.Action -like 'CLEANUP*') {
-      try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { }
+      try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) }
+      catch { $notes += "record for '$($p.Entry.name)' could not be removed: $($_.Exception.Message)" }
       continue
     }
     try {
       $n = [uint32][DT]::SendKeyInput($p.Vk, $true, $p.Ext)
       if ($n -eq 1) {
         $released += [string]$p.Entry.name
-        try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { }
-      } else { $failed += "$($p.Entry.name)(inserted $n/1)" }
-    } catch { $failed += "$($p.Entry.name)($($_.Exception.Message))" }
+        $cm = ''
+        try { $cm = Complete-KeyLedgerRelease ([string]$p.Entry.name) ([int]$p.Vk) ([bool]$p.Ext) ([string]$p.Entry.combo) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { $danger += $_.Exception.Message }
+        if ($cm -ne '') { $notes += $cm }
+      } else {
+        $failed += "$($p.Entry.name)(inserted $n/1)"
+        try { Set-KeyLedgerState ([string]$p.Entry.name) ([int]$p.Vk) ([bool]$p.Ext) 'up-failed' ([string]$p.Entry.combo) 'true' 'failed' ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { $notes += "the record for '$($p.Entry.name)' could not be marked up-failed: $($_.Exception.Message)" }
+      }
+    } catch {
+      $failed += "$($p.Entry.name)($($_.Exception.Message))"
+      try { Set-KeyLedgerState ([string]$p.Entry.name) ([int]$p.Vk) ([bool]$p.Ext) 'up-failed' ([string]$p.Entry.combo) 'true' 'failed' ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { $notes += "the record for '$($p.Entry.name)' could not be marked up-failed: $($_.Exception.Message)" }
+    }
   }
   "  released=" + $(if ($released.Count) { $released -join '+' } else { 'none' }) + " failed=" + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + " refused=$refused  observed-after=$(Get-InputStateLine)"
+  if ($notes.Count -gt 0) { Write-Output ("NOTICE: " + ($notes -join ' | ')) }
   if ($refused -gt 0) { Write-Output "NOTICE: $refused record(s) were reported but not released - ownership could not be proven. They stay in the ledger for a human decision." }
+  if ($danger.Count -gt 0) { throw "key-release: $($danger -join ' | ')" }
   if ($failed.Count) { throw "key-release: $($failed.Count) key(s) could not be released: $($failed -join ', ')" }
 }
 
@@ -14359,6 +14624,13 @@ function Invoke-Handler-ime([string]$Cmd, [string[]]$Rest) {
       # (type no longer cares: it bypasses the IME via SendInput Unicode).
       $f = Get-FgThreadInfo
       "foreground pid=$($f.Pid) title='$($f.Title)'  $(Format-Hkl $f.Hkl)"
+}
+
+# G-2 (CU-OPS-CORRECTION-REVIEW-20261028-01): the paste keystroke is ONE seam so the
+# restore boundary below can be exercised against a memory backend without ever sending
+# a real key. Product behaviour is exactly SendKeys('^v').
+function Send-PasteKeystroke {
+  [System.Windows.Forms.SendKeys]::SendWait('^v')
 }
 
 # v4.4.0 (A-15): paste - the case body, verbatim
@@ -14393,11 +14665,31 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       # honest, and only when the payload is long enough that a chip fold is possible - a short
       # payload pays nothing and keeps the verbatim-only judgement.
       $rcpBase = Get-PasteReceiptBaseline $p $target $text
-      Set-Clipboard -Value $text
-      Start-Sleep -Milliseconds 400
-      [System.Windows.Forms.SendKeys]::SendWait('^v')
-      Start-Sleep -Milliseconds 500
-      $restoreNote = Restore-ClipboardState $clip
+      # G-2: everything that can replace the clipboard runs inside ONE restore boundary.
+      # A write that throws, a send that throws and a restore that fails all leave through
+      # the finally, so the previous clipboard is never abandoned half-replaced. A send
+      # that MAY have happened is never reported as safe to retry blindly.
+      $sendErr = $null
+      $sendAttempted = $false
+      $restoreNote = 'clipboard restore was not attempted'
+      try {
+        Set-Clipboard -Value $text
+        Start-Sleep -Milliseconds 400
+        $sendAttempted = $true
+        Send-PasteKeystroke
+        Start-Sleep -Milliseconds 500
+      } catch {
+        $sendErr = $_
+      } finally {
+        try { $restoreNote = Restore-ClipboardState $clip } catch { $restoreNote = 'clipboard restore failed (the restore itself threw: ' + $_.Exception.Message + ')' }
+      }
+      if ($null -ne $sendErr) {
+        $why = [string]$sendErr.Exception.Message
+        if ($sendAttempted) {
+          throw "paste: the send failed after the clipboard had been replaced ($why); a paste MAY have partially reached pid=$($target.Pid) - do NOT re-send blindly, inspect the target first. [$restoreNote]"
+        }
+        throw "paste: the clipboard write failed before any keystroke was sent ($why); no paste was sent to pid=$($target.Pid). [$restoreNote]"
+      }
       $warn = Test-PostSendForeground $target $p.Force
       "pasted $($text.Length) chars from $file$bomNote, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
       Invoke-ActionExpectation $p $target 'pasted'
@@ -14422,7 +14714,7 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       # with the same exit code as one that did - the user is told, and the code says so.
       $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
       if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
-        throw "paste: the payload WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+        throw "paste: the payload WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Do not re-send blindly: inspect the target, then run 'clip-info' before relying on the clipboard again."
       }
 }
 
@@ -14460,16 +14752,35 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste-file'
       $carrierName = if ($useImage) { 'image' } else { 'file' }
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$($fi.FullName) carrier=$carrierName" $Cmd
-      if ($useImage) {
-        $ok = Set-ClipboardImageCarrier $carrier
-        if (-not $ok) { throw ("paste-file: the image did not come back after the write (size/digest check failed); no paste was sent for: " + $fi.FullName) }
-      } else {
-        $ok = Set-ClipboardFileDrop $fi.FullName
-        if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+      # G-2: the same ONE restore boundary as paste. The carrier write has ALREADY replaced
+      # the clipboard when its read-back check fails, so that failure must restore the old
+      # content too - the old code threw and left the synthetic payload in place.
+      $sendErr = $null
+      $sendAttempted = $false
+      $restoreNote = 'clipboard restore was not attempted'
+      try {
+        if ($useImage) {
+          $ok = Set-ClipboardImageCarrier $carrier
+          if (-not $ok) { throw 'the image did not come back after the write (size/digest check failed)' }
+        } else {
+          $ok = Set-ClipboardFileDrop $fi.FullName
+          if (-not $ok) { throw 'the file list did not come back after the write (verification failed)' }
+        }
+        $sendAttempted = $true
+        Send-PasteKeystroke
+        Start-Sleep -Milliseconds 500
+      } catch {
+        $sendErr = $_
+      } finally {
+        try { $restoreNote = Restore-ClipboardState $clip } catch { $restoreNote = 'clipboard restore failed (the restore itself threw: ' + $_.Exception.Message + ')' }
       }
-      [System.Windows.Forms.SendKeys]::SendWait('^v')
-      Start-Sleep -Milliseconds 500
-      $restoreNote = Restore-ClipboardState $clip
+      if ($null -ne $sendErr) {
+        $why = [string]$sendErr.Exception.Message
+        if ($sendAttempted) {
+          throw "paste-file: the send failed after the clipboard had been replaced ($why); a paste MAY have partially reached pid=$($target.Pid) - do NOT re-send blindly, inspect the target first. [$restoreNote]"
+        }
+        throw ("paste-file: the clipboard was replaced but the write could not be verified (" + $why + "); NO paste was sent for: " + $fi.FullName + "; " + $restoreNote)
+      }
       $warn = Test-PostSendForeground $target $p.Force
       if ($useImage) {
         "pasted image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  carrier=image, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
@@ -14497,7 +14808,7 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       # but a previous clipboard that did not come back is a non-zero exit, not a footnote.
       $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
       if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
-        throw "paste-file: the file WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+        throw "paste-file: the file WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Do not re-send blindly: inspect the target, then run 'clip-info' before relying on the clipboard again."
       }
 }
 
@@ -14542,11 +14853,11 @@ function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
       Log-Action $Rest "file=$($fi.FullName) bytes=$($fi.Length) carrier=$carrierName" $Cmd
       if ($useImage) {
         $ok = Set-ClipboardImageCarrier $carrier
-        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName) }
+        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName + '. copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either') }
         ("copied image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  bytes=$($fi.Length)  carrier=image  clipboard verified (same pixels read back)")
       } else {
         $ok = Set-ClipboardFileDrop $fi.FullName
-        if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+        if (-not $ok) { throw "copy-file: clipboard verification failed for: $($fi.FullName). copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either" }
         "copied $($fi.Name)  bytes=$($fi.Length)  carrier=file  clipboard verified: $($fi.FullName)"
       }
 }
@@ -17472,6 +17783,15 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   try { Assert-ClipboardReplaceable @{ Kind = 'other'; Extras = @('HTML Format', 'Rich Text Format') } $false 'paste' } catch { $gGateHtml = $_.Exception.Message }
   ST-Check 'unit (G): the write gate names the extra formats so --replace-clipboard is an informed choice' (
     $gGateHtml -like 'paste : the clipboard holds formats this tool cannot restore (HTML Format, Rich Text Format)*--replace-clipboard*')
+  # G-1 (CU-OPS-CORRECTION-REVIEW-20261028-01): a format-list read that FAILED is unknown,
+  # not an empty clipboard. Synthetic states only - the shared clipboard is not touched.
+  $gGateUnknown = ''
+  try { Assert-ClipboardReplaceable @{ Kind = 'unknown'; ReadError = 'injected: access denied' } $false 'paste' } catch { $gGateUnknown = $_.Exception.Message }
+  ST-Check 'unit (G-1): an unreadable clipboard is kind=unknown - refused before any write, --replace-clipboard the explicit override' (
+    ((Get-ClipboardRestorableVerdict @{ Kind = 'unknown'; ReadError = 'injected: access denied' }) -like 'unknown*injected: access denied*--replace-clipboard*') -and
+    ($gGateUnknown -like 'paste : the clipboard could not be read*injected: access denied*--replace-clipboard*'))
+  ST-Check 'unit (G-1): an unreadable snapshot says so on restore instead of claiming an empty clipboard' (
+    (Restore-ClipboardState @{ Kind = 'unknown'; ReadError = 'injected: access denied' }) -like 'skipped clipboard restore (the clipboard could not be read*injected: access denied*')
   # The restore note is the only thing paste sees; partial/failed must be mechanically readable so
   # the command can exit non-zero when the previous clipboard did not come back.
   ST-Check 'unit (G): a restore note maps to ok/partial/failed/skipped/unknown without guessing' (
@@ -29932,7 +30252,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.3 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.3  (version sync list lives in the project overview doc)
+# version: 4.6.4  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.3'
+$script:ToolVersion = '4.6.4'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -450,7 +450,9 @@ Set-StrictMode -Version Latest
 # v4.6.3 (R-06): the run measures 1050. The source tree already carried 2 emitters the shipped
 # root artifact never contained, so 1044 + 4 was 2 short; this is the MEASURED number, not a
 # loosened bound (the contract row still requires the run to equal it exactly).
-$script:DeclaredCheckTotal = 1050
+# v4.6.4 (G-1, correction review 20261028): +2 for the unreadable-clipboard branch - the unknown
+# restorable verdict / write gate and the unknown-snapshot restore note (1050 -> 1052).
+$script:DeclaredCheckTotal = 1052
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2320,7 +2322,7 @@ $script:StFamilyCounts = @{
   'audit-output' = 'banners=10,lines=940'
   'window-targeting' = 'banners=11,lines=1086'
   'expect-family' = 'banners=9,lines=705'
-  'clipboard-input' = 'banners=4,lines=181'
+  'clipboard-input' = 'banners=4,lines=190'
   'docs-contract' = 'banners=12,lines=586'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
@@ -2379,6 +2381,8 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # Check emitters per selftest body, counted from the AST of the aggregate. Registering the numbers is
 # the point: after A-14b a family of gates can live in a file that never runs, and only a count that a
 # card has to update in the same commit says so.
+# v4.6.4 (G-1): ClipboardInput 30 -> 32 for the unreadable-clipboard pair; the registered number is
+# the MEASURED one, and the row still requires an exact match.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=101',
@@ -2387,7 +2391,7 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelftestFamily-DocsContract=57',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
-  'Invoke-SelftestFamily-ClipboardInput=30',
+  'Invoke-SelftestFamily-ClipboardInput=32',
   'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
@@ -3971,14 +3975,22 @@ function Get-OcrEngine {
 }
 
 $script:AsTaskM = $null
-function Await-WinRt($op, [type]$resultType) {
+function Await-WinRt($op, [type]$resultType, [int]$MaxWaitMs = 20000, $Deadline = $null) {
   if ($null -eq $script:AsTaskM) {
     $script:AsTaskM = ([System.WindowsRuntimeSystemExtensions].GetMethods() |
       Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
     if ($null -eq $script:AsTaskM) { throw 'WinRT AsTask bridge not found (needs desktop PowerShell 5.1+)' }
   }
   $task = $script:AsTaskM.MakeGenericMethod($resultType).Invoke($null, @($op))
-  if (-not $task.Wait(20000)) { throw 'WinRT async operation timed out' }
+  # W-1: the wait is a bounded managed wait. A caller that owns a deadline passes the time it
+  # has left, so one unresponsive WinRT operation cannot outlive that deadline.
+  $wait = $MaxWaitMs
+  if ($null -ne $Deadline -and [int]$Deadline.Ms -gt 0) {
+    $wait = [int]$Deadline.Ms - [int]$Deadline.Sw.ElapsedMilliseconds
+    if ($wait -lt 1) { throw "OCR read: the $([int]$Deadline.Ms)ms budget was used up before the next WinRT operation" }
+  }
+  if ($wait -lt 1) { $wait = 1 }
+  if (-not $task.Wait($wait)) { throw "WinRT async operation did not answer within ${wait}ms" }
   return $task.Result
 }
 
@@ -4008,9 +4020,13 @@ function Get-ScreenBitmap([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale) {
 # Recognition half of the OCR pipeline: OCRs an in-memory bitmap and returns
 # lines with rects in BITMAP pixel coordinates (caller maps to screen). All
 # null-Text / null-Word guards live here so every path shares them.
-function Invoke-OcrBitmap([System.Drawing.Bitmap]$src) {
+function Invoke-OcrBitmap([System.Drawing.Bitmap]$src, [int]$DeadlineMs = 0) {
   $eng = Get-OcrEngine
   if ($null -eq $eng) { throw 'OCR unavailable: no OCR language pack on this system (Settings > Time & Language > Language, add e.g. zh-CN or en-US)' }
+  # W-1: a caller with a declared budget passes what is left of it; every WinRT wait below is
+  # capped by that remainder so one unresponsive operation cannot outlive the budget.
+  $dl = $null
+  if ($DeadlineMs -gt 0) { $dl = @{ Ms = $DeadlineMs; Sw = [System.Diagnostics.Stopwatch]::StartNew() } }
   $tmp = Join-Path $env:TEMP ("dtocr_" + [guid]::NewGuid().ToString('N') + '.png')
   $stream = $null
   $sbmp = $null
@@ -4023,11 +4039,11 @@ function Invoke-OcrBitmap([System.Drawing.Bitmap]$src) {
     $null = [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]
     $null = [Windows.Storage.FileAccessMode,Windows.Storage,ContentType=WindowsRuntime]
     $null = [Windows.Graphics.Imaging.BitmapDecoder,Windows.Graphics.Imaging,ContentType=WindowsRuntime]
-    $sf = Await-WinRt ([Windows.Storage.StorageFile]::GetFileFromPathAsync($tmp)) ([Windows.Storage.StorageFile])
-    $stream = Await-WinRt ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
-    $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-    $sbmp = Await-WinRt ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
-    $result = Await-WinRt ($eng.RecognizeAsync($sbmp)) ([Windows.Media.Ocr.OcrResult])
+    $sf = Await-WinRt ([Windows.Storage.StorageFile]::GetFileFromPathAsync($tmp)) ([Windows.Storage.StorageFile]) 20000 $dl
+    $stream = Await-WinRt ($sf.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream]) 20000 $dl
+    $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder]) 20000 $dl
+    $sbmp = Await-WinRt ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap]) 20000 $dl
+    $result = Await-WinRt ($eng.RecognizeAsync($sbmp)) ([Windows.Media.Ocr.OcrResult]) 20000 $dl
     $lines = New-Object System.Collections.ArrayList
     foreach ($line in $result.Lines) {
       # an OcrLine can transiently report a null Text (seen live mid-animation);
@@ -4068,7 +4084,7 @@ function Invoke-OcrBitmap([System.Drawing.Bitmap]$src) {
   }
 }
 
-function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScale = 0) {
+function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScale = 0, [int]$DeadlineMs = 0) {
   $eng = Get-OcrEngine
   if ($null -eq $eng) { throw 'OCR unavailable: no OCR language pack on this system (Settings > Time & Language > Language, add e.g. zh-CN or en-US)' }
   if ($forceScale -lt 0) { $forceScale = 0 }
@@ -4092,7 +4108,7 @@ function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScal
   }
   $cap = Get-ScreenBitmap $x $y $w $h $scale
   try {
-    $r = Invoke-OcrBitmap $cap.Bitmap
+    $r = Invoke-OcrBitmap $cap.Bitmap $DeadlineMs
     $lines = New-Object System.Collections.ArrayList
     foreach ($ln in $r.Lines) {
       # bitmap px -> screen: screen = origin + px/scale (single offset, by design)
@@ -4438,7 +4454,7 @@ function Get-OcrMaxDimension {
 # recorded and treated as empty (DWM edge of a transient window) instead of
 # killing the whole pass. Returns hashtable @{ Lines; Tiles; Ms; Duplicates;
 # Notes } with Notes listing failed tiles verbatim for the caller's echo.
-function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]$srcH, [double]$scale, [int]$maxTiles, [int]$originX, [int]$originY, [long]$maxDimOverride = 0) {
+function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]$srcH, [double]$scale, [int]$maxTiles, [int]$originX, [int]$originY, [long]$maxDimOverride = 0, [int]$DeadlineMs = 0) {
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
   $maxDim = 0
   try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
@@ -4451,12 +4467,20 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
   if ($maxDimOverride -gt 0 -and ($maxDim -le 0 -or $maxDimOverride -lt $maxDim)) { $maxDim = $maxDimOverride }
   $plan = Get-OcrTilePlan $srcW $srcH $scale $maxDim 64 $maxTiles
   if ($plan.Error) {
-    return @{ Lines = (New-Object System.Collections.ArrayList); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = 0; Notes = @($plan.Error) }
+    return @{ Lines = (New-Object System.Collections.ArrayList); Tiles = 0; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = 0; Notes = @($plan.Error); TimedOut = $false }
   }
   $lists = New-Object System.Collections.ArrayList
   $notes = New-Object System.Collections.ArrayList
   $k = 0
+  $timedOut = $false
   foreach ($tile in $plan.Tiles) {
+    # W-1: tiles are stages too. Once the caller's remaining budget is used up no further
+    # tile is started, and the result says so instead of looking like a complete pass.
+    if ($DeadlineMs -gt 0 -and $sw.ElapsedMilliseconds -ge $DeadlineMs) {
+      $timedOut = $true
+      [void]$notes.Add("[budget of ${DeadlineMs}ms used up before tile $($k + 1) of $($plan.Count)]")
+      break
+    }
     $k++
     try {
       $cropRect = New-Object System.Drawing.Rectangle($tile.X, $tile.Y, $tile.W, $tile.H)
@@ -4482,7 +4506,14 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
           $gU.Dispose()
           $srcBmp = $up
         }
-        $r = Invoke-OcrBitmap $srcBmp
+        # W-1: one tile may only use what is left of the caller's budget, so a slow tile
+        # cannot outlive the declared deadline either.
+        $tileBudget = 0
+        if ($DeadlineMs -gt 0) {
+          $tileBudget = $DeadlineMs - [int]$sw.ElapsedMilliseconds
+          if ($tileBudget -lt 1) { $tileBudget = 1 }
+        }
+        $r = Invoke-OcrBitmap $srcBmp $tileBudget
         $mapped = New-Object System.Collections.ArrayList
         foreach ($ln in $r.Lines) {
           [void]$mapped.Add([pscustomobject]@{
@@ -4501,16 +4532,16 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
     }
   }
   $m = Merge-OcrTileLines $lists
-  return @{ Lines = $m.Lines; Tiles = $plan.Count; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = $m.Duplicates; Notes = $notes }
+  return @{ Lines = $m.Lines; Tiles = $plan.Count; Ms = $sw.Elapsed.TotalMilliseconds; Duplicates = $m.Duplicates; Notes = $notes; TimedOut = $timedOut }
 }
 
 # Screen wrapper: ONE atomic 1:1 grab of the whole region, then tiled OCR from
 # memory (per-tile screen grabs would see different moments and cost N times
-# the capture). Returns hashtable @{ Lines; Tiles; Ms; Duplicates; Notes }.
-function Invoke-OcrRegionTiled([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale, [int]$maxTiles) {
+# the capture). Returns hashtable @{ Lines; Tiles; Ms; Duplicates; Notes; TimedOut }.
+function Invoke-OcrRegionTiled([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale, [int]$maxTiles, [int]$DeadlineMs = 0) {
   $cap = Get-ScreenBitmap $x $y $w $h 1.0
   try {
-    return Invoke-OcrBitmapTiled $cap.Bitmap $w $h $scale $maxTiles $x $y
+    return Invoke-OcrBitmapTiled $cap.Bitmap $w $h $scale $maxTiles $x $y 0 $DeadlineMs
   } finally { $cap.Bitmap.Dispose() }
 }
 
@@ -4766,45 +4797,60 @@ function Test-OcrRetryFits([int]$w, [int]$h, [long]$maxDim) {
 # Keys: Hits; Lines (the lines the verdict used - miss messages quote the 1x
 # view); Scaled (verdict from an upscaled pass); Retried (any retry ran);
 # Tiled (retry was tiled); TileCount; Note (machine-usable refusal/notes);
-# Ms (tiled wall time).
-function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle, [string]$scaleMode = 'auto', [int]$maxTiles = 16, [bool]$noTile = $false) {
-  $l1 = Invoke-OcrRegion $x $y $w $h
+# Ms (tiled wall time); TimedOut (the caller's declared budget ran out before
+# the read finished, so a miss does NOT mean the needle is absent).
+function Find-OcrHitsScaled([int]$x, [int]$y, [int]$w, [int]$h, [string]$needle, [string]$scaleMode = 'auto', [int]$maxTiles = 16, [bool]$noTile = $false, [int]$DeadlineMs = 0) {
+  # W-1: an optional budget covers the WHOLE read across stages. Each stage is handed
+  # only what is left of it, and a stage that cannot start marks TimedOut rather than
+  # letting the earlier miss stand as "the text is not there".
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $l1 = Invoke-OcrRegion $x $y $w $h 0 $DeadlineMs
   $h1 = Find-OcrHits $l1 $needle
-  if ($h1.Count -gt 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ''; Ms = 0.0 } }
-  if ($scaleMode -eq '1') { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0 } }
+  if ($h1.Count -gt 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = ''; Ms = 0.0; TimedOut = $false } }
+  if ($scaleMode -eq '1') { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0; TimedOut = $false } }
+  $remain = 0
+  if ($DeadlineMs -gt 0) {
+    $remain = $DeadlineMs - [int]$sw.ElapsedMilliseconds
+    if ($remain -lt 1) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = "[budget of ${DeadlineMs}ms used up before the retry read]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
+  }
   if ($scaleMode -eq '2' -or $scaleMode -eq 'tiled') {
-    $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles
-    if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms } }
+    $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles $remain
+    if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
     $h2 = Find-OcrHits $t.Lines $needle
-    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms } }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms }
+    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
   }
   if ($noTile) {
     # explicit v1.4.1 contrast mode: single-2x when it fits, otherwise skip
     $maxDim = 0
     try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
     if (Test-OcrRetryFits $w $h $maxDim) {
-      $l2 = Invoke-OcrRegion $x $y $w $h 2.0
+      $l2 = Invoke-OcrRegion $x $y $w $h 2.0 $remain
       $h2 = Find-OcrHits $l2 $needle
-      if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 } }
-      return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 }
+      if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false } }
+      return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false }
     }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0 }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = 'retry SKIPPED by flag'; Ms = 0.0; TimedOut = $false }
   }
   # auto: single 2x when the doubled region fits, else tiled
   $maxDim = 0
   try { $maxDim = Get-OcrMaxDimension } catch { $maxDim = 0 }
   if (Test-OcrRetryFits $w $h $maxDim) {
-    $l2 = Invoke-OcrRegion $x $y $w $h 2.0
+    $l2 = Invoke-OcrRegion $x $y $w $h 2.0 $remain
     $h2 = Find-OcrHits $l2 $needle
-    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 } }
-    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0 }
+    if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $l2; Scaled = $true; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false } }
+    return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $false; TileCount = 1; Note = ''; Ms = 0.0; TimedOut = $false }
   }
-  $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles
-  if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms } }
+  $remain = 0
+  if ($DeadlineMs -gt 0) {
+    $remain = $DeadlineMs - [int]$sw.ElapsedMilliseconds
+    if ($remain -lt 1) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = "[budget of ${DeadlineMs}ms used up before the tiled read]"; Ms = $sw.Elapsed.TotalMilliseconds; TimedOut = $true } }
+  }
+  $t = Invoke-OcrRegionTiled $x $y $w $h 2.0 $maxTiles $remain
+  if ($t.Tiles -eq 0) { return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $false; Tiled = $false; TileCount = 0; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
   $h2 = Find-OcrHits $t.Lines $needle
-  if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms } }
-  return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms }
+  if ($h2.Count -gt 0) { return @{ Hits = $h2; Lines = $t.Lines; Scaled = $true; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = ''; Ms = $t.Ms; TimedOut = [bool]$t.TimedOut } }
+  return @{ Hits = $h1; Lines = $l1; Scaled = $false; Retried = $true; Tiled = $true; TileCount = $t.Tiles; Note = (@($t.Notes) -join ' '); Ms = $t.Ms; TimedOut = [bool]$t.TimedOut }
 }
 
 # Three-state retry verdict for miss messages (v1.5.0 WP-1 2.6) - must match
@@ -6744,16 +6790,24 @@ function Get-ClipboardFormatPlan([string[]]$formats) {
 # means the clipboard held a file list when this paste started (e.g. left there
 # on purpose by an earlier copy-file) - restoring it is the correct behaviour.
 function Save-ClipboardState {
-  $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() }
+  # G-1 (CU-OPS-CORRECTION-REVIEW-20261028-01): "could not read" is its OWN answer.
+  # A failing GetDataObject/GetFormats used to be folded into formats=@() and then into
+  # Kind='none', so the write gate answered "replaceable" about content it had never seen.
+  # Kind='unknown' names that failure; only a READABLE, empty format list is 'none'.
+  $st = @{ Kind = 'unknown'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @(); ReadError = '' }
+  $readErr = ''
   try {
     # The FORMAT LIST decides first. A clipboard with formats outside the pure set is not
     # restorable as a whole, so its content is deliberately not read either - nothing this
     # tool could put back is lost by not opening it.
     $formats = @()
-    try {
-      $do = [System.Windows.Forms.Clipboard]::GetDataObject()
-      if ($null -ne $do) { $formats = @($do.GetFormats()) }
-    } catch { $formats = @() }
+    $do = $null
+    try { $do = [System.Windows.Forms.Clipboard]::GetDataObject() } catch { $readErr = [string]$_.Exception.Message }
+    # WinForms answers $null when the clipboard could not be opened/queried after its
+    # retries; an EMPTY clipboard is a READABLE DataObject with zero formats.
+    if ($readErr -eq '' -and $null -eq $do) { $readErr = 'GetDataObject returned null (the clipboard could not be opened)' }
+    if ($readErr -eq '') { try { $formats = @($do.GetFormats()) } catch { $readErr = [string]$_.Exception.Message } }
+    if ($readErr -ne '') { $st.ReadError = $readErr; return $st }
     $plan = Get-ClipboardFormatPlan $formats
     $st.Formats = @($plan.Formats)
     $st.Extras = @($plan.Extras)
@@ -6784,8 +6838,12 @@ function Save-ClipboardState {
         }
       } catch { $imgErr = $true }
     }
-    $st = @{ Kind = $plan.Kind; Text = $txt; Files = $files; ImagePath = $imgPath; ImageSaveError = $imgErr; Formats = @($plan.Formats); Extras = @($plan.Extras) }
-  } catch { $st = @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @() } }
+    $st = @{ Kind = $plan.Kind; Text = $txt; Files = $files; ImagePath = $imgPath; ImageSaveError = $imgErr; Formats = @($plan.Formats); Extras = @($plan.Extras); ReadError = '' }
+  } catch {
+    # A content read that threw leaves a HALF snapshot - calling that restorable would be
+    # the same false green this card exists to remove.
+    $st = @{ Kind = 'unknown'; Text = ''; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @(); Extras = @(); ReadError = [string]$_.Exception.Message }
+  }
   return $st
 }
 
@@ -6843,6 +6901,14 @@ function Get-ClipboardRestoreOutcome([string]$note) {
 function Restore-ClipboardState($st) {
   if ($null -eq $st) { return 'skipped clipboard restore (nothing saved)' }
   $kind = "$($st.Kind)"
+  # G-1: a snapshot that could not be READ was never preserved. Reporting it as
+  # "skipped (empty)" would present an unread clipboard as an empty one.
+  if ($kind -eq 'unknown') {
+    $why = ''
+    try { $why = [string]$st.ReadError } catch { $why = '' }
+    if ($why -ne '') { return ('skipped clipboard restore (the clipboard could not be read when it was saved: ' + $why + '; nothing was preserved)') }
+    return 'skipped clipboard restore (the clipboard could not be read when it was saved; nothing was preserved)'
+  }
   # CU-OPS package G: an image-bearing clipboard is restored through ONE DataObject so
   # text/FileDrop/Bitmap travel together, then EVERY requested part is verified by
   # CONTENT. A part that did not come back makes the answer PARTIALLY, named part by part.
@@ -6980,6 +7046,14 @@ function Get-ClipboardStateExtras($st) {
 function Get-ClipboardRestorableVerdict($st) {
   if ($null -eq $st) { return 'unknown - nothing was read' }
   $kind = "$($st.Kind)"
+  # G-1: the format list could not be read. Its content is unknown, not absent, and a
+  # write would destroy whatever it holds - the same answer as unknown formats.
+  if ($kind -eq 'unknown') {
+    $why = ''
+    try { $why = [string]$st.ReadError } catch { $why = '' }
+    if ($why -ne '') { return ('unknown - the clipboard could not be read (' + $why + '); a write would need --replace-clipboard') }
+    return 'unknown - the clipboard could not be read; a write would need --replace-clipboard'
+  }
   if ($kind -eq 'other') {
     $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
     if ($names -eq '') { return 'no - unknown formats; a write would need --replace-clipboard' }
@@ -6996,6 +7070,14 @@ function Assert-ClipboardReplaceable($st, [bool]$replace, [string]$cmd) {
   if ($replace) { return }
   if ($null -eq $st) { return }
   $kind = "$($st.Kind)"
+  # G-1: the format list could not be read, so the content is UNKNOWN. Default-deny,
+  # exactly like unknown formats: "I could not see it" is not "there is nothing there".
+  if ($kind -eq 'unknown') {
+    $why = ''
+    try { $why = [string]$st.ReadError } catch { $why = '' }
+    $detail = if ($why -ne '') { ' (' + $why + ')' } else { '' }
+    throw "$cmd : the clipboard could not be read$detail, so its content is unknown; overwriting it could destroy content this tool cannot put back. Pass --replace-clipboard to say that is intended"
+  }
   if ($kind -eq 'other') {
     $names = Format-ClipboardFormatNames (Get-ClipboardStateExtras $st)
     $detail = if ($names -ne '') { ' (' + $names + ')' } else { '' }
@@ -9787,7 +9869,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.3 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.4 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

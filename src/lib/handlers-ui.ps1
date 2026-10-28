@@ -1061,8 +1061,35 @@ function Resolve-LedgerKey([string]$name) {
   return (Resolve-KeyName $name)
 }
 
-# Normalized entry: @{ pid; name; vk; ext; state; owner_started; combo; at }. Legacy name-list
-# entries are expanded to one record per key with state 'down' and no creation stamp.
+# An entry this tool cannot interpret is a corrupt file, not an empty one: silently dropping
+# it on the next write would destroy the only record of a possibly-held key.
+function Get-KeyLedgerEntryProblem($e, [int]$index) {
+  if ($null -eq $e) { return "entry #$index is null" }
+  if (-not ($e -is [System.Management.Automation.PSCustomObject])) { return "entry #$index is not a JSON object" }
+  $hasName = $null -ne $e.PSObject.Properties['name']
+  $hasKeys = $null -ne $e.PSObject.Properties['keys']
+  if (-not $hasName -and -not $hasKeys) { return "entry #$index has neither 'name' nor 'keys'" }
+  # pid is required by both shapes: the reader converts it to [int] and the owner verdict
+  # needs it, so a non-numeric value is a corrupt entry instead of a later cast exception.
+  $num = 0
+  if (-not [int]::TryParse("$($e.pid)", [ref]$num)) { return "entry #$index has a non-numeric pid '$($e.pid)'" }
+  if ($hasKeys) {
+    $ks = @($e.keys)
+    if ($ks.Count -eq 0) { return "entry #$index has an empty 'keys' list" }
+    foreach ($k in $ks) { if ("$k".Trim() -eq '') { return "entry #$index has an empty key name" } }
+    return ''
+  }
+  if ("$($e.name)".Trim() -eq '') { return "entry #$index has an empty 'name'" }
+  if (-not [int]::TryParse("$($e.vk)", [ref]$num)) { return "entry #$index has a non-numeric vk '$($e.vk)'" }
+  return ''
+}
+
+# Normalized entry: @{ pid; name; vk; ext; state; confirmed; last_up; owner_started; combo; at }.
+# 'confirmed' answers "did this owner's DOWN get an acknowledgement" and 'last_up' answers
+# "what happened to the last UP attempt"; keeping them apart is what lets a confirmed DOWN
+# whose UP failed stay recoverable instead of being demoted to "never confirmed".
+# Legacy name-list entries expand to one record per key, state 'down', no creation stamp.
+# Legacy 'unknown' meant "DOWN confirmed, UP failed" and is read back that way.
 function Read-KeyLedgerState {
   $p = Get-KeyLedgerPath
   if (-not (Test-Path -LiteralPath $p)) { return @{ Status = 'absent'; Entries = @(); Error = ''; Path = $p } }
@@ -1076,36 +1103,45 @@ function Read-KeyLedgerState {
   $ver = 1
   if ($obj.PSObject.Properties['schema']) { try { $ver = [int]$obj.schema } catch { $ver = -1 } }
   if ($ver -ne 1) { return @{ Status = 'unknown-version'; Entries = @(); Error = "schema=$ver, this tool reads schema 1 (and legacy records with no schema field)"; Path = $p } }
-  $rawEntries = @()
-  if ($obj.PSObject.Properties['entries']) { $rawEntries = @($obj.entries) }
+  if (-not $obj.PSObject.Properties['entries']) { return @{ Status = 'corrupt'; Entries = @(); Error = "the record has no 'entries' list"; Path = $p } }
+  $rawEntries = @($obj.entries)
   $out = @()
+  $idx = 0
   foreach ($e in $rawEntries) {
-    if ($null -eq $e) { continue }
+    $idx++
+    $prob = Get-KeyLedgerEntryProblem $e $idx
+    if ($prob -ne '') { return @{ Status = 'corrupt'; Entries = @(); Error = $prob; Path = $p } }
     $nm = ''
     if ($e.PSObject.Properties['name']) { $nm = [string]$e.name }
     if ($nm -ne '') {
       $stv = 'down'
       if ($e.PSObject.Properties['state'] -and "$($e.state)" -ne '') { $stv = [string]$e.state }
+      $conf = ($stv -ne 'prepared')
+      if ($e.PSObject.Properties['confirmed']) { $conf = [bool]$e.confirmed }
+      if ($stv -eq 'prepared') { $conf = $false }
+      $lu = ''
+      if ($e.PSObject.Properties['last_up']) { $lu = [string]$e.last_up }
+      if ($lu -eq '' -and ($stv -eq 'unknown' -or $stv -eq 'up-failed')) { $lu = 'failed' }
+      if ($lu -eq '' -and $stv -eq 'released') { $lu = 'ok' }
       $ost = ''
       if ($e.PSObject.Properties['owner_started']) { $ost = [string]$e.owner_started }
       $out += @{
         pid = [int]$e.pid; name = $nm; vk = [int]$e.vk
         ext = $(if ($e.PSObject.Properties['ext']) { [bool]$e.ext } else { $false })
-        state = $stv; owner_started = $ost
+        state = $stv; confirmed = $conf; last_up = $lu; owner_started = $ost
         combo = $(if ($e.PSObject.Properties['combo']) { [string]$e.combo } else { '' })
         at = $(if ($e.PSObject.Properties['at']) { [string]$e.at } else { '' })
       }
       continue
     }
-    if ($e.PSObject.Properties['keys']) {
-      foreach ($k in @($e.keys)) {
-        $info = $null
-        try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
-        $out += @{
-          pid = [int]$e.pid; name = [string]$k
-          vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
-          state = 'down'; owner_started = ''; combo = [string]$e.combo; at = [string]$e.at
-        }
+    foreach ($k in @($e.keys)) {
+      $info = $null
+      try { $info = Resolve-LedgerKey ([string]$k) } catch { $info = $null }
+      $out += @{
+        pid = [int]$e.pid; name = [string]$k
+        vk = $(if ($info) { [int]$info.Vk } else { 0 }); ext = $(if ($info) { [bool]$info.Ext } else { $false })
+        state = 'down'; confirmed = $true; last_up = ''; owner_started = ''
+        combo = [string]$e.combo; at = [string]$e.at
       }
     }
   }
@@ -1140,19 +1176,38 @@ function Write-KeyLedgerAtomic($entries) {
 
 function Clear-KeyLedger {
   $p = Get-KeyLedgerPath
-  if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+  if (Test-Path -LiteralPath $p) {
+    # A delete that fails leaves the OLD records in place, so it is an error, not a no-op:
+    # the caller is about to report the key as released.
+    Remove-Item -LiteralPath $p -Force -ErrorAction Stop
+    if (Test-Path -LiteralPath $p) { throw "key ledger: $p still exists after the delete - the old records were not cleared" }
+  }
 }
 
 # Upsert ONE key's record for this owner. Bounded lock, atomic replace, and a corrupt or
 # unreadable ledger is refused instead of being overwritten. Throws on any write failure, so
 # a caller can never mistake a failed registration for a successful one.
-function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state, [string]$combo) {
+function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state, [string]$combo, [string]$confirmed = '', [string]$lastUp = '', [int]$ownerPid = 0, [string]$ownerStarted = '') {
   $owner = Get-KeyLedgerOwnerIdentity
+  $usePid = $owner.pid
+  $useStart = $owner.started_at
+  if ($ownerPid -gt 0) { $usePid = $ownerPid; $useStart = $ownerStarted }
+  # Ownership confirmation and the last UP result are separate answers. 'prepared' is the
+  # only state that never confirmed a DOWN; 'up-failed' still owns a confirmed DOWN.
+  $conf = ($state -ne 'prepared')
+  if ($confirmed -eq 'true' -or $confirmed -eq '1') { $conf = $true }
+  elseif ($confirmed -eq 'false' -or $confirmed -eq '0') { $conf = $false }
+  $lu = $lastUp
+  if ($lu -eq '') {
+    if ($state -eq 'unknown' -or $state -eq 'up-failed') { $lu = 'failed' }
+    elseif ($state -eq 'released') { $lu = 'ok' }
+    else { $lu = 'none' }
+  }
   Invoke-KeyLedgerLocked {
     $st = Read-KeyLedgerState
     if ($st.Status -notin @('absent', 'ok')) { throw "key ledger: cannot record '$name' - the ledger is $($st.Status) at $($st.Path) ($($st.Error)); no record was written" }
-    $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $owner.pid) -and ([string]$_.owner_started -eq $owner.started_at)) })
-    $keep += @{ pid = $owner.pid; name = $name; vk = $vk; ext = $ext; state = $state; owner_started = $owner.started_at; combo = $combo; at = (Get-Date).ToString('o') }
+    $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $usePid) -and ([string]$_.owner_started -eq $useStart)) })
+    $keep += @{ pid = $usePid; name = $name; vk = $vk; ext = $ext; state = $state; confirmed = $conf; last_up = $lu; owner_started = $useStart; combo = $combo; at = (Get-Date).ToString('o') }
     Write-KeyLedgerAtomic $keep
   } | Out-Null
 }
@@ -1161,8 +1216,11 @@ function Set-KeyLedgerState([string]$name, [int]$vk, [bool]$ext, [string]$state,
 # and other owners survive - a recovery must never erase another call's record.
 function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid = 0, [string]$ownerStarted = '') {
   $owner = Get-KeyLedgerOwnerIdentity
-  $usePid = $(if ($ownerPid -gt 0) { $ownerPid } else { $owner.pid })
-  $useStart = $(if ($ownerStarted -ne '') { $ownerStarted } else { $owner.started_at })
+  $usePid = $owner.pid
+  $useStart = $owner.started_at
+  # A recovery targets the RECORD's identity, including a legacy record with no creation
+  # stamp (empty string): falling back to this process's stamp there would match nothing.
+  if ($ownerPid -gt 0) { $usePid = $ownerPid; $useStart = $ownerStarted }
   Invoke-KeyLedgerLocked {
     $st = Read-KeyLedgerState
     if ($st.Status -eq 'absent') { return }
@@ -1170,6 +1228,23 @@ function Remove-KeyLedgerRecords([string]$name, [int]$ownerPid = 0, [string]$own
     $keep = @(@($st.Entries) | Where-Object { -not (([string]$_.name -eq $name) -and ([int]$_.pid -eq $usePid) -and ([string]$_.owner_started -eq $useStart)) })
     if ($keep.Count -eq 0) { Clear-KeyLedger } else { Write-KeyLedgerAtomic $keep }
   } | Out-Null
+}
+
+# A verified UP makes its record harmless BEFORE the file is rewritten: first stamp it
+# 'released' (last_up=ok), then remove it. If the removal fails the record no longer claims
+# 'down', so a later key-release cleans it without sending another UP. Only a failure of
+# BOTH steps leaves a possible 'down' claim, and that is thrown - never swallowed.
+function Complete-KeyLedgerRelease([string]$name, [int]$vk, [bool]$ext, [string]$combo, [int]$ownerPid = 0, [string]$ownerStarted = '') {
+  $markErr = ''
+  try { Set-KeyLedgerState $name $vk $ext 'released' $combo 'true' 'ok' $ownerPid $ownerStarted } catch { $markErr = $_.Exception.Message }
+  $remErr = ''
+  try { Remove-KeyLedgerRecords $name $ownerPid $ownerStarted } catch { $remErr = $_.Exception.Message }
+  if ($markErr -ne '' -and $remErr -ne '') {
+    throw "key ledger: the UP succeeded for '$name' but its record could neither be marked released nor removed ($markErr; $remErr) - the record may still claim 'down'; inspect $((Get-KeyLedgerPath))"
+  }
+  if ($markErr -ne '') { return "record for '$name' was removed, but marking it released first failed ($markErr)" }
+  if ($remErr -ne '') { return "record for '$name' is marked released, but the ledger rewrite failed ($remErr); a later key-release will clean it without sending input" }
+  return ''
 }
 
 # Who wrote this record, judged from the pid AND the creation time it recorded. 'owner-dead'
@@ -1228,9 +1303,12 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
   Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' combo=$($combo.Spec) repeat=$repeat hold=${hold}ms interval=${interval}ms" $Cmd
   $pressed = @()
   $baseDown = $false
+  $baseUpTried = $false
   $inserted = 0
   $fail = ''
   $releaseFail = @()
+  $ledgerNotes = @()
+  $ledgerDanger = @()
   # R-01 phase 1: PREPARE. The intent is on record before any input exists, so a crash
   # between SendInput and its acknowledgement still leaves a trace - but as 'prepared',
   # which is a CLUE, not ownership. key-release reports it and refuses to release it.
@@ -1258,20 +1336,29 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
         throw "key: '$($combo.Key)' DOWN (repeat $r of $repeat): SendInput inserted $n of 1"
       }
       $baseDown = $true
+      $baseUpTried = $false
       $inserted++
       try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'down' $combo.Spec }
-      catch { throw "key: '$($combo.Key)' DOWN succeeded but its ownership record could not be written ($($_.Exception.Message)); the key is still down" }
+      catch { throw "key: '$($combo.Key)' DOWN succeeded but its ownership record could not be written ($($_.Exception.Message)); releasing it now" }
       Start-Sleep -Milliseconds $hold
-      $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
+      $baseUpTried = $true
+      $n = 0
+      try { $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext) }
+      catch {
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($combo.Key)' could not be marked up-failed: $($_.Exception.Message)" }
+        throw "key: '$($combo.Key)' UP (repeat $r of $repeat) threw: $($_.Exception.Message) - the key may still be down; its ledger record is kept, run 'key-release'"
+      }
       if ($n -ne 1) {
-        # The UP was attempted and failed: the physical state is now unknown. The record is
-        # kept and stamped 'unknown' so recovery can report it instead of guessing.
-        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'unknown' $combo.Spec } catch { }
+        # The UP was attempted and failed: ownership stays CONFIRMED (the DOWN was acknowledged)
+        # and only the last UP result is recorded, so key-release can still recover it.
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($combo.Key)' could not be marked up-failed: $($_.Exception.Message)" }
         throw "key: '$($combo.Key)' UP (repeat $r of $repeat): SendInput inserted $n of 1 - the key may still be down; its ledger record is kept, run 'key-release'"
       }
       $baseDown = $false
       $inserted++
-      try { Remove-KeyLedgerRecords $combo.Key } catch { }
+      $cm = ''
+      try { $cm = Complete-KeyLedgerRelease $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) $combo.Spec } catch { $ledgerDanger += $_.Exception.Message }
+      if ($cm -ne '') { $ledgerNotes += $cm }
       if ($r -lt $repeat -and $interval -gt 0) { Start-Sleep -Milliseconds $interval }
     }
   } catch {
@@ -1290,23 +1377,49 @@ function Invoke-Handler-key([string]$Cmd, [string[]]$Rest) {
       } catch { $releaseFail += "$($v.Name)($($_.Exception.Message))" }
       if ($upOk) {
         $rel += $v.Name
-        try { Remove-KeyLedgerRecords $v.Name } catch { }
+        $cm = ''
+        try { $cm = Complete-KeyLedgerRelease $v.Name ([int]$v.Vk) ([bool]$v.Ext) $combo.Spec } catch { $ledgerDanger += $_.Exception.Message }
+        if ($cm -ne '') { $ledgerNotes += $cm }
       } else {
-        try { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'unknown' $combo.Spec } catch { }
+        try { Set-KeyLedgerState $v.Name ([int]$v.Vk) ([bool]$v.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($v.Name)' could not be marked up-failed: $($_.Exception.Message)" }
       }
       $pos--
     }
-    # The base key's record is only owed while it is actually down; a failed base UP keeps
-    # it so key-release can still recover it (CU-OPS-ADJ-04).
-    if (-not $baseDown) { try { Remove-KeyLedgerRecords $combo.Key } catch { } }
+    # K-1: the base key was already acknowledged DOWN before its record write failed, so the
+    # cleanup path MUST send its UP too. A base whose UP was already attempted is left to
+    # key-release with an 'up-failed' record; re-sending blindly would be a second guess.
+    if ($baseDown -and -not $baseUpTried) {
+      $upOk = $false
+      try {
+        $n = [uint32][DT]::SendKeyInput([int]$combo.Base.Vk, $true, [bool]$combo.Base.Ext)
+        if ($n -eq 1) { $upOk = $true; $inserted++ } else { $releaseFail += "$($combo.Key)(inserted $n/1)" }
+      } catch { $releaseFail += "$($combo.Key)($($_.Exception.Message))" }
+      if ($upOk) {
+        $rel += $combo.Key
+        $cm = ''
+        try { $cm = Complete-KeyLedgerRelease $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) $combo.Spec } catch { $ledgerDanger += $_.Exception.Message }
+        if ($cm -ne '') { $ledgerNotes += $cm }
+      } else {
+        try { Set-KeyLedgerState $combo.Key ([int]$combo.Base.Vk) ([bool]$combo.Base.Ext) 'up-failed' $combo.Spec 'true' 'failed' } catch { $ledgerNotes += "the record for '$($combo.Key)' could not be marked up-failed: $($_.Exception.Message)" }
+      }
+    } elseif (-not $baseDown -and -not $baseUpTried) {
+      # The base never got a confirmed DOWN in this call; only its 'prepared' clue can exist.
+      try { Remove-KeyLedgerRecords $combo.Key } catch { $ledgerNotes += "the clue for '$($combo.Key)' could not be removed: $($_.Exception.Message)" }
+    }
     Start-Sleep -Milliseconds 40
     $script:LastKeyReceipt = ("combo=" + $combo.Spec + " mods=" + $(if ($combo.Mods.Count) { $combo.Mods -join '+' } else { 'none' }) + " repeat=$repeat hold=${hold}ms interval=${interval}ms SendInput-inserted=$inserted released=" + $(if ($rel.Count) { $rel -join '+' } else { 'none' }))
   }
   if ($releaseFail.Count -gt 0) {
-    $msg = "key: modifier UP failed for: $($releaseFail -join ', ') - those keys may still be down and their ledger records are kept; run 'key-release'"
+    $msg = "key: UP failed for: $($releaseFail -join ', ') - those keys may still be down and their ledger records are kept; run 'key-release'"
     if ($fail) { throw ($fail + ' | ' + $msg) }
     throw $msg
   }
+  if ($ledgerDanger.Count -gt 0) {
+    $msg = "key ledger: the gesture finished but an ownership record may still claim 'down': $($ledgerDanger -join ' | ')"
+    if ($fail) { throw ($fail + ' | ' + $msg) }
+    throw $msg
+  }
+  if ($ledgerNotes.Count -gt 0) { Write-Output ("NOTICE: " + ($ledgerNotes -join ' | ')) }
   if ($fail) { throw ($fail + " (any key still down is kept in the ownership ledger: run 'key-state' / 'key-release'; observed now: $(Get-InputStateLine))") }
   Start-Sleep -Milliseconds 250
   $warn = Test-PostSendForeground $target $p.Force
@@ -1327,8 +1440,12 @@ function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
     # would reject ctrl/shift/alt/win (CU-OPS-ADJ-05).
     $vk = [int]$e.vk
     $isDown = ($vk -ne 0) -and ([DT]::IsVkDown($vk) -ne 0)
-    if ([string]$e.state -ne 'down') { $clues += "$($e.name)=$($e.state)$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
-    if ($isDown) { $owned += "$($e.name)(pid=$($e.pid))" }
+    $conf = [bool]$e.confirmed
+    $lu = [string]$e.last_up
+    if (-not $conf) { $clues += "$($e.name)=$($e.state)/unconfirmed$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
+    if ($lu -eq 'ok' -or [string]$e.state -eq 'released') { $clues += "$($e.name)=released-record$(if ($isDown) { '/down-now' } else { '' })(pid=$($e.pid))"; continue }
+    if ($isDown) { $owned += "$($e.name)(pid=$($e.pid))"; continue }
+    $clues += "$($e.name)=$($e.state)/up-now(last-up=$lu)(pid=$($e.pid))"
   }
   $ledgerNote = switch ($st.Status) {
     'absent' { 'absent' }
@@ -1336,7 +1453,7 @@ function Invoke-Handler-key-state([string]$Cmd, [string[]]$Rest) {
     default { "$($st.Status): $($st.Error)" }
   }
   "key-state: $(Get-InputStateLine)  owned-held=$(if ($owned.Count) { $owned -join ',' } else { 'none' })  ledger=$ledgerNote"
-  if ($clues.Count) { "  unconfirmed records (state is not 'down' - reported, never released on): $($clues -join ', ')" }
+  if ($clues.Count) { "  records not releasable as-is (unconfirmed, released, or physically up - reported, never force-released): $($clues -join ', ')" }
   "note: every key this tool presses is released inside the same call; a 'down' entry can only outlive a killed process. 'key-release' touches only keys the ledger proves this tool pressed."
 }
 
@@ -1371,11 +1488,14 @@ function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
     $downNow = ($vk -ne 0) -and (([DT]::IsVkDown($vk)) -ne 0)
     $ov = Get-KeyLedgerOwnerVerdict $e
     $state = [string]$e.state
+    $conf = [bool]$e.confirmed
+    $lu = [string]$e.last_up
     $action = ''
     if ($vk -eq 0) { $action = 'REFUSED: unreadable record (no usable vk)' }
-    elseif ($state -ne 'down') { $action = "REFUSED: record state '$state' - this tool never confirmed the DOWN, so it will not release it" }
+    elseif (-not $conf) { $action = "REFUSED: record state '$state' - this tool never confirmed the DOWN, so it will not release it" }
     elseif ($ov.Kind -eq 'other-live') { $action = "REFUSED: $($ov.Detail)" }
     elseif ($ov.Kind -eq 'unknown-owner') { $action = "REFUSED: ownership unprovable - $($ov.Detail)" }
+    elseif ($lu -eq 'ok' -or $state -eq 'released') { $action = 'CLEANUP: a verified UP already released it - record removed, no input sent' }
     elseif (-not $downNow) { $action = 'CLEANUP: already up - record removed, no input sent' }
     else { $action = 'WILL RELEASE' }
     $plan += [pscustomobject]@{ Entry = $e; Vk = $vk; Ext = [bool]$e.ext; Action = $action; Owner = $ov.Kind }
@@ -1388,22 +1508,35 @@ function Invoke-Handler-key-release([string]$Cmd, [string[]]$Rest) {
   $released = @()
   $failed = @()
   $refused = 0
+  $notes = @()
+  $danger = @()
   foreach ($p in $plan) {
     if ($p.Action -like 'REFUSED*') { $refused++; continue }
     if ($p.Action -like 'CLEANUP*') {
-      try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { }
+      try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) }
+      catch { $notes += "record for '$($p.Entry.name)' could not be removed: $($_.Exception.Message)" }
       continue
     }
     try {
       $n = [uint32][DT]::SendKeyInput($p.Vk, $true, $p.Ext)
       if ($n -eq 1) {
         $released += [string]$p.Entry.name
-        try { Remove-KeyLedgerRecords ([string]$p.Entry.name) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { }
-      } else { $failed += "$($p.Entry.name)(inserted $n/1)" }
-    } catch { $failed += "$($p.Entry.name)($($_.Exception.Message))" }
+        $cm = ''
+        try { $cm = Complete-KeyLedgerRelease ([string]$p.Entry.name) ([int]$p.Vk) ([bool]$p.Ext) ([string]$p.Entry.combo) ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { $danger += $_.Exception.Message }
+        if ($cm -ne '') { $notes += $cm }
+      } else {
+        $failed += "$($p.Entry.name)(inserted $n/1)"
+        try { Set-KeyLedgerState ([string]$p.Entry.name) ([int]$p.Vk) ([bool]$p.Ext) 'up-failed' ([string]$p.Entry.combo) 'true' 'failed' ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { $notes += "the record for '$($p.Entry.name)' could not be marked up-failed: $($_.Exception.Message)" }
+      }
+    } catch {
+      $failed += "$($p.Entry.name)($($_.Exception.Message))"
+      try { Set-KeyLedgerState ([string]$p.Entry.name) ([int]$p.Vk) ([bool]$p.Ext) 'up-failed' ([string]$p.Entry.combo) 'true' 'failed' ([int]$p.Entry.pid) ([string]$p.Entry.owner_started) } catch { $notes += "the record for '$($p.Entry.name)' could not be marked up-failed: $($_.Exception.Message)" }
+    }
   }
   "  released=" + $(if ($released.Count) { $released -join '+' } else { 'none' }) + " failed=" + $(if ($failed.Count) { $failed -join ',' } else { 'none' }) + " refused=$refused  observed-after=$(Get-InputStateLine)"
+  if ($notes.Count -gt 0) { Write-Output ("NOTICE: " + ($notes -join ' | ')) }
   if ($refused -gt 0) { Write-Output "NOTICE: $refused record(s) were reported but not released - ownership could not be proven. They stay in the ledger for a human decision." }
+  if ($danger.Count -gt 0) { throw "key-release: $($danger -join ' | ')" }
   if ($failed.Count) { throw "key-release: $($failed.Count) key(s) could not be released: $($failed -join ', ')" }
 }
 
@@ -1413,6 +1546,13 @@ function Invoke-Handler-ime([string]$Cmd, [string[]]$Rest) {
       # (type no longer cares: it bypasses the IME via SendInput Unicode).
       $f = Get-FgThreadInfo
       "foreground pid=$($f.Pid) title='$($f.Title)'  $(Format-Hkl $f.Hkl)"
+}
+
+# G-2 (CU-OPS-CORRECTION-REVIEW-20261028-01): the paste keystroke is ONE seam so the
+# restore boundary below can be exercised against a memory backend without ever sending
+# a real key. Product behaviour is exactly SendKeys('^v').
+function Send-PasteKeystroke {
+  [System.Windows.Forms.SendKeys]::SendWait('^v')
 }
 
 # v4.4.0 (A-15): paste - the case body, verbatim
@@ -1447,11 +1587,31 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       # honest, and only when the payload is long enough that a chip fold is possible - a short
       # payload pays nothing and keeps the verbatim-only judgement.
       $rcpBase = Get-PasteReceiptBaseline $p $target $text
-      Set-Clipboard -Value $text
-      Start-Sleep -Milliseconds 400
-      [System.Windows.Forms.SendKeys]::SendWait('^v')
-      Start-Sleep -Milliseconds 500
-      $restoreNote = Restore-ClipboardState $clip
+      # G-2: everything that can replace the clipboard runs inside ONE restore boundary.
+      # A write that throws, a send that throws and a restore that fails all leave through
+      # the finally, so the previous clipboard is never abandoned half-replaced. A send
+      # that MAY have happened is never reported as safe to retry blindly.
+      $sendErr = $null
+      $sendAttempted = $false
+      $restoreNote = 'clipboard restore was not attempted'
+      try {
+        Set-Clipboard -Value $text
+        Start-Sleep -Milliseconds 400
+        $sendAttempted = $true
+        Send-PasteKeystroke
+        Start-Sleep -Milliseconds 500
+      } catch {
+        $sendErr = $_
+      } finally {
+        try { $restoreNote = Restore-ClipboardState $clip } catch { $restoreNote = 'clipboard restore failed (the restore itself threw: ' + $_.Exception.Message + ')' }
+      }
+      if ($null -ne $sendErr) {
+        $why = [string]$sendErr.Exception.Message
+        if ($sendAttempted) {
+          throw "paste: the send failed after the clipboard had been replaced ($why); a paste MAY have partially reached pid=$($target.Pid) - do NOT re-send blindly, inspect the target first. [$restoreNote]"
+        }
+        throw "paste: the clipboard write failed before any keystroke was sent ($why); no paste was sent to pid=$($target.Pid). [$restoreNote]"
+      }
       $warn = Test-PostSendForeground $target $p.Force
       "pasted $($text.Length) chars from $file$bomNote, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
       Invoke-ActionExpectation $p $target 'pasted'
@@ -1476,7 +1636,7 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       # with the same exit code as one that did - the user is told, and the code says so.
       $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
       if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
-        throw "paste: the payload WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+        throw "paste: the payload WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Do not re-send blindly: inspect the target, then run 'clip-info' before relying on the clipboard again."
       }
 }
 
@@ -1514,16 +1674,35 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste-file'
       $carrierName = if ($useImage) { 'image' } else { 'file' }
       Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)' file=$($fi.FullName) carrier=$carrierName" $Cmd
-      if ($useImage) {
-        $ok = Set-ClipboardImageCarrier $carrier
-        if (-not $ok) { throw ("paste-file: the image did not come back after the write (size/digest check failed); no paste was sent for: " + $fi.FullName) }
-      } else {
-        $ok = Set-ClipboardFileDrop $fi.FullName
-        if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+      # G-2: the same ONE restore boundary as paste. The carrier write has ALREADY replaced
+      # the clipboard when its read-back check fails, so that failure must restore the old
+      # content too - the old code threw and left the synthetic payload in place.
+      $sendErr = $null
+      $sendAttempted = $false
+      $restoreNote = 'clipboard restore was not attempted'
+      try {
+        if ($useImage) {
+          $ok = Set-ClipboardImageCarrier $carrier
+          if (-not $ok) { throw 'the image did not come back after the write (size/digest check failed)' }
+        } else {
+          $ok = Set-ClipboardFileDrop $fi.FullName
+          if (-not $ok) { throw 'the file list did not come back after the write (verification failed)' }
+        }
+        $sendAttempted = $true
+        Send-PasteKeystroke
+        Start-Sleep -Milliseconds 500
+      } catch {
+        $sendErr = $_
+      } finally {
+        try { $restoreNote = Restore-ClipboardState $clip } catch { $restoreNote = 'clipboard restore failed (the restore itself threw: ' + $_.Exception.Message + ')' }
       }
-      [System.Windows.Forms.SendKeys]::SendWait('^v')
-      Start-Sleep -Milliseconds 500
-      $restoreNote = Restore-ClipboardState $clip
+      if ($null -ne $sendErr) {
+        $why = [string]$sendErr.Exception.Message
+        if ($sendAttempted) {
+          throw "paste-file: the send failed after the clipboard had been replaced ($why); a paste MAY have partially reached pid=$($target.Pid) - do NOT re-send blindly, inspect the target first. [$restoreNote]"
+        }
+        throw ("paste-file: the clipboard was replaced but the write could not be verified (" + $why + "); NO paste was sent for: " + $fi.FullName + "; " + $restoreNote)
+      }
       $warn = Test-PostSendForeground $target $p.Force
       if ($useImage) {
         "pasted image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  carrier=image, target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
@@ -1551,7 +1730,7 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       # but a previous clipboard that did not come back is a non-zero exit, not a footnote.
       $restoreOutcome = Get-ClipboardRestoreOutcome $restoreNote
       if ($restoreOutcome -eq 'partial' -or $restoreOutcome -eq 'failed') {
-        throw "paste-file: the file WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Run 'clip-info' before relying on the clipboard again."
+        throw "paste-file: the file WAS sent to pid=$($target.Pid), but the previous clipboard could not be put back fully ($restoreNote). Do not re-send blindly: inspect the target, then run 'clip-info' before relying on the clipboard again."
       }
 }
 
@@ -1596,11 +1775,11 @@ function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
       Log-Action $Rest "file=$($fi.FullName) bytes=$($fi.Length) carrier=$carrierName" $Cmd
       if ($useImage) {
         $ok = Set-ClipboardImageCarrier $carrier
-        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName) }
+        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName + '. copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either') }
         ("copied image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  bytes=$($fi.Length)  carrier=image  clipboard verified (same pixels read back)")
       } else {
         $ok = Set-ClipboardFileDrop $fi.FullName
-        if (-not $ok) { throw "clipboard verification failed for: $($fi.FullName)" }
+        if (-not $ok) { throw "copy-file: clipboard verification failed for: $($fi.FullName). copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either" }
         "copied $($fi.Name)  bytes=$($fi.Length)  carrier=file  clipboard verified: $($fi.FullName)"
       }
 }
