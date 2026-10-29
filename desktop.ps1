@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.9  (version sync list lives in the project overview doc)
+# version: 4.6.10  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.9'
+$script:ToolVersion = '4.6.10'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -479,7 +479,15 @@ Set-StrictMode -Version Latest
 # sidecar byte-identical on both rect and zoom, a new-path failure publishes neither file, a
 # successful same-name re-capture refreshes the pair, and a png_sha256 mismatch is refused at
 # read time by both Read-MapSidecar and strict imgclick (1103 -> 1110).
-$script:DeclaredCheckTotal = 1110
+# CU-CLOSEOUT-REVIEW-20261029-01 P2: +4 - the sidecar is now published before the PNG it names, so a
+# reused name whose MAP WRITE fails (a pre-v4.6.8 map with no png_sha256, made read-only) keeps the old
+# image and old origin byte-identical on rect and zoom, and a successful same-name re-capture over
+# such a legacy map rewrites it WITH the new hash and origin on both paths (1110 -> 1114).
+# CU-REMAINDER-FINAL-20261029-01 A2/A3: +4 - a capture that publishes no sidecar withdraws a previous
+# binding at the same name, a png_sha256 that is present but empty/non-hex/truncated is refused as
+# malformed (not folded into the legacy branch), a legacy map without its image is refused, and a
+# refused image replace after the map landed leaves a pair that refuses (1114 -> 1118).
+$script:DeclaredCheckTotal = 1118
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2346,10 +2354,12 @@ $script:StFamilyCounts = @{
   'flags-grammar' = 'banners=16,lines=887'
   'capture-ocr' = 'banners=9,lines=824'
   'popup-occlusion' = 'banners=7,lines=348'
-  'audit-output' = 'banners=10,lines=940'
-  # v4.6.9 fix-up (CU-467 install smoke): window-targeting gains the five-line .NET hash note and
-  # helper the A1-b reused-output controls now use (+5).
-  'window-targeting' = 'banners=11,lines=1533'
+  'audit-output' = 'banners=10,lines=946'
+  # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
+  # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
+  # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
+  # malformed-hash and missing-image controls add 111 more lines and no banner (+111 -> 1644).
+  'window-targeting' = 'banners=11,lines=1644'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=190'
   'docs-contract' = 'banners=12,lines=646'
@@ -2412,11 +2422,13 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # card has to update in the same commit says so.
 # v4.6.4 (G-1): ClipboardInput 30 -> 32 for the unreadable-clipboard pair; the registered number is
 # the MEASURED one, and the row still requires an exact match.
+# v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A2/A3): WindowTargeting 198 -> 206 for the eight
+# legacy-map / failed-write / no-sidecar / malformed-hash / missing-image controls added there.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=107',
   'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=198',
+  'Invoke-SelftestFamily-WindowTargeting=206',
   'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
@@ -3890,10 +3902,35 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     $mapSnap = @{ Pid = [int]$mapWin.Pid; Handle = [IntPtr]$mapWin.Handle; Title = [string]$mapWin.Title; X = [int]$mapRect.X; Y = [int]$mapRect.Y; W = [int]$mapRect.W; H = [int]$mapRect.H; Sel = '' }
     [void](Assert-CaptureHostStable $mapSnap $mapKind)
   }
-  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-  $bmp.Dispose()
+  # v4.6.10 (CU-CLOSEOUT-REVIEW-20261029-01 P2): the sidecar is published BEFORE the PNG it describes.
+  # v4.6.8 moved the host re-check in front of the save, but the save itself still ran first and the
+  # sidecar second, so a same-name re-capture whose sidecar write FAILED (an old map nobody may write)
+  # left a NEW PNG beside the OLD map. A pre-v4.6.8 map carries no png_sha256, so the reader kept its
+  # legacy branch and mapped the new pixels through the old origin - the review reproduced exactly
+  # that on both rect and zoom. Now the pending PNG is encoded in memory, its hash goes INTO the
+  # sidecar first, and only then is the image replaced: a sidecar write that fails leaves the old PNG
+  # AND its old map byte-identical, and an image write that fails afterwards cannot be blessed -
+  # the map names bytes that are not on disk. No filesystem transaction is claimed.
+  if ($mapKind) {
+    $msP = New-Object System.IO.MemoryStream
+    try { $bmp.Save($msP, [System.Drawing.Imaging.ImageFormat]::Png); $pngBytes = $msP.ToArray() } finally { $msP.Dispose(); $bmp.Dispose() }
+    $shaW = [System.Security.Cryptography.SHA256]::Create()
+    try { $pendingSha = ([BitConverter]::ToString($shaW.ComputeHash($pngBytes)) -replace '-','').ToLower() } finally { $shaW.Dispose() }
+    Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha
+    [System.IO.File]::WriteAllBytes($path, $pngBytes)
+  } else {
+    # v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A2): a capture that publishes NO sidecar (shot, script
+    # steps) must not leave a previous sidecar at the same name standing as its explanation. A
+    # hash-carrying map would be refused by the reader anyway; a pre-v4.6.8 map without png_sha256
+    # would be accepted and would map the new pixels through the old origin. The stale binding is
+    # withdrawn BEFORE the image is replaced, and a withdrawal that fails refuses the capture - a
+    # pair that refuses reads better than one that lies.
+    $staleMap = $path + '.map.txt'
+    if (Test-Path -LiteralPath $staleMap) { Remove-Item -LiteralPath $staleMap -Force }
+    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Dispose()
+  }
   $size = (Get-Item -LiteralPath $path).Length
-  if ($mapKind) { Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap }
   $lines = New-Object System.Collections.ArrayList
   $gridTxt = $(if ($grid -gt 0) { "  grid=$grid$(if ($autoGrid) { ' (auto: --fit and wider than 1000px; --no-grid turns it off)' } else { '' })" } else { '' })
   if ($scale -eq 1.0) {
@@ -3931,7 +3968,7 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
 # v1.5.1 WP-B: kind=win sidecars additionally record pid/handle/title_b64
 # (the staleness anchor). Title is base64 because window titles may contain
 # newlines, '=' or non-ASCII bytes.
-function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null) {
+function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '') {
   $inv = [System.Globalization.CultureInfo]::InvariantCulture
   $s = [math]::Round($scale, 6).ToString($inv)
   $text = "origin_x=$ox`r`norigin_y=$oy`r`nscale=$s`r`nout_w=$ow`r`nout_h=$oh`r`nkind=$kind`r`n"
@@ -3966,16 +4003,27 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
   # line of defence for the paths a two-file publish cannot make atomic - a sidecar write that
   # failed after the PNG landed, or any out-of-band replacement of one of the two files. Read
   # time compares it and refuses a mismatched pair instead of mapping through it.
-  if (-not (Test-Path -LiteralPath $imagePath)) { throw "map sidecar: the image it must describe does not exist: $imagePath - the sidecar is written only right after a capture saved its PNG; re-capture" }
-  # v4.6.9 fix-up (CU-467 install smoke): the hash comes from .NET, not Get-FileHash. On this
-  # engine Get-FileHash is a MODULE FUNCTION, and a PS 5.1 child launched with Start-Process from
-  # a PS 7 host inherits a PSModulePath whose PS 7 module directories win the race: autoload
-  # resolves Microsoft.PowerShell.Utility to the Core package, loading fails, and this capture
-  # path would throw "Get-FileHash is not recognized". The BCL call needs no module at all.
-  $shaH = [System.Security.Cryptography.SHA256]::Create()
-  try { $shaS = [System.IO.File]::OpenRead($imagePath); try { $pngSha = ([BitConverter]::ToString($shaH.ComputeHash($shaS)) -replace '-','').ToLower() } finally { $shaS.Dispose() } } finally { $shaH.Dispose() }
+  # v4.6.10 (CU-CLOSEOUT-REVIEW-20261029-01 P2): the capture callers hand in the hash of the PNG they
+  # are ABOUT to publish, which is what lets the sidecar land first (see Save-RectEx / zoom). The image
+  # file is read only for a caller that describes an image already on disk.
+  $pngSha = ''
+  if ($pngSha256) {
+    $pngSha = $pngSha256.ToLower()
+  } else {
+    if (-not (Test-Path -LiteralPath $imagePath)) { throw "map sidecar: the image it must describe does not exist: $imagePath - the sidecar is written only right after a capture saved its PNG; re-capture" }
+    # v4.6.9 fix-up (CU-467 install smoke): the hash comes from .NET, not Get-FileHash. On this
+    # engine Get-FileHash is a MODULE FUNCTION, and a PS 5.1 child launched with Start-Process from
+    # a PS 7 host inherits a PSModulePath whose PS 7 module directories win the race: autoload
+    # resolves Microsoft.PowerShell.Utility to the Core package, loading fails, and this capture
+    # path would throw "Get-FileHash is not recognized". The BCL call needs no module at all.
+    $shaH = [System.Security.Cryptography.SHA256]::Create()
+    try { $shaS = [System.IO.File]::OpenRead($imagePath); try { $pngSha = ([BitConverter]::ToString($shaH.ComputeHash($shaS)) -replace '-','').ToLower() } finally { $shaS.Dispose() } } finally { $shaH.Dispose() }
+  }
   $text += "png_sha256=$pngSha`r`n"
-  [System.IO.File]::WriteAllText(($imagePath + '.map.txt'), $text, (New-Object System.Text.UTF8Encoding($false)))
+  # v4.6.10 (P2): a refusal here must be legible - it is the point at which the capture stops, and
+  # any image already at this path is left byte-identical with the map that still describes it.
+  try { [System.IO.File]::WriteAllText(($imagePath + '.map.txt'), $text, (New-Object System.Text.UTF8Encoding($false))) }
+  catch { throw "map sidecar NOT written: $($imagePath).map.txt - $($_.Exception.Message) - the capture is refused BEFORE the image is replaced; an image already at that path and its map stay byte-identical - fix the write permission (or capture under a new name) and re-capture" }
 }
 
 # Reads <image>.map.txt back. A missing or malformed sidecar is an ERROR that
@@ -4029,9 +4077,17 @@ function Read-MapSidecar([string]$imagePath) {
   # looking valid once the window came back; this refuses that pair with an explicit message.
   # Sidecars written before this version carry no hash and keep their old read behaviour.
   $pngSha = ''
-  if ($raw -match '(?m)^png_sha256=([0-9a-f]{64})\s*$') { $pngSha = $Matches[1].ToLower() }
+  if ($raw -match '(?m)^png_sha256=([^\r\n]*)\s*$') {
+    $declaredSha = $Matches[1].Trim()
+    # v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A3): a png_sha256 line that is PRESENT but empty,
+    # truncated or not hex is a damaged hash, not a pre-v4.6.8 sidecar - the legacy branch must not
+    # become the silent home of a field that failed to parse.
+    if ($declaredSha -notmatch '^[0-9a-fA-F]{64}$') { throw "map sidecar malformed (png_sha256 is present but not 64 hex digits): $mapPath - a damaged hash is not a legacy sidecar; re-capture the image" }
+    $pngSha = $declaredSha.ToLower()
+  }
+  # v4.6.10 (A3): a sidecar without its image is not a pair at all - legacy or hashed alike.
+  if (-not (Test-Path -LiteralPath $imagePath)) { throw "map sidecar describes an image that is not there: $mapPath - $imagePath - re-capture the image" }
   if ($pngSha) {
-    if (-not (Test-Path -LiteralPath $imagePath)) { throw "map sidecar describes an image that is not there: $mapPath (png_sha256=$($pngSha.Substring(0, 12))...) - re-capture the image" }
     # v4.6.9 fix-up: the same .NET SHA-256 as the writer, for the reason stated there - a reader
     # that depended on an autoloaded module function would refuse every pair on a host where the
     # module cannot autoload, and the refusal would name the wrong cause.
@@ -15395,10 +15451,17 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       # existing name replaced the image while the old .map.txt stayed behind - a pair that read
       # 'ok' once the window returned. Refuse first, then publish.
       if ($null -ne $hostSnap) { [void](Assert-CaptureHostStable $hostSnap 'zoom') }
-      $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-      $dst.Dispose()
-      $size = (Get-Item -LiteralPath $path).Length
-      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap
+      # v4.6.10 (CU-CLOSEOUT-REVIEW-20261029-01 P2): same publication order as Save-RectEx - the map,
+      # carrying the pending PNG's hash, lands BEFORE the image. A map write that fails (a pre-v4.6.8
+      # read-only map beside a reused name) therefore leaves the old PNG and old map byte-identical
+      # instead of putting new pixels under an old origin the legacy reader still accepts.
+      $msZ = New-Object System.IO.MemoryStream
+      try { $dst.Save($msZ, [System.Drawing.Imaging.ImageFormat]::Png); $zBytes = $msZ.ToArray() } finally { $msZ.Dispose(); $dst.Dispose() }
+      $shaZ = [System.Security.Cryptography.SHA256]::Create()
+      try { $zSha = ([BitConverter]::ToString($shaZ.ComputeHash($zBytes)) -replace '-','').ToLower() } finally { $shaZ.Dispose() }
+      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha
+      [System.IO.File]::WriteAllBytes($path, $zBytes)
+      $size = $zBytes.Length
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"
@@ -20694,10 +20757,95 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { [void](Read-MapSidecar $a1hPng) } catch { $a1hErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-b): a sidecar whose png_sha256 no longer matches the file is refused at read time (the old map never blesses a replaced PNG)' (
       $a1hErr.Contains('DIFFERENT image') -and $a1hErr.Contains('png_sha256'))
+    # CU-CLOSEOUT-REVIEW-20261029-01 P2: the review's remaining branch - a PRE-v4.6.8 map (no
+    # png_sha256) beside a REUSED name whose MAP WRITE fails. The map is made read-only so the REAL
+    # writer throws; the publication order now puts the map in front of the image, so the PNG must
+    # not be touched and the old origin must stay the only one any reader can obtain.
+    $a1lg = $a1bBase + '-legacy.png'
+    & $a1Png $a1lg
+    $a1lgLegacy = "origin_x=11`r`norigin_y=22`r`nscale=1`r`nout_w=2`r`nout_h=2`r`nkind=rect`r`npid=7`r`nhandle=1234`r`nhost_x=100`r`nhost_y=200`r`nhost_w=300`r`nhost_h=400`r`n"
+    [System.IO.File]::WriteAllText(($a1lg + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1lgPng0 = & $a1Sha $a1lg
+    $a1lgMap0 = & $a1Sha ($a1lg + '.map.txt')
+    $script:a1bObs = $a1bStillRect
+    Set-ItemProperty -LiteralPath ($a1lg + '.map.txt') -Name IsReadOnly -Value $true
+    $a1lgErr = ''
+    try { [void](Save-RectEx 700 450 2 2 $a1lg 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1lgErr = "$($_.Exception.Message)" }
+    Set-ItemProperty -LiteralPath ($a1lg + '.map.txt') -Name IsReadOnly -Value $false
+    $a1lgPng1 = & $a1Sha $a1lg
+    $a1lgMap1 = & $a1Sha ($a1lg + '.map.txt')
+    $a1lgBack = Read-MapSidecar $a1lg
+    ST-Check 'unit (P2): a FAILED map write on a reused name leaves the OLD PNG and its legacy map byte-identical (new pixels never ride an old origin)' (
+      $a1lgErr.Contains('map sidecar NOT written') -and $a1lgPng1 -eq $a1lgPng0 -and $a1lgMap1 -eq $a1lgMap0 -and $a1lgBack.OriginX -eq 11 -and $a1lgBack.OriginY -eq 22 -and $a1lgBack.PngSha -eq '' -and (Test-MapSidecarStale $a1lgBack).Verdict -eq 'ok')
+    [void](Save-RectEx 33 44 2 2 $a1lg 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1lgBack2 = Read-MapSidecar $a1lg
+    $a1lgPng2 = & $a1Sha $a1lg
+    ST-Check 'unit (P2): a successful re-capture over a legacy map rewrites it WITH the new hash and origin (compatibility, not a licence to mismatch)' (
+      $a1lgBack2.OriginX -eq 33 -and $a1lgBack2.OriginY -eq 44 -and $a1lgBack2.PngSha.Length -eq 64 -and $a1lgBack2.PngSha -eq $a1lgPng2)
+    # CU-REMAINDER-FINAL-20261029-01 A2: shot / script steps publish no sidecar. Overwriting a name
+    # that still carries a binding must withdraw it, or the next reader maps new pixels through an
+    # old origin with nothing to compare.
+    $a1ns = $a1bBase + '-nosidecar.png'
+    & $a1Png $a1ns
+    [System.IO.File]::WriteAllText(($a1ns + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    [void](Save-RectEx 20 30 2 2 $a1ns 1.0 -1 @() '' $null $null $null)
+    ST-Check 'unit (A2): a capture that publishes NO sidecar withdraws a previous binding at the same name (shot/script cannot inherit an old origin)' (
+      (-not (Test-Path -LiteralPath ($a1ns + '.map.txt'))) -and (Test-Path -LiteralPath $a1ns))
+    # CU-REMAINDER-FINAL-20261029-01 A3: a png_sha256 line that exists but does not parse as 64 hex
+    # is a damaged hash - it must not be read as the legacy no-hash format.
+    $a1mf = $a1bBase + '-malformed.png'
+    & $a1Png $a1mf
+    $a1mfHead = "origin_x=5`r`norigin_y=6`r`nscale=1`r`nout_w=2`r`nout_h=2`r`nkind=rect`r`n"
+    $a1mfBad = @("png_sha256=`r`n", "png_sha256=abc`r`n", ("png_sha256=" + ('a' * 63) + "`r`n"))
+    $a1mfAllRefused = $true
+    $a1mfMsgs = @()
+    foreach ($a1mfOne in $a1mfBad) {
+      [System.IO.File]::WriteAllText(($a1mf + '.map.txt'), ($a1mfHead + $a1mfOne), (New-Object System.Text.UTF8Encoding($false)))
+      try { [void](Read-MapSidecar $a1mf); $a1mfAllRefused = $false; $a1mfMsgs += 'ACCEPTED:' + $a1mfOne.Trim() }
+      catch { if (-not "$($_.Exception.Message)".Contains('malformed')) { $a1mfAllRefused = $false; $a1mfMsgs += 'OTHER:' + "$($_.Exception.Message)" } }
+    }
+    ST-Check 'unit (A3): png_sha256 present but empty, non-hex or truncated is refused as MALFORMED, never folded into the legacy branch' (
+      $a1mfAllRefused -and (@($a1mfMsgs).Count -eq 0))
+    # CU-REMAINDER-FINAL-20261029-01 A3: a sidecar without its image is not a pair - legacy included.
+    $a1nm = $a1bBase + '-noimage.png'
+    [System.IO.File]::WriteAllText(($a1nm + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1nmErr = ''
+    try { [void](Read-MapSidecar $a1nm) } catch { $a1nmErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A3): a sidecar whose image is missing is refused at read time for the LEGACY format too (no dangling pair)' (
+      $a1nmErr.Contains('describes an image that is not there'))
+    # CU-REMAINDER-FINAL-20261029-01 A3: the image-write half of a failed publication. The map lands
+    # first (that is the fix), the read-only PNG refuses the replace, and the pair must then REFUSE
+    # instead of letting the new map explain the old pixels.
+    $a1pw = $a1bBase + '-pngreadonly.png'
+    & $a1Png $a1pw
+    [System.IO.File]::WriteAllText(($a1pw + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1pwPng0 = & $a1Sha $a1pw
+    $a1pwMap0 = & $a1Sha ($a1pw + '.map.txt')
+    $script:a1bObs = $a1bStillRect
+    Set-ItemProperty -LiteralPath $a1pw -Name IsReadOnly -Value $true
+    $a1pwErr = ''
+    try { [void](Save-RectEx 40 50 2 2 $a1pw 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1pwErr = "$($_.Exception.Message)" }
+    Set-ItemProperty -LiteralPath $a1pw -Name IsReadOnly -Value $false
+    $a1pwPng1 = & $a1Sha $a1pw
+    $a1pwMap1 = & $a1Sha ($a1pw + '.map.txt')
+    $a1pwRead = ''
+    try { [void](Read-MapSidecar $a1pw) } catch { $a1pwRead = "$($_.Exception.Message)" }
+    ST-Check 'unit (A3): when the image cannot be replaced after the map landed, the result is a REFUSED pair (old pixels never ride the new map)' (
+      $a1pwPng1 -eq $a1pwPng0 -and $a1pwMap1 -ne $a1pwMap0 -and $a1pwRead.Contains('DIFFERENT image'))
   } finally {
     foreach ($a1bn in $a1bNames) { Set-Item -Path ("function:" + $a1bn) -Value $a1bOrig[$a1bn] }
     Remove-Item -LiteralPath @(($a1bBase + '-snap.png.map.txt'), ($a1bImgMove + '.map.txt'), ($a1bImgStill + '.map.txt'), ($a1rB + '.map.txt'), ($a1hPng + '.map.txt')) -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath @(($a1bBase + '-snap.png'), $a1bImgMove, $a1bImgStill, $a1bImgScript, $a1rB, $a1hPng) -Force -ErrorAction SilentlyContinue
+    foreach ($a1extra in @($a1ns, $a1mf, $a1nm, $a1pw)) {
+      if ($a1extra) {
+        Set-ItemProperty -LiteralPath $a1extra -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath @($a1extra, ($a1extra + '.map.txt')) -Force -ErrorAction SilentlyContinue
+      }
+    }
+    if ($a1lg) {
+      Set-ItemProperty -LiteralPath ($a1lg + '.map.txt') -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath @($a1lg, ($a1lg + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    }
   }
   # A1-b end-to-end on zoom: Resolve-CropHost reads the rect BEFORE the grab; the post-save
   # re-check uses the same observation seam. Only the window lookup/observation is replaced.
@@ -20744,10 +20892,36 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '4', '4', '2', $a1zNew, '--to', 'a1-host')) } catch { $a1zNewErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-b): a refused zoom to a NEW name publishes neither the PNG nor a sidecar' (
       $a1zNewErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath $a1zNew)) -and (-not (Test-Path -LiteralPath ($a1zNew + '.map.txt'))))
+    # CU-CLOSEOUT-REVIEW-20261029-01 P2: the same legacy-map / map-write-failure branch on ZOOM.
+    $a1zLeg = $a1bBase + '-zoom-legacy.png'
+    & $a1Png $a1zLeg
+    $a1zLegacy = "origin_x=600`r`norigin_y=400`r`nscale=2`r`nout_w=4`r`nout_h=4`r`nkind=zoom`r`npid=7`r`nhandle=1234`r`ntitle_b64=YTEtaG9zdA==`r`nhost_x=100`r`nhost_y=200`r`nhost_w=300`r`nhost_h=400`r`n"
+    [System.IO.File]::WriteAllText(($a1zLeg + '.map.txt'), $a1zLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1zLegPng0 = & $a1Sha $a1zLeg
+    $a1zLegMap0 = & $a1Sha ($a1zLeg + '.map.txt')
+    $script:a1zObs = $a1zStillObs
+    Set-ItemProperty -LiteralPath ($a1zLeg + '.map.txt') -Name IsReadOnly -Value $true
+    $a1zLegErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('350', '550', '4', '4', '2', $a1zLeg, '--to', 'a1-host')) } catch { $a1zLegErr = "$($_.Exception.Message)" }
+    Set-ItemProperty -LiteralPath ($a1zLeg + '.map.txt') -Name IsReadOnly -Value $false
+    $a1zLegPng1 = & $a1Sha $a1zLeg
+    $a1zLegMap1 = & $a1Sha ($a1zLeg + '.map.txt')
+    $a1zLegBack = Read-MapSidecar $a1zLeg
+    ST-Check 'unit (P2): a FAILED map write on a reused zoom name leaves the OLD PNG and its legacy map byte-identical' (
+      $a1zLegErr.Contains('map sidecar NOT written') -and $a1zLegPng1 -eq $a1zLegPng0 -and $a1zLegMap1 -eq $a1zLegMap0 -and $a1zLegBack.OriginX -eq 600 -and $a1zLegBack.OriginY -eq 400 -and $a1zLegBack.PngSha -eq '')
+    [void](Invoke-DesktopCommand 'zoom' @('150', '250', '4', '4', '2', $a1zLeg, '--to', 'a1-host'))
+    $a1zLegBack2 = Read-MapSidecar $a1zLeg
+    $a1zLegPng2 = & $a1Sha $a1zLeg
+    ST-Check 'unit (P2): a successful zoom re-capture over a legacy map rewrites it WITH the new hash and origin' (
+      $a1zLegBack2.OriginX -eq 150 -and $a1zLegBack2.OriginY -eq 250 -and $a1zLegBack2.PngSha.Length -eq 64 -and $a1zLegBack2.PngSha -eq $a1zLegPng2)
   } finally {
     foreach ($a1zn in $a1zNames) { Set-Item -Path ("function:" + $a1zn) -Value $a1zOrig[$a1zn] }
     Remove-Item -LiteralPath @(($a1zMove + '.map.txt'), ($a1zStill + '.map.txt'), ($a1zReuse + '.map.txt')) -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath @($a1zMove, $a1zStill, $a1zReuse) -Force -ErrorAction SilentlyContinue
+    if ($a1zLeg) {
+      Set-ItemProperty -LiteralPath ($a1zLeg + '.map.txt') -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath @($a1zLeg, ($a1zLeg + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    }
   }
   # A1-a: the real handler, real sidecar read, real stale verdict. Resolve-Target only flips a
   # flag and the observation seam returns the moved rect afterwards - the exact review shape:
@@ -23999,6 +24173,12 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # End to end on the road the caller actually drives: a real subprocess, a side-effect-free
   # action (unmap = imgclick minus the click), and the refusal path must NOT be swallowed.
   $xImg = Join-Path $env:TEMP ('x01unmap' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.png')
+  # v4.6.10 (A3): a sidecar whose image is missing is refused at read time now, so this fixture has
+  # to be a real pair. This leg stays the JSON-envelope probe, not the missing-image counterexample.
+  Add-Type -AssemblyName System.Drawing
+  $xImgBmp = New-Object System.Drawing.Bitmap 400, 300
+  $xImgBmp.Save($xImg, [System.Drawing.Imaging.ImageFormat]::Png)
+  $xImgBmp.Dispose()
   [System.IO.File]::WriteAllText($xImg + '.map.txt',
     (@('origin_x=100', 'origin_y=200', 'scale=1', 'out_w=400', 'out_h=300', 'kind=rect') -join "`r`n"),
     (New-Object System.Text.UTF8Encoding($false)))
@@ -31277,7 +31457,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.9 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.10 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.

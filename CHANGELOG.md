@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.10 - 2026-10-29
+
+- **The map is published before the image it describes.** v4.6.8 moved the host re-check in front
+  of the save, but the PNG was still written first and the sidecar second, so a re-capture into an
+  existing name whose sidecar write failed (an old map nobody may write) left a new PNG beside the
+  old map. A sidecar written before v4.6.8 carries no `png_sha256`, so the reader kept its legacy
+  branch and mapped the new pixels through the old origin. Both `rect` and `zoom` now encode the
+  pending PNG in memory, write the sidecar with that PNG's hash first, and only then replace the
+  image: a failed map write leaves the previous PNG and map byte-identical, and an image write that
+  fails afterwards cannot be blessed, because the map names bytes that are not on disk. A
+  successful capture over a legacy map rewrites it with the new hash and origin. No filesystem
+  transaction is claimed; sidecar fields, commands and flags are unchanged.
+
 ## v4.6.9 - 2026-10-28
 
 - **Hashing no longer depends on module autoload.** Every SHA-256 the tool computes (the sidecar

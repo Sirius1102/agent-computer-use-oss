@@ -137,10 +137,17 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       # existing name replaced the image while the old .map.txt stayed behind - a pair that read
       # 'ok' once the window returned. Refuse first, then publish.
       if ($null -ne $hostSnap) { [void](Assert-CaptureHostStable $hostSnap 'zoom') }
-      $dst.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-      $dst.Dispose()
-      $size = (Get-Item -LiteralPath $path).Length
-      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap
+      # v4.6.10 (CU-CLOSEOUT-REVIEW-20261029-01 P2): same publication order as Save-RectEx - the map,
+      # carrying the pending PNG's hash, lands BEFORE the image. A map write that fails (a pre-v4.6.8
+      # read-only map beside a reused name) therefore leaves the old PNG and old map byte-identical
+      # instead of putting new pixels under an old origin the legacy reader still accepts.
+      $msZ = New-Object System.IO.MemoryStream
+      try { $dst.Save($msZ, [System.Drawing.Imaging.ImageFormat]::Png); $zBytes = $msZ.ToArray() } finally { $msZ.Dispose(); $dst.Dispose() }
+      $shaZ = [System.Security.Cryptography.SHA256]::Create()
+      try { $zSha = ([BitConverter]::ToString($shaZ.ComputeHash($zBytes)) -replace '-','').ToLower() } finally { $shaZ.Dispose() }
+      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha
+      [System.IO.File]::WriteAllBytes($path, $zBytes)
+      $size = $zBytes.Length
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"

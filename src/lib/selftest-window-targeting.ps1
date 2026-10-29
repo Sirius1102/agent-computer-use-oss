@@ -339,10 +339,95 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { [void](Read-MapSidecar $a1hPng) } catch { $a1hErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-b): a sidecar whose png_sha256 no longer matches the file is refused at read time (the old map never blesses a replaced PNG)' (
       $a1hErr.Contains('DIFFERENT image') -and $a1hErr.Contains('png_sha256'))
+    # CU-CLOSEOUT-REVIEW-20261029-01 P2: the review's remaining branch - a PRE-v4.6.8 map (no
+    # png_sha256) beside a REUSED name whose MAP WRITE fails. The map is made read-only so the REAL
+    # writer throws; the publication order now puts the map in front of the image, so the PNG must
+    # not be touched and the old origin must stay the only one any reader can obtain.
+    $a1lg = $a1bBase + '-legacy.png'
+    & $a1Png $a1lg
+    $a1lgLegacy = "origin_x=11`r`norigin_y=22`r`nscale=1`r`nout_w=2`r`nout_h=2`r`nkind=rect`r`npid=7`r`nhandle=1234`r`nhost_x=100`r`nhost_y=200`r`nhost_w=300`r`nhost_h=400`r`n"
+    [System.IO.File]::WriteAllText(($a1lg + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1lgPng0 = & $a1Sha $a1lg
+    $a1lgMap0 = & $a1Sha ($a1lg + '.map.txt')
+    $script:a1bObs = $a1bStillRect
+    Set-ItemProperty -LiteralPath ($a1lg + '.map.txt') -Name IsReadOnly -Value $true
+    $a1lgErr = ''
+    try { [void](Save-RectEx 700 450 2 2 $a1lg 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1lgErr = "$($_.Exception.Message)" }
+    Set-ItemProperty -LiteralPath ($a1lg + '.map.txt') -Name IsReadOnly -Value $false
+    $a1lgPng1 = & $a1Sha $a1lg
+    $a1lgMap1 = & $a1Sha ($a1lg + '.map.txt')
+    $a1lgBack = Read-MapSidecar $a1lg
+    ST-Check 'unit (P2): a FAILED map write on a reused name leaves the OLD PNG and its legacy map byte-identical (new pixels never ride an old origin)' (
+      $a1lgErr.Contains('map sidecar NOT written') -and $a1lgPng1 -eq $a1lgPng0 -and $a1lgMap1 -eq $a1lgMap0 -and $a1lgBack.OriginX -eq 11 -and $a1lgBack.OriginY -eq 22 -and $a1lgBack.PngSha -eq '' -and (Test-MapSidecarStale $a1lgBack).Verdict -eq 'ok')
+    [void](Save-RectEx 33 44 2 2 $a1lg 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1lgBack2 = Read-MapSidecar $a1lg
+    $a1lgPng2 = & $a1Sha $a1lg
+    ST-Check 'unit (P2): a successful re-capture over a legacy map rewrites it WITH the new hash and origin (compatibility, not a licence to mismatch)' (
+      $a1lgBack2.OriginX -eq 33 -and $a1lgBack2.OriginY -eq 44 -and $a1lgBack2.PngSha.Length -eq 64 -and $a1lgBack2.PngSha -eq $a1lgPng2)
+    # CU-REMAINDER-FINAL-20261029-01 A2: shot / script steps publish no sidecar. Overwriting a name
+    # that still carries a binding must withdraw it, or the next reader maps new pixels through an
+    # old origin with nothing to compare.
+    $a1ns = $a1bBase + '-nosidecar.png'
+    & $a1Png $a1ns
+    [System.IO.File]::WriteAllText(($a1ns + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    [void](Save-RectEx 20 30 2 2 $a1ns 1.0 -1 @() '' $null $null $null)
+    ST-Check 'unit (A2): a capture that publishes NO sidecar withdraws a previous binding at the same name (shot/script cannot inherit an old origin)' (
+      (-not (Test-Path -LiteralPath ($a1ns + '.map.txt'))) -and (Test-Path -LiteralPath $a1ns))
+    # CU-REMAINDER-FINAL-20261029-01 A3: a png_sha256 line that exists but does not parse as 64 hex
+    # is a damaged hash - it must not be read as the legacy no-hash format.
+    $a1mf = $a1bBase + '-malformed.png'
+    & $a1Png $a1mf
+    $a1mfHead = "origin_x=5`r`norigin_y=6`r`nscale=1`r`nout_w=2`r`nout_h=2`r`nkind=rect`r`n"
+    $a1mfBad = @("png_sha256=`r`n", "png_sha256=abc`r`n", ("png_sha256=" + ('a' * 63) + "`r`n"))
+    $a1mfAllRefused = $true
+    $a1mfMsgs = @()
+    foreach ($a1mfOne in $a1mfBad) {
+      [System.IO.File]::WriteAllText(($a1mf + '.map.txt'), ($a1mfHead + $a1mfOne), (New-Object System.Text.UTF8Encoding($false)))
+      try { [void](Read-MapSidecar $a1mf); $a1mfAllRefused = $false; $a1mfMsgs += 'ACCEPTED:' + $a1mfOne.Trim() }
+      catch { if (-not "$($_.Exception.Message)".Contains('malformed')) { $a1mfAllRefused = $false; $a1mfMsgs += 'OTHER:' + "$($_.Exception.Message)" } }
+    }
+    ST-Check 'unit (A3): png_sha256 present but empty, non-hex or truncated is refused as MALFORMED, never folded into the legacy branch' (
+      $a1mfAllRefused -and (@($a1mfMsgs).Count -eq 0))
+    # CU-REMAINDER-FINAL-20261029-01 A3: a sidecar without its image is not a pair - legacy included.
+    $a1nm = $a1bBase + '-noimage.png'
+    [System.IO.File]::WriteAllText(($a1nm + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1nmErr = ''
+    try { [void](Read-MapSidecar $a1nm) } catch { $a1nmErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (A3): a sidecar whose image is missing is refused at read time for the LEGACY format too (no dangling pair)' (
+      $a1nmErr.Contains('describes an image that is not there'))
+    # CU-REMAINDER-FINAL-20261029-01 A3: the image-write half of a failed publication. The map lands
+    # first (that is the fix), the read-only PNG refuses the replace, and the pair must then REFUSE
+    # instead of letting the new map explain the old pixels.
+    $a1pw = $a1bBase + '-pngreadonly.png'
+    & $a1Png $a1pw
+    [System.IO.File]::WriteAllText(($a1pw + '.map.txt'), $a1lgLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1pwPng0 = & $a1Sha $a1pw
+    $a1pwMap0 = & $a1Sha ($a1pw + '.map.txt')
+    $script:a1bObs = $a1bStillRect
+    Set-ItemProperty -LiteralPath $a1pw -Name IsReadOnly -Value $true
+    $a1pwErr = ''
+    try { [void](Save-RectEx 40 50 2 2 $a1pw 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null) } catch { $a1pwErr = "$($_.Exception.Message)" }
+    Set-ItemProperty -LiteralPath $a1pw -Name IsReadOnly -Value $false
+    $a1pwPng1 = & $a1Sha $a1pw
+    $a1pwMap1 = & $a1Sha ($a1pw + '.map.txt')
+    $a1pwRead = ''
+    try { [void](Read-MapSidecar $a1pw) } catch { $a1pwRead = "$($_.Exception.Message)" }
+    ST-Check 'unit (A3): when the image cannot be replaced after the map landed, the result is a REFUSED pair (old pixels never ride the new map)' (
+      $a1pwPng1 -eq $a1pwPng0 -and $a1pwMap1 -ne $a1pwMap0 -and $a1pwRead.Contains('DIFFERENT image'))
   } finally {
     foreach ($a1bn in $a1bNames) { Set-Item -Path ("function:" + $a1bn) -Value $a1bOrig[$a1bn] }
     Remove-Item -LiteralPath @(($a1bBase + '-snap.png.map.txt'), ($a1bImgMove + '.map.txt'), ($a1bImgStill + '.map.txt'), ($a1rB + '.map.txt'), ($a1hPng + '.map.txt')) -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath @(($a1bBase + '-snap.png'), $a1bImgMove, $a1bImgStill, $a1bImgScript, $a1rB, $a1hPng) -Force -ErrorAction SilentlyContinue
+    foreach ($a1extra in @($a1ns, $a1mf, $a1nm, $a1pw)) {
+      if ($a1extra) {
+        Set-ItemProperty -LiteralPath $a1extra -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath @($a1extra, ($a1extra + '.map.txt')) -Force -ErrorAction SilentlyContinue
+      }
+    }
+    if ($a1lg) {
+      Set-ItemProperty -LiteralPath ($a1lg + '.map.txt') -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath @($a1lg, ($a1lg + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    }
   }
   # A1-b end-to-end on zoom: Resolve-CropHost reads the rect BEFORE the grab; the post-save
   # re-check uses the same observation seam. Only the window lookup/observation is replaced.
@@ -389,10 +474,36 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { [void](Invoke-DesktopCommand 'zoom' @('100', '200', '4', '4', '2', $a1zNew, '--to', 'a1-host')) } catch { $a1zNewErr = "$($_.Exception.Message)" }
     ST-Check 'unit (A1-b): a refused zoom to a NEW name publishes neither the PNG nor a sidecar' (
       $a1zNewErr.Contains('DURING capture') -and (-not (Test-Path -LiteralPath $a1zNew)) -and (-not (Test-Path -LiteralPath ($a1zNew + '.map.txt'))))
+    # CU-CLOSEOUT-REVIEW-20261029-01 P2: the same legacy-map / map-write-failure branch on ZOOM.
+    $a1zLeg = $a1bBase + '-zoom-legacy.png'
+    & $a1Png $a1zLeg
+    $a1zLegacy = "origin_x=600`r`norigin_y=400`r`nscale=2`r`nout_w=4`r`nout_h=4`r`nkind=zoom`r`npid=7`r`nhandle=1234`r`ntitle_b64=YTEtaG9zdA==`r`nhost_x=100`r`nhost_y=200`r`nhost_w=300`r`nhost_h=400`r`n"
+    [System.IO.File]::WriteAllText(($a1zLeg + '.map.txt'), $a1zLegacy, (New-Object System.Text.UTF8Encoding($false)))
+    $a1zLegPng0 = & $a1Sha $a1zLeg
+    $a1zLegMap0 = & $a1Sha ($a1zLeg + '.map.txt')
+    $script:a1zObs = $a1zStillObs
+    Set-ItemProperty -LiteralPath ($a1zLeg + '.map.txt') -Name IsReadOnly -Value $true
+    $a1zLegErr = ''
+    try { [void](Invoke-DesktopCommand 'zoom' @('350', '550', '4', '4', '2', $a1zLeg, '--to', 'a1-host')) } catch { $a1zLegErr = "$($_.Exception.Message)" }
+    Set-ItemProperty -LiteralPath ($a1zLeg + '.map.txt') -Name IsReadOnly -Value $false
+    $a1zLegPng1 = & $a1Sha $a1zLeg
+    $a1zLegMap1 = & $a1Sha ($a1zLeg + '.map.txt')
+    $a1zLegBack = Read-MapSidecar $a1zLeg
+    ST-Check 'unit (P2): a FAILED map write on a reused zoom name leaves the OLD PNG and its legacy map byte-identical' (
+      $a1zLegErr.Contains('map sidecar NOT written') -and $a1zLegPng1 -eq $a1zLegPng0 -and $a1zLegMap1 -eq $a1zLegMap0 -and $a1zLegBack.OriginX -eq 600 -and $a1zLegBack.OriginY -eq 400 -and $a1zLegBack.PngSha -eq '')
+    [void](Invoke-DesktopCommand 'zoom' @('150', '250', '4', '4', '2', $a1zLeg, '--to', 'a1-host'))
+    $a1zLegBack2 = Read-MapSidecar $a1zLeg
+    $a1zLegPng2 = & $a1Sha $a1zLeg
+    ST-Check 'unit (P2): a successful zoom re-capture over a legacy map rewrites it WITH the new hash and origin' (
+      $a1zLegBack2.OriginX -eq 150 -and $a1zLegBack2.OriginY -eq 250 -and $a1zLegBack2.PngSha.Length -eq 64 -and $a1zLegBack2.PngSha -eq $a1zLegPng2)
   } finally {
     foreach ($a1zn in $a1zNames) { Set-Item -Path ("function:" + $a1zn) -Value $a1zOrig[$a1zn] }
     Remove-Item -LiteralPath @(($a1zMove + '.map.txt'), ($a1zStill + '.map.txt'), ($a1zReuse + '.map.txt')) -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath @($a1zMove, $a1zStill, $a1zReuse) -Force -ErrorAction SilentlyContinue
+    if ($a1zLeg) {
+      Set-ItemProperty -LiteralPath ($a1zLeg + '.map.txt') -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath @($a1zLeg, ($a1zLeg + '.map.txt')) -Force -ErrorAction SilentlyContinue
+    }
   }
   # A1-a: the real handler, real sidecar read, real stale verdict. Resolve-Target only flips a
   # flag and the observation seam returns the moved rect afterwards - the exact review shape:

@@ -572,6 +572,12 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # End to end on the road the caller actually drives: a real subprocess, a side-effect-free
   # action (unmap = imgclick minus the click), and the refusal path must NOT be swallowed.
   $xImg = Join-Path $env:TEMP ('x01unmap' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.png')
+  # v4.6.10 (A3): a sidecar whose image is missing is refused at read time now, so this fixture has
+  # to be a real pair. This leg stays the JSON-envelope probe, not the missing-image counterexample.
+  Add-Type -AssemblyName System.Drawing
+  $xImgBmp = New-Object System.Drawing.Bitmap 400, 300
+  $xImgBmp.Save($xImg, [System.Drawing.Imaging.ImageFormat]::Png)
+  $xImgBmp.Dispose()
   [System.IO.File]::WriteAllText($xImg + '.map.txt',
     (@('origin_x=100', 'origin_y=200', 'scale=1', 'out_w=400', 'out_h=300', 'kind=rect') -join "`r`n"),
     (New-Object System.Text.UTF8Encoding($false)))
