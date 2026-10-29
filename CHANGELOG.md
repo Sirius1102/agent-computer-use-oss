@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.6.11 - 2026-10-29
+
+- **The map sidecar is published as a whole file, not written into place.** v4.6.10 fixed the
+  order (map before image) but still handed the finished text to a write on the real
+  `<image>.map.txt` path. A failure after the metadata prefix reached disk and before the trailing
+  `png_sha256` line did left a truncated sidecar that carried a valid origin and no hash: the
+  reader accepted it as a legal pre-v4.6.8 sidecar and mapped the OLD pixels through the NEW
+  origin. The text is now built in memory, written to a sibling `<map>.new-<guid>` file, and
+  published with one `File.Replace` (an existing map) or `File.Move` (a new one) - both single
+  metadata operations. A failure while the temp file is being written, including one halfway
+  through it, never touches the map already at that path; a failure during the publish leaves it
+  in place too. The temp file is deleted in every failure branch, so no partial sidecar survives
+  under a name a reader would pick up. Sidecar fields, the bytes of a successful capture, the
+  commands and the flags are unchanged, and no filesystem transaction is claimed.
+
 ## v4.6.10 - 2026-10-29
 
 - **The map is published before the image it describes.** v4.6.8 moved the host re-check in front

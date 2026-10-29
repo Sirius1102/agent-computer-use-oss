@@ -364,6 +364,53 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $a1lgPng2 = & $a1Sha $a1lg
     ST-Check 'unit (P2): a successful re-capture over a legacy map rewrites it WITH the new hash and origin (compatibility, not a licence to mismatch)' (
       $a1lgBack2.OriginX -eq 33 -and $a1lgBack2.OriginY -eq 44 -and $a1lgBack2.PngSha.Length -eq 64 -and $a1lgBack2.PngSha -eq $a1lgPng2)
+    # v4.6.11 (CU-4610-REVIEW-20261029-01 P2): the writer must publish the sidecar as a WHOLE
+    # file. The behavioural controls below can only observe the failures the OS hands us (a
+    # read-only map, a read-only image); a failure halfway through the write is not one of them,
+    # so the shape that makes it harmless is pinned here: the final map path is never the target
+    # of a file write, and the publish goes through a sibling temp file with one Replace/Move.
+    $a1pbBody = @()
+    $a1pbStart = -1
+    for ($a1pbi = 0; $a1pbi -lt $codeLines.Count; $a1pbi++) {
+      if ($a1pbStart -lt 0) {
+        if ($codeLines[$a1pbi] -match '^function Write-MapSidecar\(') { $a1pbStart = $a1pbi }
+        continue
+      }
+      if ($codeLines[$a1pbi] -match '^function ') { break }
+      $a1pbBody += [string]$codeLines[$a1pbi]
+    }
+    $a1pbDirect = @($a1pbBody | Where-Object { $_ -notmatch '^\s*#' -and $_ -match 'WriteAllText\(' -and $_ -match '\.map\.txt' })
+    $a1pbTemp = @($a1pbBody | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('WriteAllText($tmpPath') })
+    $a1pbPublish = @($a1pbBody | Where-Object { $_ -notmatch '^\s*#' -and ($_.Contains('Replace($tmpPath, $mapPath') -or $_.Contains('Move($tmpPath, $mapPath')) })
+    ST-Check 'lint (P2-b): the sidecar writer never writes the final map path directly - it publishes a whole temp file, so a mid-write failure cannot truncate a live map' (
+      ($a1pbStart -ge 0) -and (@($a1pbDirect).Count -eq 0) -and (@($a1pbTemp).Count -eq 1) -and (@($a1pbPublish).Count -ge 1))
+    if (-not (($a1pbStart -ge 0) -and (@($a1pbDirect).Count -eq 0) -and (@($a1pbTemp).Count -eq 1) -and (@($a1pbPublish).Count -ge 1))) {
+      Write-Output ('      P2-b shape: start=' + $a1pbStart + ' body=' + @($a1pbBody).Count + ' direct=' + @($a1pbDirect).Count + ' temp=' + @($a1pbTemp).Count + ' publish=' + @($a1pbPublish).Count)
+    }
+    # The temp file must not survive any branch: on success the publish consumes it, on failure
+    # the catch deletes it. Left behind, it would be a partial sidecar under a name no reader
+    # picks up - harmless to reads, but a liar to the next person looking at the directory.
+    $a1pbFailLeft = @(Get-ChildItem -LiteralPath (Split-Path -Parent $a1lg) -Filter '*.map.txt.new-*' -Force -ErrorAction SilentlyContinue)
+    ST-Check 'unit (P2-b): a refused map publish deletes its own temp file (no partial sidecar is left behind)' (
+      ($a1lgErr.Contains('map sidecar NOT written')) -and (@($a1pbFailLeft).Count -eq 0))
+    # Both publish branches, measured: a first capture at a new name must take the Move branch,
+    # a same-name re-capture the Replace branch, and neither may leave a temp file.
+    $a1pbDir = $a1bBase + '-pub'
+    New-Item -ItemType Directory -Force -Path $a1pbDir | Out-Null
+    $a1pbNew = Join-Path $a1pbDir 'fresh.png'
+    $script:a1bObs = $a1bStillRect
+    [void](Save-RectEx 60 70 2 2 $a1pbNew 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1pbLeft = @(Get-ChildItem -LiteralPath $a1pbDir -Filter '*.new-*' -Force -ErrorAction SilentlyContinue)
+    $a1pbBack = Read-MapSidecar $a1pbNew
+    [void](Save-RectEx 80 90 2 2 $a1pbNew 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1pbLeft2 = @(Get-ChildItem -LiteralPath $a1pbDir -Filter '*.new-*' -Force -ErrorAction SilentlyContinue)
+    $a1pbBack2 = Read-MapSidecar $a1pbNew
+    ST-Check 'unit (P2-b): the first capture (move branch) and a same-name re-capture (replace branch) publish a readable map and leave no temp sidecar behind' (
+      (@($a1pbLeft).Count -eq 0) -and (@($a1pbLeft2).Count -eq 0) -and
+      $a1pbBack.OriginX -eq 60 -and $a1pbBack.OriginY -eq 70 -and
+      $a1pbBack2.OriginX -eq 80 -and $a1pbBack2.OriginY -eq 90 -and
+      $a1pbBack2.PngSha.Length -eq 64 -and $a1pbBack2.PngSha -eq (& $a1Sha $a1pbNew))
+    Remove-Item -LiteralPath $a1pbDir -Recurse -Force -ErrorAction SilentlyContinue
     # CU-REMAINDER-FINAL-20261029-01 A2: shot / script steps publish no sidecar. Overwriting a name
     # that still carries a binding must withdraw it, or the next reader maps new pixels through an
     # old origin with nothing to compare.

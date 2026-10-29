@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.10  (version sync list lives in the project overview doc)
+# version: 4.6.11  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.10'
+$script:ToolVersion = '4.6.11'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -487,7 +487,11 @@ Set-StrictMode -Version Latest
 # binding at the same name, a png_sha256 that is present but empty/non-hex/truncated is refused as
 # malformed (not folded into the legacy branch), a legacy map without its image is refused, and a
 # refused image replace after the map landed leaves a pair that refuses (1114 -> 1118).
-$script:DeclaredCheckTotal = 1118
+# v4.6.11 (CU-4610-REVIEW-20261029-01 P2): +3 - the writer publishes through a temp file and never
+# hands the final map path to a file write (shape lint), a refused publish deletes its own temp file,
+# and both publish branches (move for a new name, replace for a reused one) read back with no temp
+# left behind (1118 -> 1121).
+$script:DeclaredCheckTotal = 1121
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2359,7 +2363,9 @@ $script:StFamilyCounts = @{
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
   # malformed-hash and missing-image controls add 111 more lines and no banner (+111 -> 1644).
-  'window-targeting' = 'banners=11,lines=1644'
+  # v4.6.11 (CU-4610-REVIEW-20261029-01 P2): the whole-file publish lint, the temp-file cleanup
+  # control and the move/replace branch control add 47 more lines and no banner (+47 -> 1691).
+  'window-targeting' = 'banners=11,lines=1691'
   'expect-family' = 'banners=9,lines=705'
   'clipboard-input' = 'banners=4,lines=190'
   'docs-contract' = 'banners=12,lines=646'
@@ -2424,11 +2430,13 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # the MEASURED one, and the row still requires an exact match.
 # v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A2/A3): WindowTargeting 198 -> 206 for the eight
 # legacy-map / failed-write / no-sidecar / malformed-hash / missing-image controls added there.
+# v4.6.11 (CU-4610-REVIEW-20261029-01 P2): 206 -> 209 for the whole-file publish shape lint, the
+# temp-file cleanup control and the move/replace branch control.
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=107',
   'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=206',
+  'Invoke-SelftestFamily-WindowTargeting=209',
   'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
@@ -4020,10 +4028,29 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
     try { $shaS = [System.IO.File]::OpenRead($imagePath); try { $pngSha = ([BitConverter]::ToString($shaH.ComputeHash($shaS)) -replace '-','').ToLower() } finally { $shaS.Dispose() } } finally { $shaH.Dispose() }
   }
   $text += "png_sha256=$pngSha`r`n"
-  # v4.6.10 (P2): a refusal here must be legible - it is the point at which the capture stops, and
-  # any image already at this path is left byte-identical with the map that still describes it.
-  try { [System.IO.File]::WriteAllText(($imagePath + '.map.txt'), $text, (New-Object System.Text.UTF8Encoding($false))) }
-  catch { throw "map sidecar NOT written: $($imagePath).map.txt - $($_.Exception.Message) - the capture is refused BEFORE the image is replaced; an image already at that path and its map stay byte-identical - fix the write permission (or capture under a new name) and re-capture" }
+  # v4.6.11 (CU-4610-REVIEW-20261029-01 P2): the sidecar is published as a WHOLE FILE, not written
+  # into its final path. v4.6.10 fixed the ORDER (map before image) but still handed the complete
+  # text to WriteAllText on the real path: a failure AFTER the metadata prefix reached disk and
+  # BEFORE the trailing hash line did left a truncated map that the reader accepted as a legal
+  # pre-v4.6.8 sidecar - so the OLD png was mapped through the NEW origin. The text is now built in
+  # memory, written to a sibling temp file, and published with one File.Replace (existing map) or
+  # File.Move (new path); both are single-directory metadata operations, atomic on NTFS. A failure
+  # while writing the temp file, including one halfway through it, never touches the map already at
+  # that path; a failure during the publish leaves it in place too, because Replace/Move either
+  # completes or does not modify the destination. The temp file is deleted in every failure branch,
+  # so no partial sidecar can survive under a name any reader would pick up. This is NOT a two-file
+  # transaction and does not claim one: the image is still replaced after the map, and an image
+  # write that fails afterwards leaves a map naming bytes that are not on disk (refused at read).
+  $mapPath = $imagePath + '.map.txt'
+  $tmpPath = $mapPath + '.new-' + [guid]::NewGuid().ToString('N')
+  try {
+    [System.IO.File]::WriteAllText($tmpPath, $text, (New-Object System.Text.UTF8Encoding($false)))
+    if ([System.IO.File]::Exists($mapPath)) { [System.IO.File]::Replace($tmpPath, $mapPath, [NullString]::Value) }
+    else { [System.IO.File]::Move($tmpPath, $mapPath) }
+  } catch {
+    if ([System.IO.File]::Exists($tmpPath)) { try { [System.IO.File]::Delete($tmpPath) } catch { } }
+    throw "map sidecar NOT written: $mapPath - $($_.Exception.Message) - the capture is refused BEFORE the image is replaced; the sidecar is published as a whole file, so a failed write leaves any map already at that path byte-identical - fix the write permission (or capture under a new name) and re-capture"
+  }
 }
 
 # Reads <image>.map.txt back. A missing or malformed sidecar is an ERROR that
@@ -20782,6 +20809,53 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $a1lgPng2 = & $a1Sha $a1lg
     ST-Check 'unit (P2): a successful re-capture over a legacy map rewrites it WITH the new hash and origin (compatibility, not a licence to mismatch)' (
       $a1lgBack2.OriginX -eq 33 -and $a1lgBack2.OriginY -eq 44 -and $a1lgBack2.PngSha.Length -eq 64 -and $a1lgBack2.PngSha -eq $a1lgPng2)
+    # v4.6.11 (CU-4610-REVIEW-20261029-01 P2): the writer must publish the sidecar as a WHOLE
+    # file. The behavioural controls below can only observe the failures the OS hands us (a
+    # read-only map, a read-only image); a failure halfway through the write is not one of them,
+    # so the shape that makes it harmless is pinned here: the final map path is never the target
+    # of a file write, and the publish goes through a sibling temp file with one Replace/Move.
+    $a1pbBody = @()
+    $a1pbStart = -1
+    for ($a1pbi = 0; $a1pbi -lt $codeLines.Count; $a1pbi++) {
+      if ($a1pbStart -lt 0) {
+        if ($codeLines[$a1pbi] -match '^function Write-MapSidecar\(') { $a1pbStart = $a1pbi }
+        continue
+      }
+      if ($codeLines[$a1pbi] -match '^function ') { break }
+      $a1pbBody += [string]$codeLines[$a1pbi]
+    }
+    $a1pbDirect = @($a1pbBody | Where-Object { $_ -notmatch '^\s*#' -and $_ -match 'WriteAllText\(' -and $_ -match '\.map\.txt' })
+    $a1pbTemp = @($a1pbBody | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('WriteAllText($tmpPath') })
+    $a1pbPublish = @($a1pbBody | Where-Object { $_ -notmatch '^\s*#' -and ($_.Contains('Replace($tmpPath, $mapPath') -or $_.Contains('Move($tmpPath, $mapPath')) })
+    ST-Check 'lint (P2-b): the sidecar writer never writes the final map path directly - it publishes a whole temp file, so a mid-write failure cannot truncate a live map' (
+      ($a1pbStart -ge 0) -and (@($a1pbDirect).Count -eq 0) -and (@($a1pbTemp).Count -eq 1) -and (@($a1pbPublish).Count -ge 1))
+    if (-not (($a1pbStart -ge 0) -and (@($a1pbDirect).Count -eq 0) -and (@($a1pbTemp).Count -eq 1) -and (@($a1pbPublish).Count -ge 1))) {
+      Write-Output ('      P2-b shape: start=' + $a1pbStart + ' body=' + @($a1pbBody).Count + ' direct=' + @($a1pbDirect).Count + ' temp=' + @($a1pbTemp).Count + ' publish=' + @($a1pbPublish).Count)
+    }
+    # The temp file must not survive any branch: on success the publish consumes it, on failure
+    # the catch deletes it. Left behind, it would be a partial sidecar under a name no reader
+    # picks up - harmless to reads, but a liar to the next person looking at the directory.
+    $a1pbFailLeft = @(Get-ChildItem -LiteralPath (Split-Path -Parent $a1lg) -Filter '*.map.txt.new-*' -Force -ErrorAction SilentlyContinue)
+    ST-Check 'unit (P2-b): a refused map publish deletes its own temp file (no partial sidecar is left behind)' (
+      ($a1lgErr.Contains('map sidecar NOT written')) -and (@($a1pbFailLeft).Count -eq 0))
+    # Both publish branches, measured: a first capture at a new name must take the Move branch,
+    # a same-name re-capture the Replace branch, and neither may leave a temp file.
+    $a1pbDir = $a1bBase + '-pub'
+    New-Item -ItemType Directory -Force -Path $a1pbDir | Out-Null
+    $a1pbNew = Join-Path $a1pbDir 'fresh.png'
+    $script:a1bObs = $a1bStillRect
+    [void](Save-RectEx 60 70 2 2 $a1pbNew 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1pbLeft = @(Get-ChildItem -LiteralPath $a1pbDir -Filter '*.new-*' -Force -ErrorAction SilentlyContinue)
+    $a1pbBack = Read-MapSidecar $a1pbNew
+    [void](Save-RectEx 80 90 2 2 $a1pbNew 1.0 -1 @() 'rect' $a1bFakeWin $a1bSnap $null)
+    $a1pbLeft2 = @(Get-ChildItem -LiteralPath $a1pbDir -Filter '*.new-*' -Force -ErrorAction SilentlyContinue)
+    $a1pbBack2 = Read-MapSidecar $a1pbNew
+    ST-Check 'unit (P2-b): the first capture (move branch) and a same-name re-capture (replace branch) publish a readable map and leave no temp sidecar behind' (
+      (@($a1pbLeft).Count -eq 0) -and (@($a1pbLeft2).Count -eq 0) -and
+      $a1pbBack.OriginX -eq 60 -and $a1pbBack.OriginY -eq 70 -and
+      $a1pbBack2.OriginX -eq 80 -and $a1pbBack2.OriginY -eq 90 -and
+      $a1pbBack2.PngSha.Length -eq 64 -and $a1pbBack2.PngSha -eq (& $a1Sha $a1pbNew))
+    Remove-Item -LiteralPath $a1pbDir -Recurse -Force -ErrorAction SilentlyContinue
     # CU-REMAINDER-FINAL-20261029-01 A2: shot / script steps publish no sidecar. Overwriting a name
     # that still carries a binding must withdraw it, or the next reader maps new pixels through an
     # old origin with nothing to compare.
@@ -31457,7 +31531,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.10 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
