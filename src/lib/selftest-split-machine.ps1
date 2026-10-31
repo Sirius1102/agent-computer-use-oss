@@ -268,8 +268,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     if ($a07C -lt 1) { $a07MovedNotes += ('moved-missing:' + [string]$a07Mn) }
   }
   $a07LtCount = @($a07LtSplit).Count
+  # v4.7.0 B-2 (measured, not relaxed): the two $script:LogOriginMode load-time assignments at the
+  # dispatcher (empty default + the selftest-mode set) put the table at 91 names / 118 assignments;
+  # the pins below were still the D-3 numbers (90/116) and lagged the table they sit next to.
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 109) -and (@($script:StLoadTimeNames).Count -eq 87) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 118) -and (@($script:StLoadTimeNames).Count -eq 91) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -352,10 +355,16 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     $ActionLog = $a08Old
     if (Test-Path -LiteralPath $a08Log) { Remove-Item -LiteralPath $a08Log -Force }
   }
+  # v4.6.13 (D-3): the planted line now carries the fifth origin column too, so the assertion below
+  # checks BOTH the legacy quoting columns and the new one. v4.7.0 B-2: that column is resolved per
+  # context (Resolve-AuditOrigin: explicit tag > declared mode > caller env > unknown), and inside
+  # the gate the declared mode IS 'selftest' - that is the whole point of B-2, a gate-written audit
+  # line being tellable from a human's without anyone typing a tag. The unknown default is pinned by
+  # the B-2 resolver legs in the audit-output family, not by this planted line.
   ST-Check 'unit (A-08): an omitted command name throws instead of writing an empty audit column, and a planted name lands in the second column with the argument quoting untouched' (
-    ($a08Threw.Contains('third argument')) -and ($a08ThrewEmpty.Contains('third argument')) -and (@($a08Parts).Count -eq 4) -and
+    ($a08Threw.Contains('third argument')) -and ($a08ThrewEmpty.Contains('third argument')) -and (@($a08Parts).Count -eq 5) -and
     ([string]$a08Parts[1] -ceq 'planted-name') -and
-    ([string]$a08Parts[2] -ceq "one 'it''s here'") -and ([string]$a08Parts[3] -ceq 'planted-target') -and (([string]$a08Parts[0]).EndsWith(' UTC')))
+    ([string]$a08Parts[2] -ceq "one 'it''s here'") -and ([string]$a08Parts[3] -ceq 'planted-target') -and ([string]$a08Parts[4] -ceq 'origin=selftest') -and (([string]$a08Parts[0]).EndsWith(' UTC')))
   Write-Output ('      A-08 planted audit line: parts=' + @($a08Parts).Count + ' [' + ($a08Parts -join ' || ') + ']')
   Write-Output ('      A-08: name sources=' + @($a08Args).Count + ' declared=' + @($script:StCommandNameArgs).Count +
     ' helpers=' + $a08Seen.Count + '/5 alignment=[' + $a08Align + '] planted-stub-note=' + $a08PlantNote)
@@ -387,14 +396,16 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09PlantNote = Get-UndeclaredVarUseDiscrepancy $a09PlantParsed $a09Var $true
   ST-Check 'lint (A-09): every use of the dispatcher command variable sits in an owner that declares it, a planted borrower is named with its count while a planted owner is left alone, and the top-level exemption is itself load-bearing' (
     ($a09Undeclared -ceq '') -and ($a09PlantNote.Contains('fn:F-Borrower=uses1-undeclared')) -and
-    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses15-without-entry-param')))
+    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses17-without-entry-param')))
   if ($a09Undeclared -ne '') { Write-Output ('      undeclared uses: ' + $a09Undeclared) }
   $a09DYes = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Owner' 'Cmd'
   $a09DNo = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Borrower' 'Cmd'
   $a09DAbsent = Get-FunctionDeclaresParameter $a09PlantParsed 'F-No-Such' 'Cmd'
+  # uses 88 -> 89: the B-2 selftest-mode origin set adds one top-level read of the dispatcher
+  # variable (registered as <script>=17 above).
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, and the registered owners account for every use of the dispatcher variable (the count is in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 87) -and (@($script:StCmdVarUses).Count -eq 46))
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 89) -and (@($script:StCmdVarUses).Count -eq 46))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
     ' bare-reads-in-audited-body=' + $a09Bare + ' own-param-uses=' + $a09OwnUses + ' undeclared=[' + $a09Undeclared + ']')
@@ -521,7 +532,23 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     # CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b): the capture-ocr family gained the W-1 budget
     # banner, so the pin moves to 167 - again measured, and the agreement table still has to
     # be empty for the row to pass.
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 167) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # v4.6.12 (item-0, live stderr resilience): the live-suite family gained the child
+    # caller-identity banner, so the pin moves to 168 - again measured, and the agreement
+    # table still has to be empty for the row to pass.
+    # D-1 (v4.6.13): the capture-ocr family gained the PT profile/anchor banner, so the
+    # pin moves to 169 - measured the same way, agreement table still required to be empty.
+    # D-3 (v4.6.13): the audit-output family gained the origin-column banner, so the pin
+    # moves to 170 - same method, same empty agreement table.
+    # D-2 (v4.6.13): the window-targeting family gained the tile/stitch banner, so the pin
+    # moves to 171 - same method, same empty agreement table.
+    # D-4 (v4.6.13): the same family gained the grid-denoise banner, so the pin moves to 172.
+    # D-5 (v4.6.13): and the cluster-color banner, so it moves to 173 - same method, same
+    # empty agreement table.
+    # v4.8.0 B-round (b-wip-r7): the B-1 calibration banner in capture-ocr (which sat UNCLAIMED
+    # until its fragment learned the title's version prefix), the B-2 origin/archive banner in
+    # audit-output, the B-3 grid-proximity banner and the C capture-quality banner in
+    # window-targeting bring the body to 177.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 177) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')
@@ -874,11 +901,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (30/23/24/8 = all 85)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (39/23/26/10 = all 98)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (30/23/24/8 = all 85)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (39/23/26/10 = all 98)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +

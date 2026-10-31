@@ -8,7 +8,7 @@
 
 # v4.4.0 (A-15): imgclick - the case body, verbatim
 function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
-      # imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified]
+      # imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified] [--on-grid-alert <px>]
       # v1.5.0 WP-3: reverse-map an image pixel through <outPath>.map.txt and
       # click the derived screen point. Replaces painted-out ix/scale math;
       # --dry prints the mapping and stops. A missing sidecar is a hard error.
@@ -25,8 +25,14 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       $dry = [bool]$own.Values['--dry']
       $staleOk = [bool]$own.Values['--stale-ok']
       $requireVer = [bool]$own.Values['--require-verified']
+      # B-3 (v4.8.0): the margin is the CALLER's, and "the caller did not speak" is a different
+      # fact from "the caller said 0" - with an unknown line width only a spoken margin can raise
+      # an alert, so the distinction has to survive to the measuring function. -1 = nobody asked.
+      $alertGiven = [bool]$own.Present['--on-grid-alert']
+      $alertPx = -1.0
+      if ($alertGiven) { $alertPx = [double]$own.Values['--on-grid-alert'] }
       $p = Split-Target @($own.Rest) 'imgclick'
-      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified]' }
+      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified] [--on-grid-alert <px>]' }
       if ($requireVer -and $staleOk) { throw 'imgclick: --require-verified and --stale-ok contradict each other - one refuses anything not verified, the other explicitly maps against a stale origin; pick one' }
       $img = $p.Words[0]
       $ix = [int]$p.Words[1]; $iy = [int]$p.Words[2]
@@ -44,8 +50,11 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       elseif ($st.Verdict -eq 'stale') { $staleNote = "  [stale-ok] $($st.Msg)" }
       # v1.5.7 (D-6, owner's added condition): grid lines are painted ON this image, so a
       # point read off it can land on a line. Silently mapping it through would be the
-      # same class of lie as an unstated truncation.
-      $gridWarn = $(if ($map.Grid -gt 0) { "  WARNING: source image carries a grid overlay (step=$($map.Grid)px, labelled in screen coords) - a point measured off it may sit on a grid line; read the labels or prefer find-text <small region> --needle <text>" } else { '' })
+      # same class of lie as an unstated truncation. B-3 (v4.8.0): the warning now MEASURES
+      # that risk for THIS point instead of asserting it for every point on the image -
+      # the distances are printed in both units, and only a point inside the alert radius
+      # is called near.
+      $gridWarn = Format-GridProximity (Resolve-GridProximity $ix $iy $map.Grid $map.Scale $map.OriginX $map.OriginY ([string]$map.GridStyle) $alertPx $map.OutW $map.OutH) ([int]$map.Grid) ([string]$map.GridStyle)
       # v1.7.0 (J-07 A, "do not lose" #1): the echo must carry the mapping provenance -
       # which sidecar, and the actual image->screen formula (scale-aware: 1:1 wins read
       # "screen = image + (L,T)", scaled rect/zoom reads "screen = image / k + (L,T)").
@@ -104,10 +113,20 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       $x = [int]$Rest[0]; $y = [int]$Rest[1]; $w = [int]$Rest[2]; $h = [int]$Rest[3]
       if ($w -le 0 -or $h -le 0) { throw 'zoom: w and h must be positive' }
       $scale = 2.0; $path = ''
+      # C (v4.8.0): the quality flags ride the SAME grammar as win/rect/shot - one consumer
+      # (Test-CaptureQualityFlag), so the value rules cannot drift between capture commands.
+      # zoom used to push any unrecognised token into $path, which is exactly the
+      # "accepted and did something else" shape: --min-ink became an output filename.
+      $q = New-CaptureQualityDefaults
       if ($Rest.Count -gt 4) {
-        foreach ($a in @($Rest[4..($Rest.Count - 1)])) {
-          if ($a -match '^\d+(\.\d+)?$') { $scale = [double]$a }
-          elseif (-not $path) { $path = $a }
+        $zi = 4
+        while ($zi -lt $Rest.Count) {
+          $za = [string]$Rest[$zi]
+          if (Test-CaptureQualityFlag $za $Rest ([ref]$zi) $q) { $zi++; continue }
+          if ($za -match '^\d+(\.\d+)?$') { $scale = [double]$za }
+          elseif (-not $path) { $path = $za }
+          else { throw "zoom: unexpected argument '$za' (usage: zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] plus the capture-quality flags - see 'desktop.ps1 help zoom')" }
+          $zi++
         }
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
@@ -121,10 +140,32 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
         $hostSnap = Get-CaptureHostSnapshot $ch
       }
       Ensure-OutDir
-      $src = New-Object System.Drawing.Bitmap($w, $h)
-      $gs = [System.Drawing.Graphics]::FromImage($src)
-      $gs.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
-      $gs.Dispose()
+      # C (v4.8.0): the bounded re-capture loop, on the 1:1 SOURCE frame (the NearestNeighbor
+      # enlarge happens AFTER the gate - measuring the enlarged frame would grade the
+      # interpolator). Default semantics unchanged: no --min-ink means one capture, exactly as
+      # before. A refused frame publishes nothing - the sidecar and the PNG are written after the
+      # loop, so a refused capture leaves a same-name previous pair byte-identical.
+      $qGateOn = ([double]$q['MinInk'] -ge 0)
+      $zCap = {
+        param([int]$n)
+        $zb = New-Object System.Drawing.Bitmap($w, $h)
+        $zg = [System.Drawing.Graphics]::FromImage($zb)
+        $zg.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+        $zg.Dispose()
+        return $zb
+      }
+      if (-not $qGateOn) {
+        $src = & $zCap 1
+      } else {
+        $zPre = {
+          param([int]$n)
+          if ($null -ne $hostSnap) { [void](Assert-CaptureHostStable $hostSnap 'zoom') }
+        }
+        $zcap = Invoke-BoundedCapture $zCap $q $zPre
+        $src = $zcap.Frame
+        foreach ($zl in @($zcap.Lines)) { Write-Output $zl }
+        Write-Output ("  quality: verdict=pass attempts=$($zcap.Attempts) spent=$($zcap.SpentMs)ms budget=$([int]$q['RetryBudget'])ms occlusion=not re-checked (no gate on this path)")
+      }
       $ow = [int]($w * $scale); $oh = [int]($h * $scale)
       $dst = New-Object System.Drawing.Bitmap($ow, $oh)
       $gd = [System.Drawing.Graphics]::FromImage($dst)
@@ -431,7 +472,106 @@ function Invoke-Handler-unmap([string]$Cmd, [string[]]$Rest) {
       elseif ($st.Verdict -eq 'stale') { $staleNote = "  [stale-ok] $($st.Msg)" }
       # v1.5.7 (D-6): same admission as imgclick - unmap prints only, so the grid note
       # belongs on its output too (the number it prints may have been read off a line).
-      $gridWarn = $(if ($map.Grid -gt 0) { "  WARNING: source image carries a grid overlay (step=$($map.Grid)px, labelled in screen coords)" } else { '' })
+      # B-3 (v4.8.0): measured for this point; unmap has no margin knob, so an unknown
+      # line width means distances with no verdict - which is what it prints.
+      $gridWarn = Format-GridProximity (Resolve-GridProximity $ix $iy $map.Grid $map.Scale $map.OriginX $map.OriginY ([string]$map.GridStyle) (-1.0) $map.OutW $map.OutH) ([int]$map.Grid) ([string]$map.GridStyle)
       "unmap: $($Rest[0]) ($($map.OutW)x$($map.OutH) kind=$($map.Kind) scale=$($map.Scale)) image ($ix,$iy) -> screen ($($sp.X),$($sp.Y))$staleNote$gridWarn"
+}
+
+# D-2 (v4.6.13): tile - one wide region written as a SET of PNGs, each with its own map
+function Invoke-Handler-tile([string]$Cmd, [string[]]$Rest) {
+      # tile <x> <y> <w> <h> (--tile WxH | --grid CxR) --out-dir <dir> [--overlap px]
+      # A region no single capture can carry is written as one PNG plus one map per cell.
+      # Every tile map records the WHOLE grid and the REGION origin, so unmap on ANY tile
+      # prints GLOBAL screen coordinates - the caller never adds an offset by hand - and
+      # 'stitch' rebuilds the region from the set without being told the geometry again.
+      # --overlap keeps a shared strip between neighbours so a cut through glyphs can be
+      # read in at least one tile. Every tile is written 1:1: a downscaled tile set cannot
+      # be stitched back into the same pixels.
+      $own = Strip-OwnFlags $Rest 'tile'
+      $outDir = [string]$own.Values['--out-dir']
+      $tileSpec = [string]$own.Values['--tile']
+      $gridSpec = [string]$own.Values['--grid']
+      $overlap = [int]$own.Values['--overlap']
+      $Rest = @($own.Rest)
+      if ($Rest.Count -ne 4) { throw 'usage: tile <x> <y> <w> <h> (--tile WxH | --grid CxR) --out-dir <dir> [--overlap px]' }
+      if (-not $outDir) { throw 'tile: --out-dir is required - the set needs a directory that holds this run and nothing else' }
+      if ($tileSpec -and $gridSpec) { throw "tile: --tile $tileSpec and --grid $gridSpec describe two different plans - pass exactly one" }
+      if (-not $tileSpec -and -not $gridSpec) { throw 'tile: exactly one plan is required: --tile WxH (tile size) or --grid CxR (columns x rows)' }
+      $x = [int]$Rest[0]; $y = [int]$Rest[1]; $w = [int]$Rest[2]; $h = [int]$Rest[3]
+      $mode = 'tile'; $spec = $tileSpec
+      if ($gridSpec) { $mode = 'grid'; $spec = $gridSpec }
+      $mm = [regex]::Match($spec, '^\s*([0-9]+)\s*[xX]\s*([0-9]+)\s*$')
+      if (-not $mm.Success) { throw "tile: --$mode expects <number>x<number>, got: $spec" }
+      $tw = 0; $th = 0; $cols = 0; $rows = 0
+      if ($mode -eq 'tile') { $tw = [int]$mm.Groups[1].Value; $th = [int]$mm.Groups[2].Value }
+      else { $cols = [int]$mm.Groups[1].Value; $rows = [int]$mm.Groups[2].Value }
+      $plan = Get-TilePlan $x $y $w $h $mode $tw $th $cols $rows $overlap
+      $outFull = [System.IO.Path]::GetFullPath($outDir)
+      $outParent = Split-Path -Parent $outFull
+      if (-not $outParent -or -not (Test-Path -LiteralPath $outParent -PathType Container)) { throw "tile: the parent of --out-dir does not exist: $outParent - create it first (this command creates only the last level)" }
+      if (Test-Path -LiteralPath $outFull -PathType Leaf) { throw "tile: --out-dir points at a file: $outFull" }
+      if (-not (Test-Path -LiteralPath $outFull -PathType Container)) { [void][System.IO.Directory]::CreateDirectory($outFull) }
+      $existing = @(Get-ChildItem -LiteralPath $outFull -File -Filter 'tile_*.png.map.txt')
+      if (@($existing).Count -gt 0) { throw "tile: $outFull already holds $(@($existing).Count) tile map(s) from an earlier run - one directory = one set (stitch refuses duplicate cells); pass a fresh --out-dir" }
+      $grab = {
+        param([int]$gx, [int]$gy, [int]$gw, [int]$gh)
+        $b = New-Object System.Drawing.Bitmap($gw, $gh)
+        try {
+          $g = [System.Drawing.Graphics]::FromImage($b)
+          try { $g.CopyFromScreen($gx, $gy, 0, 0, (New-Object System.Drawing.Size($gw, $gh))) } finally { $g.Dispose() }
+        } catch { $b.Dispose(); throw }
+        return $b
+      }
+      $stamp = (Get-Date -Format 'yyyyMMddTHHmmssfff') + '_' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+      $tiles = @(Export-TileSet $plan $outFull $stamp $grab)
+      "saved $($tiles.Count) tile(s) to $outFull  region=($x,$y) ${w}x${h} plan=$mode $($plan.Cols)x$($plan.Rows) stride=$($plan.StepX)x$($plan.StepY) overlap=$overlap"
+      $shown = 0
+      foreach ($t in $tiles) {
+        if ($shown -lt 12) {
+          $shown++
+          "  tile r$($t.R)c$($t.C)  screen=($($t.X),$($t.Y)) $($t.W)x$($t.H)  bytes=$($t.Bytes)  map: $($t.Path).map.txt"
+        }
+      }
+      if ($tiles.Count -gt $shown) { "  ... and $($tiles.Count - $shown) more not listed here (the set is complete: $($tiles.Count) images on disk)" }
+      "unmap: unmap <tile.png> <ix> <iy> prints GLOBAL screen coords for that tile (screen = image + the tile origin recorded in its map)"
+      "stitch: stitch <dir> <out.png>  (rebuilds the whole region from these maps, cropping the overlap)"
+}
+
+# D-2 (v4.6.13): stitch - rebuild a tile set into the one image it was cut from
+function Invoke-Handler-stitch([string]$Cmd, [string[]]$Rest) {
+      # stitch <dir> <out.png>
+      # Rebuilds the region a 'tile' run cut up. Each tile contributes exactly its stride
+      # and the last one per axis contributes the remainder, so every output pixel has one
+      # owner - the first tile that covers it - and no resampling happens anywhere.
+      # The output carries a kind=stitch map at the REGION origin, so unmap/imgclick work
+      # on the rebuilt image exactly as they do on a single capture.
+      $own = Strip-OwnFlags $Rest 'stitch'
+      $Rest = @($own.Rest)
+      if ($Rest.Count -ne 2) { throw 'usage: stitch <dir> <out.png>' }
+      $dir = [string]$Rest[0]
+      $outPath = [string]$Rest[1]
+      $plan = Get-StitchPlan $dir
+      $outFull = [System.IO.Path]::GetFullPath($outPath)
+      $outParent = Split-Path -Parent $outFull
+      if (-not $outParent -or -not (Test-Path -LiteralPath $outParent -PathType Container)) { throw "stitch: the output directory does not exist: $outParent" }
+      if (Test-Path -LiteralPath $outFull -PathType Container) { throw "stitch: <out.png> is a directory: $outFull" }
+      foreach ($t in @($plan.Tiles)) {
+        if ([System.IO.Path]::GetFullPath([string]$t.Path) -eq $outFull) { throw "stitch: <out.png> points at one of the tiles ($($t.Path)) - a stitch must not overwrite its own input" }
+      }
+      $bmp = Convert-TileSetToBitmap $plan
+      try {
+        $msS = New-Object System.IO.MemoryStream
+        try { $bmp.Save($msS, [System.Drawing.Imaging.ImageFormat]::Png); $sBytes = $msS.ToArray() } finally { $msS.Dispose() }
+      } finally { $bmp.Dispose() }
+      $shaH = [System.Security.Cryptography.SHA256]::Create()
+      try { $sSha = ([BitConverter]::ToString($shaH.ComputeHash($sBytes)) -replace '-', '').ToLower() } finally { $shaH.Dispose() }
+      # Same publication order as every capture: the map (naming the pending PNG's hash)
+      # lands before the image, so a failed map write leaves an existing pair untouched.
+      Write-MapSidecar $outFull ([int]$plan.X) ([int]$plan.Y) 1.0 ([int]$plan.W) ([int]$plan.H) 'stitch' $null 0 $null $sSha
+      [System.IO.File]::WriteAllBytes($outFull, $sBytes)
+      "stitched $($plan.Cols)x$($plan.Rows) tile(s) from $dir -> $outFull  region=($($plan.X),$($plan.Y)) $($plan.W)x$($plan.H)  bytes=$($sBytes.Length)"
+      "map: $outFull.map.txt  (kind=stitch at the region origin; unmap $outFull <ix> <iy> prints GLOBAL screen coords)"
+      if (@($plan.Ignored).Count -gt 0) { "  note: ignored $(@($plan.Ignored).Count) non-tile map(s) in ${dir}: $(@($plan.Ignored) -join '; ')" }
 }
 

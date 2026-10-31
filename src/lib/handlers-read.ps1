@@ -54,11 +54,35 @@ function Invoke-Handler-win([string]$Cmd, [string[]]$Rest) {
       # strict) the check refuses instead of writing that lie to disk.
       $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
       $gate = Invoke-OcclusionGate @{ X = $w.Left; Y = $w.Top; W = $w.W; H = $w.H } $w.Handle $occAct $of.OcclGrid $w.Title $pf.Rest[0] 'read'
+      # C (v4.8.0): the per-attempt re-check the quality gate owes this path - the window is
+      # re-observed (alive, same pid, not minimized, rect re-read) and the SAME occlusion gate
+      # re-runs on the fresh rect, so a re-capture never grades a coverer's pixels or a ghost.
+      # --occlude off leaves it $null on purpose: the echo then says the path had no gate instead
+      # of pretending one ran.
+      $occlRecheck = $null
+      if ($occAct -ne 'off') {
+        $occlRecheck = {
+          param([int]$n)
+          $obs = Get-WindowObservation $w.Handle
+          if (-not [bool]$obs.Alive) { throw "capture quality: the target window '$($w.Title)' (pid=$($w.Pid)) no longer exists before attempt $n - no re-capture is possible and no PNG or map was written" }
+          if ([int]$obs.Pid -ne [int]$w.Pid) { throw "capture quality: the target handle now belongs to pid=$([int]$obs.Pid) (was pid=$($w.Pid)) before attempt $n - handle reuse is a different window and no re-capture is attempted; no PNG or map was written" }
+          if ([bool]$obs.Iconic) { throw "capture quality: the target window '$($w.Title)' was MINIMIZED before attempt $n (rect would be the -32000 parking spot); no PNG or map was written - run: win-restore $($pf.Rest[0])" }
+          if ($null -eq $obs.Rect) { throw "capture quality: the target window '$($w.Title)' has no readable rect before attempt $n - refusing instead of measuring pixels that belong to nobody; no PNG or map was written" }
+          # the capture grabs the FROZEN rect; a window that drifted between attempts would be
+          # gated on one rect and shot on another - the same lie as a stale origin (2px, the same
+          # tolerance the sidecar staleness check applies).
+          if (([math]::Abs([int]$obs.Rect.X - [int]$w.Left) -gt 2) -or ([math]::Abs([int]$obs.Rect.Y - [int]$w.Top) -gt 2) -or
+            ([math]::Abs([int]$obs.Rect.W - [int]$w.W) -gt 2) -or ([math]::Abs([int]$obs.Rect.H - [int]$w.H) -gt 2)) {
+            throw "capture quality: the target window '$($w.Title)' moved between attempts (was rect ($($w.Left),$($w.Top),$($w.W)x$($w.H)), now ($([int]$obs.Rect.X),$([int]$obs.Rect.Y),$([int]$obs.Rect.W)x$([int]$obs.Rect.H))) before attempt $n - the frame would not be the window this capture resolved; no PNG or map was written, re-run the capture"
+          }
+          [void](Invoke-OcclusionGate $obs.Rect $w.Handle $occAct $of.OcclGrid $w.Title $pf.Rest[0] 'read')
+        }
+      }
       $path = if ($pf.Rest.Count -ge 2 -and $pf.Rest[1]) { $pf.Rest[1] } else { Default-ShotName 'win' }
       # Self-report the coordinate mapping so nobody clicks this image's pixels
       # directly: it is a screen-region grab at origin (Left,Top), NOT a
       # re-rendered window image.
-      Save-RectEx $w.Left $w.Top $w.W $w.H $path $pf.Fit $pf.Grid $pf.Marks 'win' $w $null $pf | Write-Output
+      Save-RectEx $w.Left $w.Top $w.W $w.H $path $pf.Fit $pf.Grid $pf.Marks 'win' $w $null $pf $occlRecheck | Write-Output
       "window-relative clicks -> relclick $($pf.Rest[0]) <dx> <dy> (same origin); $($gate.Echo); pixels read are whatever sits on top where occluded (raise the window, or pass --occlude off to skip the check)"
 }
 
@@ -1866,5 +1890,681 @@ function Invoke-Handler-capabilities([string]$Cmd, [string[]]$Rest) {
           "  [$g] $($gn.Count): " + (($gn | ForEach-Object { $_.name }) -join ' ')
         }
         "  (flags/json per command: pass --json for the machine-readable table)"
+      }
+}
+
+# ---------------------------------------------------------------------------
+# D-1 (v4.6.13): pt-profile / pt-anchor - the anchor calibration pair.
+# A profile is ONE surface written down: window identity plus the OCR text lines
+# it carried, in WINDOW-RELATIVE coordinates. pt-anchor reads the same surface
+# again (the window the profile names, or a fresh --file image) and reports how
+# far the named line really moved - the number comes from two reads, never from
+# arithmetic on remembered coordinates. --save is spelled --save, not --out, on
+# purpose: `powershell -File` binds `-out` to its own -OutVariable/-OutBuffer
+# prefix and refuses the call before this tool ever runs (measured 2026-10-30).
+# ---------------------------------------------------------------------------
+function Invoke-Handler-pt-profile([string]$Cmd, [string[]]$Rest) {
+      # pt-profile <sel> [--samples 1..16] [--save <path>] [--file <png>]
+      $own = Strip-OwnFlags $Rest 'pt-profile'
+      $words = @($own.Rest)
+      $samples = [int]$own.Values['--samples']
+      $savePath = [string]$own.Values['--save']
+      $filePath = [string]$own.Values['--file']
+      if ($filePath -ne '') {
+        if ($words.Count -ne 0) { throw 'usage: pt-profile <sel> [--samples N] [--save <path>] OR pt-profile --file <png> [--samples N] [--save <path>] - a window selector and --file describe two different surfaces; pass one' }
+        if (-not (Test-Path -LiteralPath $filePath -PathType Leaf)) { throw "pt-profile: image not found: $filePath" }
+      } elseif ($words.Count -ne 1) {
+        throw 'usage: pt-profile <sel> [--samples N] [--save <path>] [--file <png>]'
+      }
+      $basis = 'file'
+      $win = $null
+      $rect = $null
+      if ($filePath -eq '') {
+        $basis = 'window'
+        $sel = [string]$words[0]
+        $win = Resolve-Window $sel
+        if ($null -eq $win) { throw "pt-profile: no window matching: $sel" }
+        $rect = Get-TargetRect $win
+        if ($null -eq $rect -or [int]$rect.W -le 0 -or [int]$rect.H -le 0) { throw "pt-profile: the target window reports a ${($rect.W)}x${($rect.H)} rect - nothing to read" }
+      }
+      $occEcho = ''
+      $occPct = $null
+      if ($basis -eq 'window') {
+        $gate = Invoke-OcclusionGate $rect $win.Handle 'warn' 5 $win.Title $sel 'read'
+        if ($null -ne $gate -and -not $gate.Err) { $occPct = [int][math]::Round($gate.Pct); $occEcho = " [occ: $($gate.Echo)]" }
+        elseif ($null -ne $gate) { $occEcho = " [occ: $($gate.Echo)]" }
+      }
+      # Each pass is one OCR read of the SAME surface; Merge-PtAnchorSamples keeps
+      # only lines every pass saw, so a recognizer drop cannot become an anchor.
+      $passes = New-Object System.Collections.ArrayList
+      $imgW = 0
+      $imgH = 0
+      for ($p = 0; $p -lt $samples; $p++) {
+        $rows = New-Object System.Collections.ArrayList
+        if ($basis -eq 'file') {
+          $fr = Invoke-OcrFile $filePath 1.0
+          $imgW = [int]$fr.W; $imgH = [int]$fr.H
+          foreach ($ln in @($fr.Lines)) {
+            [void]$rows.Add((New-PtAnchorRecord ([string]$ln.Text) ([int]$ln.X) ([int]$ln.Y) ([int]$ln.W) ([int]$ln.H)))
+          }
+        } else {
+          $lines = Invoke-OcrRegion $rect.X $rect.Y $rect.W $rect.H
+          foreach ($ln in $lines) {
+            [void]$rows.Add((New-PtAnchorRecord ([string]$ln.Text) ([int]$ln.X - $rect.X) ([int]$ln.Y - $rect.Y) ([int]$ln.W) ([int]$ln.H)))
+          }
+        }
+        [void]$passes.Add(@($rows))
+      }
+      $anchors = @(Merge-PtAnchorSamples @($passes))
+      $uia = [pscustomobject]@{ available = $false; nodes = 0; interactive = 0; pageHits = 0; tabs = 0; verdict = 'not-read' }
+      if ($basis -eq 'window') {
+        try {
+          $tree = Measure-A11yTree $win 3
+          $uia = [pscustomobject]@{ available = $true; nodes = [int]$tree.Nodes; interactive = [int]$tree.Interactive; pageHits = [int]$tree.PageHits; tabs = [int]$tree.Tabs; verdict = [string]$tree.Verdict }
+        } catch { $uia = [pscustomobject]@{ available = $false; nodes = 0; interactive = 0; pageHits = 0; tabs = 0; verdict = 'unreadable' } }
+      }
+      $winObj = [pscustomobject]@{ pid = 0; proc = ''; class = ''; title = ''; rect = @(0, 0, $imgW, $imgH) }
+      if ($basis -eq 'window') {
+        $winObj = [pscustomobject]@{ pid = [int]$win.Pid; proc = [string]$win.Proc; class = [string]$win.Class; title = [string]$win.Title; rect = @([int]$rect.X, [int]$rect.Y, [int]$rect.W, [int]$rect.H) }
+      } else {
+        $winObj = [pscustomobject]@{ pid = 0; proc = ''; class = ''; title = [System.IO.Path]::GetFileName($filePath); rect = @(0, 0, $imgW, $imgH) }
+      }
+      if ($savePath -eq '') {
+        Ensure-OutDir
+        $savePath = Join-Path $OutDir ('pt-profile-' + (Get-Date).ToString('yyyyMMdd-HHmmss') + '.json')
+      }
+      $saveDir = Split-Path -Parent $savePath
+      if ($saveDir -and -not (Test-Path -LiteralPath $saveDir)) { throw "pt-profile: the folder for --save does not exist: $saveDir" }
+      $prof = [pscustomobject]@{
+        version = 1
+        capturedAt = ((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC')
+        basis = $basis
+        samples = $samples
+        window = $winObj
+        anchors = @($anchors)
+        uiaSummary = $uia
+        notes = @('anchor coordinates are WINDOW-RELATIVE (origin = the window/ image top-left); ocrConf is null because Windows.Media.Ocr exposes no per-line confidence - a printed 0.9 would be invented')
+      }
+      if ($null -ne $occPct) { $prof | Add-Member -NotePropertyName occluded -NotePropertyValue $occPct }
+      $json = $prof | ConvertTo-Json -Depth 6
+      [System.IO.File]::WriteAllText($savePath, $json, (New-Object System.Text.UTF8Encoding($false)))
+      $rectTxt = (@($winObj.rect) -join ',')
+      "pt-profile: basis=$basis samples=$samples anchors=$(@($anchors).Count) rect=($rectTxt)$occEcho"
+      "  saved: $savePath"
+      if (@($anchors).Count -eq 0) { '  note: this surface carries no OCR text - the profile is saved but there is nothing to relocate against' }
+}
+
+# v4.7.0 (B-1): ONE surface read for both anchor readers. pt-anchor and pt-calibrate ask the
+# same question - "read the surface this profile names again" - and differ only in what they
+# do with the rows. Window resolution, the occlusion gate and the window-relative conversion
+# used to be written out inside pt-anchor; a second reader copying that block is how one of
+# them later starts lying about the other (a stale pid filter here, a missing gate there), so
+# it lives here once. $Owner carries the command name into the refusal text: the loader and
+# the surface read are shared code, but an error that names a command the caller never typed
+# sends people to the wrong page.
+function Get-PtSurfaceRead($Prof, [string]$FilePath, [string]$Owner) {
+      $rows = New-Object System.Collections.ArrayList
+      $rectTxt = ''
+      $occEcho = ''
+      if ($FilePath -ne '') {
+        if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { throw ($Owner + ': image not found: ' + $FilePath) }
+        $fr = Invoke-OcrFile $FilePath 1.0
+        foreach ($ln in @($fr.Lines)) {
+          [void]$rows.Add((New-PtAnchorRecord ([string]$ln.Text) ([int]$ln.X) ([int]$ln.Y) ([int]$ln.W) ([int]$ln.H)))
+        }
+        $rectTxt = "(0,0,$($fr.W),$($fr.H)) file"
+      } else {
+        $pidW = [int](Get-OptValue (Get-OptValue $Prof 'window') 'pid')
+        $procW = [string](Get-OptValue (Get-OptValue $Prof 'window') 'proc')
+        $titleW = [string](Get-OptValue (Get-OptValue $Prof 'window') 'title')
+        $cands = @(Get-WinList | Where-Object { $_.Pid -eq $pidW -and ([string]$_.Proc) -ceq $procW })
+        $win = $null
+        if (@($cands).Count -eq 1) { $win = $cands[0] }
+        elseif (@($cands).Count -gt 1) {
+          $byTitle = @($cands | Where-Object { ([string]$_.Title) -ceq $titleW })
+          if (@($byTitle).Count -eq 1) { $win = $byTitle[0] }
+          else { throw ($Owner + ': pid=' + $pidW + ' (' + $procW + ') now carries ' + @($cands).Count + ' windows and the profile title ''' + $titleW + ''' matches ' + @($byTitle).Count + ' of them - refusing to guess which surface to read') }
+        }
+        if ($null -eq $win) { throw ($Owner + ': the window the profile names is gone (pid=' + $pidW + ' proc=''' + $procW + ''' title=''' + $titleW + '''); re-run pt-profile on the surface that is there now') }
+        $rect = Get-TargetRect $win
+        $gate = Invoke-OcclusionGate $rect $win.Handle 'warn' 5 $win.Title $pidW 'read'
+        if ($null -ne $gate) { $occEcho = " [occ: $($gate.Echo)]" }
+        $lines = Invoke-OcrRegion $rect.X $rect.Y $rect.W $rect.H
+        foreach ($ln in $lines) {
+          [void]$rows.Add((New-PtAnchorRecord ([string]$ln.Text) ([int]$ln.X - $rect.X) ([int]$ln.Y - $rect.Y) ([int]$ln.W) ([int]$ln.H)))
+        }
+        $rectTxt = "($($rect.X),$($rect.Y),$($rect.W),$($rect.H))"
+      }
+      return @{ Rows = @($rows); Rect = $rectTxt; Occ = $occEcho }
+}
+
+function Invoke-Handler-pt-anchor([string]$Cmd, [string[]]$Rest) {
+      # pt-anchor <profile> --needle <text> [--strict] [--max-drift px] [--file <png>]
+      $own = Strip-OwnFlags $Rest 'pt-anchor'
+      $words = @($own.Rest)
+      $needle = ''
+      $positional = New-Object System.Collections.ArrayList
+      $i = 0
+      while ($i -lt $words.Count) {
+        $tk = "$($words[$i])"
+        if ($tk -eq '--needle') {
+          if ($i + 1 -ge $words.Count) { throw 'pt-anchor: --needle needs a value' }
+          $needle = "$($words[$i + 1])"
+          $i += 2
+          continue
+        }
+        if ($tk -like '--*') { throw (Get-UnknownFlagMessage 'pt-anchor' $tk) }
+        [void]$positional.Add($tk)
+        $i++
+      }
+      if (@($positional).Count -ne 1) { throw 'usage: pt-anchor <profile> --needle <text> [--strict] [--max-drift px] [--file <png>]' }
+      if ($needle -eq '') { throw 'pt-anchor: --needle <text> is required - the line to relocate must be named, never guessed from the profile' }
+      $profPath = [string]$positional[0]
+      $prof = Import-PtProfile $profPath 'pt-anchor'
+      $strict = [bool]$own.Values['--strict']
+      $maxDrift = [int]$own.Values['--max-drift']
+      $filePath = [string]$own.Values['--file']
+      $anchors = @(Get-OptValue $prof 'anchors')
+      $basis = [string](Get-OptValue $prof 'basis')
+      if ($basis -eq '') { $basis = 'window' }
+      $sr = Get-PtSurfaceRead $prof $filePath 'pt-anchor'
+      $rows = @($sr.Rows)
+      $rectNow = [string]$sr.Rect
+      $occEcho = [string]$sr.Occ
+      $m = Find-PtAnchorMatch $anchors $needle
+      if ($m.Kind -eq 'none') {
+        $names = @($anchors | ForEach-Object { [string](Get-OptValue $_ 'text') })
+        $shown = (@($names | Select-Object -First 6) -join ' | ')
+        if (@($names).Count -gt 6) { $shown = $shown + " (+$(@($names).Count - 6) more)" }
+        throw "pt-anchor: '$needle' is not in this profile's $(@($anchors).Count) anchor(s) - nothing was relocated and no drift is invented. anchors: $shown"
+      }
+      if ($m.Kind -eq 'ambiguous') {
+        $names = @($m.Rows | ForEach-Object { "'" + [string](Get-OptValue $_ 'text') + "'" })
+        throw "pt-anchor: '$needle' matches $(@($m.Rows).Count) anchors ($(@($names) -join ', ')) - pass a longer line; a relocation picked among several is a guess"
+      }
+      $anchor = @($m.Rows)[0]
+      $line = $null
+      $want = [string](Get-OptValue $anchor 'text')
+      foreach ($r2 in @($rows)) { if (([string](Get-OptValue $r2 'text')) -ceq $want) { $line = $r2; break } }
+      if ($null -eq $line) {
+        $foldWant = [string](Get-OptValue $anchor 'fold')
+        foreach ($r2 in @($rows)) { if ((Normalize-OcrText ([string](Get-OptValue $r2 'text')) ) -ceq $foldWant) { $line = $r2; break } }
+      }
+      if ($null -eq $line) {
+        throw "pt-anchor: the profile's anchor '$want' is not on this surface on re-read ($(@($rows).Count) line(s) read) - the surface changed, or the profile was taken from a different one"
+      }
+      $drift = Get-PtAnchorDrift $anchor $line
+      $verdict = 'within'
+      if ($drift.Dist -gt $maxDrift) { $verdict = 'exceeded' }
+      "pt-anchor: basis=$basis need=$needle match=$($m.Kind) drift=($($drift.Dx),$($drift.Dy)) distance=$($drift.Dist) max-drift=$maxDrift verdict=$verdict anchors=$(@($anchors).Count) read=$(@($rows).Count) rect=$rectNow$occEcho"
+      if ($verdict -eq 'exceeded') {
+        if ($strict) { throw "pt-anchor: drift $($drift.Dist)px exceeds --max-drift $($maxDrift)px (dx=$($drift.Dx) dy=$($drift.Dy)) - in strict mode no relocation is reported as usable" }
+        '  note: pass --strict to turn an exceeded drift into a non-zero exit'
+      }
+}
+
+# ---------------------------------------------------------------------------
+# D-1 follow-up / v4.7.0 (B-1): pt-calibrate - "what was this canvas zoomed to", which one
+# anchor cannot answer. The interface, the metric definitions and every refusal path are
+# written down in the D1-D5 enhancement design document, section B-1, BEFORE this code existed, per the
+# owner's rule that an interface proposal and its implementation belong to one task.
+# Contract in one breath: model = uniform-scale+translation and nothing else; TWO estimate
+# anchors fix it; at least ONE independent verify anchor tests it; duplicate labels, a short
+# baseline, an axis with no extent, per-axis ratio divergence and an over-limit residual all
+# REFUSE and name themselves; the answer states units, source, both timestamps, the read rect
+# and the region it applies to. Read-only by construction (a judge scans this body for input
+# APIs): it never clicks, never types, never activates, and rewrites nothing - a converted
+# coordinate is produced only for a point the caller names with --relocate.
+# Why indexes instead of text: the anchor text is whatever the OCR produced, it may contain a
+# comma, and a list separator that can also appear inside a value silently drops items. The
+# profile's anchor array has a stable order, so --estimate 1,3 means the same two rows on
+# every run, and --list prints the numbering next to the text it stands for.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-pt-calibrate([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'pt-calibrate'
+      $words = @($own.Rest)
+      if (@($words).Count -ne 1) { throw 'usage: pt-calibrate <profile> --estimate <i,j> --verify <k[,...]> [--file <png>] [--canvas x,y,w,h] [--relocate x,y] [--max-residual px] [--min-spacing px] [--list]' }
+      $profPath = [string]$words[0]
+      $prof = Import-PtProfile $profPath 'pt-calibrate'
+      $anchors = @(Get-OptValue $prof 'anchors')
+      $basis = [string](Get-OptValue $prof 'basis')
+      if ($basis -eq '') { $basis = 'window' }
+      $capturedAt = [string](Get-OptValue $prof 'capturedAt')
+      if ($capturedAt -eq '') { $capturedAt = 'unknown (profile predates the capturedAt key or was written by hand)' }
+      $filePath = [string]$own.Values['--file']
+      $estSpec = [string]$own.Values['--estimate']
+      $verSpec = [string]$own.Values['--verify']
+      $canvasSpec = [string]$own.Values['--canvas']
+      $relocSpec = [string]$own.Values['--relocate']
+      $maxResidual = [int]$own.Values['--max-residual']
+      $minSpacing = [int]$own.Values['--min-spacing']
+      $listOnly = [bool]$own.Values['--list']
+      # (1) A profile that holds the same text twice cannot answer "which row is this?".
+      # This is checked against the WHOLE anchor array, before any selection, because the
+      # ambiguity is a property of the profile - not of the indexes the caller happened to
+      # pick. Re-running pt-profile with --samples 2+ is the fix it can actually act on.
+      $dupeTexts = @(@($anchors) | ForEach-Object { [string](Get-OptValue $_ 'text') } | Group-Object | Where-Object { [int]$_.Count -gt 1 } | ForEach-Object { "'" + [string]$_.Name + "' x" + [string]$_.Count })
+      if (@($dupeTexts).Count -gt 0) { throw ('pt-calibrate: this profile carries duplicate anchor labels (' + (@($dupeTexts) -join ', ') + ') - which row a name means is not decidable here, so nothing is calibrated. Re-run pt-profile on a surface whose lines are unique, or --samples 2+ to keep only the lines every pass saw.') }
+      if ($listOnly) {
+        $listRows = New-Object System.Collections.ArrayList
+        $plN = 0
+        foreach ($plA in @($anchors)) {
+          $plN++
+          [void]$listRows.Add([pscustomobject]@{
+            index = $plN
+            label = [string](Get-OptValue $plA 'text')
+            basis = @([int](Get-OptValue $plA 'ix'), [int](Get-OptValue $plA 'iy'))
+          })
+        }
+        if ($script:Json) {
+          [pscustomobject]@{ command = 'pt-calibrate'; list = $true; profile = $profPath; captured_at = $capturedAt; basis = $basis; anchors = @($listRows) } | ConvertTo-Json -Compress -Depth 4
+          return
+        }
+        "pt-calibrate: $profPath has $(@($anchors).Count) anchor(s); --estimate and --verify take these 1-based indexes"
+        foreach ($plR in @($listRows)) {
+          '  #' + [string]$plR.index + " '" + $plR.label + "' at (" + [string]$plR.basis[0] + ',' + [string]$plR.basis[1] + ')'
+        }
+        return
+      }
+      if ($estSpec -eq '') { throw 'pt-calibrate: --estimate <i,j> is required - two anchors are what fixes the model, and picking them for the caller is not a calibration (pt-calibrate <profile> --list prints the numbering)' }
+      if ($verSpec -eq '') { throw 'pt-calibrate: --verify <k[,...]> is required - a two-point fit that nothing independent is checked against is a guess about the whole canvas (pt-calibrate <profile> --list prints the numbering)' }
+      $estIdx = @(Parse-PtAnchorIndexes $estSpec '--estimate')
+      $verIdx = @(Parse-PtAnchorIndexes $verSpec '--verify')
+      if (@($estIdx).Count -ne 2) { throw ('pt-calibrate: --estimate needs exactly 2 indexes, got ' + @($estIdx).Count + ' (' + $estSpec + ')') }
+      $allIdx = @(@($estIdx) + @($verIdx))
+      foreach ($ix in @($allIdx)) {
+        if ([int]$ix -gt @($anchors).Count) { throw ('pt-calibrate: index ' + [string]$ix + ' is past the end of this profile, which has ' + @($anchors).Count + ' anchor(s) - run pt-calibrate <profile> --list') }
+      }
+      $overlapIdx = @(@($verIdx) | Where-Object { @($estIdx) -contains $_ })
+      if (@($overlapIdx).Count -gt 0) { throw ('pt-calibrate: index ' + (@($overlapIdx) -join ', ') + ' is in BOTH --estimate and --verify - a point used to fit the model sits exactly on it by construction, so its residual proves nothing') }
+      $canvas = $null
+      if ($canvasSpec -ne '') { $canvas = Parse-QuadSpec $canvasSpec 'pt-calibrate' '--canvas' }
+      $reloc = $null
+      if ($relocSpec -ne '') {
+        $rp = @($relocSpec -split ',')
+        if (@($rp).Count -ne 2 -or @(@($rp) | Where-Object { $_ -notmatch '^-?[0-9]+$' }).Count -ne 0) { throw ("pt-calibrate: --relocate needs x,y in basis image pixels, got: '$relocSpec'") }
+        $reloc = @{ X = [int]$rp[0]; Y = [int]$rp[1] }
+      }
+      # (2) the surface read is the same road pt-anchor takes (one implementation, so the
+      # two readers cannot disagree about which window they looked at or whether it was covered).
+      $sr = Get-PtSurfaceRead $prof $filePath 'pt-calibrate'
+      $rows = @($sr.Rows)
+      $rectNow = [string]$sr.Rect
+      $occEcho = [string]$sr.Occ
+      if (@($rows).Count -eq 0) { throw ('pt-calibrate: the surface read produced 0 text line(s) (rect=' + $rectNow + $occEcho + ') - calibrating against an unread surface would print a scale invented from the profile alone') }
+      $estAl = New-Object System.Collections.ArrayList
+      $verAl = New-Object System.Collections.ArrayList
+      foreach ($ix in @(@($estIdx) + @($verIdx))) {
+        $a = @($anchors)[[int]$ix - 1]
+        $label = [string](Get-OptValue $a 'text')
+        $ob = Resolve-PtAnchorObservation $a @($rows)
+        if ($ob.Tier -eq 'none') { throw ("pt-calibrate: anchor #$ix ('$label') is not on this surface on re-read ($(@($rows).Count) line(s) read) - the surface changed, scrolled, or the profile came from a different one; nothing is extrapolated from a row that is not there") }
+        if ($ob.Tier -eq 'duplicate') { throw ("pt-calibrate: anchor #$ix ('$label') matches " + [string]$ob.Count + " rows on the current surface - a calibration cannot pick among identical readings; the estimate would depend on which one the loop happened to meet first") }
+        $item = [pscustomobject]@{
+          Index = [int]$ix; Label = $label; Tier = [string]$ob.Tier
+          Bx = [int](Get-OptValue $a 'ix'); By = [int](Get-OptValue $a 'iy')
+          Ox = [int](Get-OptValue $ob.Row 'ix'); Oy = [int](Get-OptValue $ob.Row 'iy')
+        }
+        if (@($estIdx) -contains $ix) { [void]$estAl.Add($item) } else { [void]$verAl.Add($item) }
+      }
+      $cal = Get-PtCalibration -Estimates @($estAl) -Verifies @($verAl) -MinSpacing ([double]$minSpacing) -ResidualLimit ([double]$maxResidual)
+      $readAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
+      $imageDesc = 'live-window'
+      if ($filePath -ne '') { $imageDesc = $filePath }
+      # (3) a refusal still prints its numbers INSIDE the refusal: "the residual was too big"
+      # without the residual is a verdict nobody can check afterwards. One message, so the
+      # --json road (which prints ERROR: <text> and exits 1 like every other refusal here)
+      # cannot lose the measurement either.
+      if (-not [bool]$cal.Ok) {
+        throw ('pt-calibrate: refused (' + [string]$cal.Code + ') - ' + [string]$cal.Note +
+          ' | scale=' + [string]$cal.Scale + ' axis=(sx=' + [string]$cal.Sx + ',sy=' + [string]$cal.Sy +
+          ') spacing-basis=' + [string]$cal.BasisSpacing + 'px spacing-observed=' + [string]$cal.ObservedSpacing +
+          'px estimate=' + (@(@($estAl) | ForEach-Object { '#' + [string]$_.Index + ' ' + $_.Label }) -join ' | ') +
+          ' verify=' + (@(@($verAl) | ForEach-Object { '#' + [string]$_.Index + ' ' + $_.Label }) -join ' | ') +
+          ' profile=' + $profPath + ' rect=' + $rectNow + $occEcho)
+      }
+      if ($cal.Verdict -eq 'exceeded') {
+        throw ('pt-calibrate: refused (residual-exceeded) - ' + [string]$cal.Note +
+          ' | model=uniform-scale+translation scale=' + [string]$cal.Scale + ' delta=(' + [string]$cal.Dx + ',' + [string]$cal.Dy + ')' +
+          ' residual-max=' + [string]$cal.ResidualMax + 'px residual-mean=' + [string]$cal.ResidualMean + 'px limit=' + [string]$maxResidual + 'px' +
+          ' verify=' + (@(@($cal.Residuals) | ForEach-Object { "'" + [string]$_.Label + "'=" + [string]$_.Residual + 'px' }) -join ' ') +
+          ' | no conversion is reported: a model that misses an independent anchor is not applied to anything.')
+      }
+      $applyTxt = '  applies-to: whole-read-rect=' + $rectNow + ' (canvas area not declared - the tool cannot tell a canvas from its chrome; menus, toolbars and child windows are NOT covered by this model either, so pass --canvas x,y,w,h to scope the answer)'
+      $applyJson = [pscustomobject]@{ declared = $false; canvas = $null; note = 'canvas area not declared - the tool cannot tell a canvas from its chrome; menus, toolbars and child windows are NOT covered by this model' }
+      if ($null -ne $canvas) {
+        $applyTxt = '  applies-to: canvas=(' + [string]$canvas.X + ',' + [string]$canvas.Y + ',' + [string]$canvas.W + ',' + [string]$canvas.H + ') declared with --canvas - this model covers ONLY that region; menus, toolbars and child windows are not covered by it and are not moved by it'
+        $applyJson = [pscustomobject]@{ declared = $true; canvas = @($canvas.X, $canvas.Y, $canvas.W, $canvas.H); note = 'region declared by the caller; the tool cannot derive a canvas boundary from pixels' }
+      }
+      if ($script:Json) {
+        [pscustomobject]@{
+          command = 'pt-calibrate'; model = 'uniform-scale+translation'; units = 'px'; basis = $basis
+          scale = [double]$cal.Scale; delta = @([double]$cal.Dx, [double]$cal.Dy)
+          spacing = @([double]$cal.BasisSpacing, [double]$cal.ObservedSpacing)
+          axis_ratios = @([double]$cal.Sx, [double]$cal.Sy); axis_tolerance = [double]$cal.AxisTolerance
+          min_spacing = [double]$cal.MinSpacing
+          residual_max = [double]$cal.ResidualMax; residual_mean = [double]$cal.ResidualMean; residual_limit = [double]$maxResidual
+          verdict = [string]$cal.Verdict
+          estimate = @(@($estAl) | ForEach-Object { [pscustomobject]@{ index = $_.Index; label = $_.Label; tier = $_.Tier; basis = @($_.Bx, $_.By); observed = @($_.Ox, $_.Oy) } })
+          verify = @(@($cal.Residuals) | ForEach-Object { [pscustomobject]@{ index = $_.Index; label = $_.Label; basis = @($_.Bx, $_.By); observed = @($_.Ox, $_.Oy); predicted = @($_.Px, $_.Py); residual = [double]$_.Residual } })
+          source = [pscustomobject]@{ profile = $profPath; captured_at = $capturedAt; read_at = $readAt; image = $imageDesc; rect = $rectNow; lines = @($rows).Count; occlusion = $occEcho.Trim() }
+          applies_to = $applyJson
+          relocate = $(if ($null -ne $reloc) { $mp = Get-PtMappedPoint $cal ([double]$reloc.X) ([double]$reloc.Y); [pscustomobject]@{ from = @($reloc.X, $reloc.Y); float = @($mp.Xf, $mp.Yf); int = @($mp.Xi, $mp.Yi) } } else { $null })
+        } | ConvertTo-Json -Compress -Depth 5
+        return
+      }
+      'pt-calibrate: model=uniform-scale+translation scale=' + [string]$cal.Scale + ' delta=(' + [string]$cal.Dx + ',' + [string]$cal.Dy + ')' +
+        ' units=px basis=' + $basis + ' spacing-basis=' + [string]$cal.BasisSpacing + 'px spacing-observed=' + [string]$cal.ObservedSpacing + 'px' +
+        ' axis-ratios=(sx=' + [string]$cal.Sx + ',sy=' + [string]$cal.Sy + ') axis-tolerance=' + [string]$cal.AxisTolerance +
+        ' residual-max=' + [string]$cal.ResidualMax + 'px residual-mean=' + [string]$cal.ResidualMean + 'px limit=' + [string]$maxResidual + 'px verdict=' + [string]$cal.Verdict +
+        ' anchors=' + [string](@($anchors).Count) + ' read=' + [string](@($rows).Count) + ' rect=' + $rectNow + $occEcho
+      '  source: profile=' + $profPath + ' captured=' + $capturedAt + ' read-at=' + $readAt + ' image=' + $imageDesc
+      '  estimate: ' + (@(@($estAl) | ForEach-Object { '#' + [string]$_.Index + " '" + $_.Label + "' (" + $_.Tier + ') basis=(' + [string]$_.Bx + ',' + [string]$_.By + ') observed=(' + [string]$_.Ox + ',' + [string]$_.Oy + ')' }) -join ' | ')
+      '  verify:   ' + (@(@($cal.Residuals) | ForEach-Object { '#' + [string]$_.Index + " '" + [string]$_.Label + "' observed=(" + [string]$_.Ox + ',' + [string]$_.Oy + ') predicted=(' + [string]$_.Px + ',' + [string]$_.Py + ') delta=(' + [string]$_.Rx + ',' + [string]$_.Ry + ') residual=' + [string]$_.Residual + 'px' }) -join ' | ')
+      $applyTxt
+      if ($null -ne $reloc) {
+        $mp2 = Get-PtMappedPoint $cal ([double]$reloc.X) ([double]$reloc.Y)
+        '  relocate: (' + [string]$reloc.X + ',' + [string]$reloc.Y + ') -> (' + [string]$mp2.Xf + ',' + [string]$mp2.Yf + ') rounded=(' + [string]$mp2.Xi + ',' + [string]$mp2.Yi + ') via model=uniform-scale+translation scale=' + [string]$cal.Scale + ' delta=(' + [string]$cal.Dx + ',' + [string]$cal.Dy + ') residual-max=' + [string]$cal.ResidualMax + 'px (one point, asked for explicitly; rounding is half-to-even; nothing on disk was rewritten)'
+      }
+      '  note: the residual is measured on ' + [string](@($verAl).Count) + ' anchor(s) this fit never saw. That is evidence, not proof: a rotation about the estimate pair can still hide between them, and a second --verify index is the cheapest way to narrow it.'
+}
+
+# ---------------------------------------------------------------------------
+# D-3 (v4.6.13): log-index - a READ-ONLY index over actions.log.
+# The audit log gained a fifth column in this same commit (origin=<tag>, written by
+# the entry on every line, default 'unknown'). The only reader that existed before
+# it was replay, which is about RUNNING commands and refuses whole slices - there
+# was no way to ask "what did this run record, and from where" without reading the
+# file by hand. log-index answers that question: it never acts, never writes an
+# audit line of its own and never touches the desktop, which is also why the
+# entry-level --origin (a LABEL) is deliberately left for this handler (a FILTER).
+# A line that predates the column is NOT an error: ConvertFrom-ActionLogLine reads
+# it as origin=unknown and legacy=yes. Any other shape is counted and reported,
+# never silently dropped - "0 of 0" is a reading, "0 of 0 lines silently ignored"
+# is the lie this command refuses to tell.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
+      # log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]
+      $own = Strip-OwnFlags $Rest 'log-index'
+      $words = @($own.Rest)
+      if ($words.Count -ne 0) { throw "log-index takes no positional argument (got '$($words[0])') - use --date <YYYY-MM-DD>, --origin <tag>, --log <path>, --scope current|day|all" }
+      $dateWant = [string]$own.Values['--date']
+      $originWant = [string]$own.Values['--origin']
+      $logPath = [string]$own.Values['--log']
+      $scope = [string]$own.Values['--scope']
+      if ($scope -eq '') { $scope = 'current' }
+      if (@('current', 'day', 'all') -notcontains $scope) {
+        throw "log-index: --scope must be current|day|all, got '$scope' - current indexes the one file --log names, day indexes it plus every archive the rotator left in the same directory for one --date, all indexes that whole set without requiring a date"
+      }
+      if ($dateWant -ne '' -and $dateWant -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') {
+        throw "log-index: --date must be a UTC day written YYYY-MM-DD, got '$dateWant'"
+      }
+      if ($scope -eq 'day' -and $dateWant -eq '') {
+        throw "log-index: --scope day needs --date <YYYY-MM-DD> - a day with no day named is a scan over every archive wearing the name of a question nobody asked (use --scope all to index the archives without a date)"
+      }
+      if ($originWant -ne '' -and $originWant -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$') {
+        throw "log-index: --origin must be a tag (letters, digits, '.', '-' and '_', 1..32 chars), got '$originWant'"
+      }
+      if ($logPath -eq '') { $logPath = $ActionLog }
+      if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
+        throw "log-index: no audit log at $logPath - nothing has been recorded under this path yet (pass --log <path> to index another one)"
+      }
+      $logItem = $null
+      try { $logItem = Get-Item -LiteralPath $logPath -Force } catch { throw "log-index: the audit log exists but could not be stat'ed ($($_.Exception.Message)) - refusing to report an index built on a file this run cannot name" }
+      $files = New-Object System.Collections.ArrayList
+      [void]$files.Add(@{ Path = [string]$logItem.FullName; Role = 'current' })
+      $archiveNote = 'not scanned (scope=current: only the file --log names is read; pass --scope day or --scope all to include the archives the rotator left next to it)'
+      if ($scope -ne 'current') {
+        # The rotator (Invoke-LogRotation) moves the live log aside as actions_<stamp>.log in the SAME
+        # directory and keeps the newest $keep of them. Those archives are the only record of the
+        # days the live file no longer holds, so an index that reads one file cannot answer "was the
+        # machine touched on 2026-10-28" - and "not in this index" must never be reported as "no".
+        $dir = [string]$logItem.DirectoryName
+        $rotPol = Get-LogRotationPolicy
+        $archives = @()
+        try {
+          $archives = @(Get-ChildItem -LiteralPath $dir -Filter ([string]$rotPol.ArchiveGlob) -File -ErrorAction Stop | Sort-Object -Property Name -Descending)
+        } catch { throw "log-index: --scope $scope could not list the archives next to $logPath in $dir ($($_.Exception.Message)) - an index that silently scanned one file and said files-scanned=1 would be the same lie as a dropped line" }
+        foreach ($a in @($archives)) {
+          if ([string]$a.FullName -ceq [string]$logItem.FullName) { continue }
+          [void]$files.Add(@{ Path = [string]$a.FullName; Role = 'archive' })
+        }
+        $archiveNote = 'scanned (' + @($archives).Count + ' archive file(s) found next to the live log in ' + $dir + ')'
+      }
+      $kept = New-Object System.Collections.ArrayList
+      $perFile = New-Object System.Collections.ArrayList
+      $totalAll = 0
+      $skippedAll = 0
+      $matchedAll = 0
+      foreach ($f in @($files)) {
+        $text = ''
+        try { $text = [System.IO.File]::ReadAllText([string]$f.Path) } catch { throw "log-index: the audit log exists but could not be read ($($_.Exception.Message)) - refusing to report an empty index for a file that is there" }
+        $total = 0
+        $skipped = 0
+        $matched = 0
+        foreach ($ln in @([regex]::Split([string]$text, "\r?\n"))) {
+          if ([string]$ln -eq '') { continue }
+          $total++
+          $rec = ConvertFrom-ActionLogLine ([string]$ln)
+          if ($null -eq $rec) { $skipped++; continue }
+          if ($dateWant -ne '' -and ([string]$rec.Date -cne $dateWant)) { continue }
+          if ($originWant -ne '' -and ([string]$rec.Origin -cne $originWant)) { continue }
+          $rec | Add-Member -NotePropertyName File -NotePropertyValue ([string]$f.Path) -Force
+          [void]$kept.Add($rec)
+          $matched++
+        }
+        [void]$perFile.Add(@{ Path = [string]$f.Path; Role = [string]$f.Role; Lines = $total; Skipped = $skipped; Matched = $matched })
+        $totalAll += $total
+        $skippedAll += $skipped
+        $matchedAll += $matched
+      }
+      $filterNote = ''
+      if ($dateWant -ne '') { $filterNote += " date=$dateWant" }
+      if ($originWant -ne '') { $filterNote += " origin=$originWant" }
+      # scope=current keeps the pre-B-2 line VERBATIM: readers of this echo exist, and a scope that
+      # was not asked for must not change what they see.
+      if ($scope -eq 'current') {
+        "log-index: $($kept.Count) of $($totalAll) non-empty line(s) matched in $logPath$filterNote"
+      } else {
+        "log-index: scope=$scope $($kept.Count) of $($totalAll) non-empty line(s) matched across files-scanned=$($files.Count)$filterNote"
+        $fn = 0
+        foreach ($pf in @($perFile)) {
+          $fn++
+          $skipTxt = ''
+          if ([int]$pf.Skipped -gt 0) { $skipTxt = " unreadable=$($pf.Skipped)" }
+          "  file #$fn role=$($pf.Role) path=$($pf.Path) lines=$($pf.Lines) matched=$($pf.Matched)$skipTxt"
+        }
+        # The stamp in an archive NAME is the rotation's LOCAL clock (Get-Date), while the dates this
+        # index filters on come from the line, which the writer put in UTC. Saying which clock the
+        # answer used is the difference between an index and a guess: an archive named 20261030T0102
+        # can hold 2026-10-29 lines, and a reader who trusted the name would conclude the day was empty.
+        "  clocks: line dates=UTC (as written by the tool); archive NAME = the rotation's local clock, so a file named for one local day can carry lines of another UTC day - this index filtered on the LINE date"
+        "  archives: $archiveNote"
+        "  retention: the rotator keeps only the newest $($rotPol.Keep) archives (Invoke-LogRotation keep=$($rotPol.Keep), max $($rotPol.MaxBytes) bytes); anything older was DELETED BY THE TOOL, so a day missing from this index is not evidence nothing happened - it is evidence the record no longer exists, and those two are different answers"
+      }
+      $n = 0
+      foreach ($rec in @($kept)) {
+        $n++
+        $legacy = ''
+        if (-not [bool]$rec.HasOrigin) { $legacy = ' legacy=yes' }
+        $fileTxt = ''
+        if ($scope -ne 'current') { $fileTxt = ' [' + [string]$rec.File + ']' }
+        "  #$n $($rec.Date) origin=$($rec.Origin)$legacy $($rec.Cmd) | $($rec.Target)$fileTxt"
+      }
+      if ($skippedAll -gt 0) { "log-index: $($skippedAll) unreadable line(s) skipped (not four- or five-column audit lines)" }
+}
+
+# ---------------------------------------------------------------------------
+# D-5 (v4.6.13): cluster-color - which colours an image file actually holds.
+# find-color answers "is THIS colour in that region"; color-at answers "what is
+# THIS pixel". Neither answers the question that comes before both: what colours
+# does this capture consist of, how much of it is each, and where does each one
+# sit. That question used to be answered by reading a PNG in a scratch script,
+# which is how a caller ends up with a histogram whose coordinates nobody can
+# point at afterwards.
+# The rule is stated in full because each half of it is a choice someone could
+# silently change: a pixel joins the OLDEST cluster whose seed colour differs by
+# at most --tolerance on EVERY channel (per channel, like find-color's --tolerance,
+# not Euclidean), otherwise it seeds a new one; clusters are walked in raster order,
+# so a cluster's seed is its topmost-leftst member; the reported colour is the
+# pixel-weighted mean, FLOORED (a printed brightness never overstates the pixels
+# that produced it); the report is sorted by descending size, ties falling back to
+# the cluster's own numbers; alpha-0 pixels are invisible, so they are counted and
+# skipped rather than averaged into a colour someone can see.
+# Two ceilings stop the scan instead of degrading it: --tolerance too small for the
+# file can need more clusters than this command buffers, and a photographic file
+# can need more time than a caller wants to wait. Both refuse with their numbers and
+# return NO partial list - a truncated cluster set would read as a palette.
+# ---------------------------------------------------------------------------
+function Get-ClusterCeiling([string]$which) {
+  if ($which -ceq 'MaxSeeds') { return 4096 }
+  if ($which -ceq 'MaxMs') { return 5000 }
+  if ($which -ceq 'TopK') { return 10 }
+  throw "cluster-color: unknown ceiling '$which' - the ceilings are MaxSeeds, MaxMs and TopK"
+}
+
+# Decode one image file into the pixel buffer [CLC] reads. The bytes are copied out
+# (Get-Bitmap32Bytes) and every GDI object is disposed here, so the caller never
+# holds the file open - a capture the tool is about to overwrite must not be locked.
+function Read-ClusterImage([string]$path) {
+  if (-not (Test-Path -LiteralPath $path)) {
+    throw "cluster-color: no image at $path - the path does not exist. Capture one first ('rect <x> <y> <w> <h> $path') or fix the path"
+  }
+  if (Test-Path -LiteralPath $path -PathType Container) { throw "cluster-color: $path is a directory - pass ONE image file" }
+  $fiLen = 0L
+  try { $fiLen = (New-Object System.IO.FileInfo($path)).Length } catch { throw "cluster-color: $path could not be inspected ($($_.Exception.Message))" }
+  if ($fiLen -le 0L) { throw "cluster-color: $path is an empty file (0 bytes) - an empty cluster list would be a report about nothing" }
+  $rawBytes = $null
+  try { $rawBytes = [System.IO.File]::ReadAllBytes($path) } catch { throw "cluster-color: $path could not be read ($($_.Exception.Message))" }
+  $bmpIn = $null
+  $bmp = $null
+  try {
+    $msImg = New-Object System.IO.MemoryStream(,$rawBytes)
+    try {
+      $bmpIn = New-Object System.Drawing.Bitmap($msImg, $true)
+      # the copy is what gets locked to the stream; keep it independent of the stream's life
+      $bmp = New-Object System.Drawing.Bitmap($bmpIn)
+    } finally { $msImg.Dispose() }
+  } catch {
+    if ($null -ne $bmp) { $bmp.Dispose() }
+    if ($null -ne $bmpIn) { $bmpIn.Dispose() }
+    throw "cluster-color: $path could not be decoded as an image ($($_.Exception.Message)) - it holds $fiLen byte(s); a capture written by this tool decodes here, anything else is refused by name"
+  }
+  if ($null -eq $bmpIn) { if ($null -ne $bmp) { $bmp.Dispose() }; throw "cluster-color: $path decoded to nothing - refusing to report colours for an image with no pixels" }
+  if ($bmp.Width -lt 1 -or $bmp.Height -lt 1) {
+    $dim = "$($bmp.Width)x$($bmp.Height)"
+    $bmp.Dispose(); $bmpIn.Dispose()
+    throw "cluster-color: $path decoded to $dim pixel(s) - there is nothing to cluster"
+  }
+  $wOut = [int]$bmp.Width
+  $hOut = [int]$bmp.Height
+  try {
+    $n32 = ConvertTo-Bitmap32 $bmp
+    try { $pix = Get-Bitmap32Bytes $n32 } finally {
+      if (-not [object]::ReferenceEquals($n32, $bmp)) { $n32.Dispose() }
+    }
+  } finally { $bmpIn.Dispose(); $bmp.Dispose() }
+  return @{ Bytes = $pix.Bytes; Stride = [int]$pix.Stride; W = $wOut; H = $hOut; Path = $path; FileBytes = [long]$fiLen }
+}
+
+# The one place the flat [CLC] array becomes records. Refusals happen HERE, by name,
+# with the ceiling that fired in the sentence - the handler cannot tell a capped scan
+# apart from a genuinely empty palette any other way.
+function Get-ColorClusters([byte[]]$Bytes, [int]$Stride, [int]$W, [int]$H, [int]$Tol, [int]$MaxSeeds, [int]$MaxMs) {
+  $ccSeeds = [int64]0
+  $ccCapped = $false
+  $ccOver = $false
+  $ccTrans = [int64]0
+  $ccCount = [int64]0
+  $ccFlat = @([CLC]::Run($Bytes, $Stride, $W, $H, $Tol, $MaxSeeds, $MaxMs, [ref] $ccSeeds, [ref] $ccCapped, [ref] $ccOver, [ref] $ccTrans, [ref] $ccCount))
+  if ($ccCapped) {
+    throw "cluster-color: --tolerance $Tol merges too little for this image - the scan needed more than $MaxSeeds clusters and stopped at $ccCount opaque pixel(s) of $($W * $H), so NO palette is reported (this is not a partial list). Raise --tolerance (it is a per-channel difference, 0..255) or point the command at a smaller crop"
+  }
+  if ($ccOver) {
+    throw "cluster-color: the scan passed its $MaxMs ms budget after $ccCount opaque pixel(s) of $($W * $H) at --tolerance $Tol, so NO palette is reported (this is not a partial list). Raise --tolerance, which makes every pixel cheaper to place, or pass a smaller image"
+  }
+  $ccRows = New-Object System.Collections.ArrayList
+  $ccI = 0
+  while ($ccI -lt [int] $ccSeeds) {
+    $ccB = $ccI * 14
+    $ccN = [long] $ccFlat[$ccB]
+    if ($ccN -le 0L) { throw "cluster-color: internal inconsistency - cluster #$($ccI + 1) reports a count of $ccN; refusing to divide by it" }
+    [void] $ccRows.Add([pscustomobject]@{
+      Count = $ccN
+      R = [int] [math]::Floor([double] $ccFlat[$ccB + 1] / [double] $ccN)
+      G = [int] [math]::Floor([double] $ccFlat[$ccB + 2] / [double] $ccN)
+      B = [int] [math]::Floor([double] $ccFlat[$ccB + 3] / [double] $ccN)
+      X = [int] $ccFlat[$ccB + 4]
+      Y = [int] $ccFlat[$ccB + 5]
+      BoxW = ([int] $ccFlat[$ccB + 6] - [int] $ccFlat[$ccB + 4] + 1)
+      BoxH = ([int] $ccFlat[$ccB + 7] - [int] $ccFlat[$ccB + 5] + 1)
+      SeedR = [int] $ccFlat[$ccB + 8]
+      SeedG = [int] $ccFlat[$ccB + 9]
+      SeedB = [int] $ccFlat[$ccB + 10]
+      DevR = [int] $ccFlat[$ccB + 11]
+      DevG = [int] $ccFlat[$ccB + 12]
+      DevB = [int] $ccFlat[$ccB + 13]
+      Hex = ('#{0:X2}{1:X2}{2:X2}' -f [int] [math]::Floor([double] $ccFlat[$ccB + 1] / [double] $ccN), [int] [math]::Floor([double] $ccFlat[$ccB + 2] / [double] $ccN), [int] [math]::Floor([double] $ccFlat[$ccB + 3] / [double] $ccN))
+    })
+    $ccI++
+  }
+  return @{ Rows = @($ccRows); Opaque = [long] $ccCount; Transparent = [long] $ccTrans; Seeds = [int] $ccSeeds; Pixels = ([long] $W * [long] $H) }
+}
+
+function Format-ClusterShare([long]$Count, [long]$Opaque) {
+  if ($Opaque -le 0L) { return '0.00' }
+  return ([double] $Count / [double] $Opaque * 100.0).ToString('0.00', [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Invoke-Handler-cluster-color([string]$Cmd, [string[]]$Rest) {
+      # cluster-color <image> [--min-cluster N] [--tolerance d]
+      $own = Strip-OwnFlags $Rest 'cluster-color'
+      $ccWords = @($own.Rest)
+      if ($ccWords.Count -lt 1) { throw 'usage: cluster-color <image> [--min-cluster N] [--tolerance d]' }
+      if ($ccWords.Count -gt 1) { throw "cluster-color takes one positional argument - the image path (extra token '$($ccWords[1])'; a path with spaces needs quotes at the shell, not a second argument)" }
+      $ccTol = [int] $own.Values['--tolerance']
+      $ccMin = [int] $own.Values['--min-cluster']
+      $ccImg = Read-ClusterImage ([string] $ccWords[0])
+      $ccRes = Get-ColorClusters $ccImg.Bytes $ccImg.Stride $ccImg.W $ccImg.H $ccTol (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+      $ccAll = @($ccRes.Rows | Sort-Object -Property @{ Expression = 'Count'; Descending = $true }, 'R', 'G', 'B', 'Y', 'X')
+      $ccKept = @($ccAll | Where-Object { [long] $_.Count -ge [long] $ccMin })
+      $ccDropped = @($ccAll | Where-Object { [long] $_.Count -lt [long] $ccMin })
+      $ccDropPx = 0L
+      foreach ($ccD in @($ccDropped)) { $ccDropPx = $ccDropPx + [long] $ccD.Count }
+      $ccTopK = [int] (Get-ClusterCeiling 'TopK')
+      # The cut and the sentence about it belong to one statement: the text page spends ten lines
+      # on the palette, --json prints every cluster that passed the trim, and a tail that is never
+      # announced is read as "that is the whole palette". $ccMore is that announcement.
+      $ccShown = @($ccKept | Select-Object -First $ccTopK)
+      $ccMore = ''
+      if (@($ccKept).Count -gt @($ccShown).Count) {
+        $ccMore = "cluster-color: showing the top $ccTopK of $(@($ccKept).Count) cluster(s) that passed --min-cluster; --json prints every one of them"
+      }
+      if ($script:Json) {
+        [pscustomobject]@{
+          image = $ccImg.Path; width = $ccImg.W; height = $ccImg.H; file_bytes = $ccImg.FileBytes
+          pixels = $ccRes.Pixels; opaque = $ccRes.Opaque; transparent = $ccRes.Transparent
+          tolerance = $ccTol; min_cluster = $ccMin; clusters = $ccRes.Seeds
+          below_min = @($ccDropped).Count; below_min_pixels = $ccDropPx
+          kept = @($ccKept).Count
+          palette = @($ccKept | ForEach-Object { [pscustomobject]@{
+            hex = $_.Hex; rgb = @($_.R, $_.G, $_.B); count = $_.Count
+            share = [double] (Format-ClusterShare $_.Count $ccRes.Opaque)
+            bbox = @($_.X, $_.Y, $_.BoxW, $_.BoxH); seed = @($_.SeedR, $_.SeedG, $_.SeedB)
+            dev = @($_.DevR, $_.DevG, $_.DevB) } })
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        "cluster-color: $(@($ccShown).Count) of $($ccRes.Seeds) cluster(s) over $($ccRes.Opaque) opaque pixel(s) in $($ccImg.Path)  $($ccImg.W)x$($ccImg.H)  tolerance=$ccTol (per channel) min-cluster=$ccMin"
+        if ($ccRes.Transparent -gt 0L) { "  transparent=$($ccRes.Transparent) pixel(s) skipped (alpha 0 is not a colour a caller can see)" }
+        $ccN = 0
+        foreach ($ccC in @($ccShown)) {
+          $ccN++
+          "  #$ccN $($ccC.Hex) share=$(Format-ClusterShare $ccC.Count $ccRes.Opaque)% count=$($ccC.Count) bbox=($($ccC.X),$($ccC.Y),$($ccC.BoxW),$($ccC.BoxH)) dev=$($ccC.DevR),$($ccC.DevG),$($ccC.DevB) seed=$($ccC.SeedR),$($ccC.SeedG),$($ccC.SeedB)"
+        }
+        if (@($ccDropped).Count -gt 0) { "cluster-color: $(@($ccDropped).Count) cluster(s) fell below --min-cluster $ccMin ($ccDropPx pixel(s)) - they are NOT in the lines above" }
+        if ($ccMore -ne '') { $ccMore }
+        if (@($ccShown).Count -eq 0) { "cluster-color: no cluster reached --min-cluster $ccMin - lower it or raise --tolerance; an empty palette here is a refusal to invent one, not a finding" }
+        $ccMap = "$($ccImg.Path).map.txt"
+        if (Test-Path -LiteralPath $ccMap -PathType Leaf) { "cluster-color: bbox is in IMAGE pixels; this file has a capture map ($ccMap) - 'unmap $($ccImg.Path) <ix> <iy>' turns one into screen coordinates" }
       }
 }

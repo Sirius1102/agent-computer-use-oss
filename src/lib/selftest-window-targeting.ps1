@@ -126,7 +126,10 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     Set-Item -Path ('function:' + $b5Names[3]) -Value { param($la, $detail, $cn) }
     Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $b) $script:b5Moves++ }
     Set-Item -Path 'function:Invoke-ActionExpectation' -Value { param($pp, $tt, $what) }
-    Set-Item -Path 'function:Read-MapSidecar' -Value { param($img) return [pscustomobject]@{ OutW = 100; OutH = 100; Kind = 'win'; Scale = 1; OriginX = 10; OriginY = 20; Grid = 0; HostHwnd = $script:a1MapHwnd; HostTitle = 'b5-fake' } }
+    # GridStyle rides along since B-3: the handler reads it off every map it holds, and a mock
+    # that omits a field the real reader always returns dies under StrictMode before the
+    # assertion itself can speak. Grid=0 keeps the proximity math short-circuited.
+    Set-Item -Path 'function:Read-MapSidecar' -Value { param($img) return [pscustomobject]@{ OutW = 100; OutH = 100; Kind = 'win'; Scale = 1; OriginX = 10; OriginY = 20; Grid = 0; GridStyle = 'unknown'; HostHwnd = $script:a1MapHwnd; HostTitle = 'b5-fake' } }
     Set-Item -Path 'function:Test-MapSidecarStale' -Value { param($map) return @{ Verdict = $script:a1StaleVerdict; Msg = ('stub verdict: ' + $script:a1StaleVerdict) } }
     Set-Item -Path 'function:Convert-ImageToScreen' -Value { param($map, $ix, $iy) return [pscustomobject]@{ X = 15; Y = 26 } }
     Set-Item -Path 'function:Get-RegionHash' -Value { param($x, $y, $w, $h) $script:b5Captures++; $v = [string]$script:b5Seq[0]; if (@($script:b5Seq).Count -gt 1) { $script:b5Seq = @($script:b5Seq | Select-Object -Skip 1) }; return $v }
@@ -1705,4 +1708,1182 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     (@($curAKillSrc | Where-Object { $_.Contains('$pr.Dispose()') }).Count -ge 1) -and
     (@($curAKillSrc | Where-Object { $_.Contains('handle-pinned=yes') }).Count -ge 1))
 
+  # ---------- D-2 (v4.6.13): the tile grid and the stitch that rebuilds it ----------
+  # A region too wide for one capture is written as a set of 1:1 PNGs, one map per cell;
+  # 'stitch' rebuilds the region from that set alone. Everything below is offline: a
+  # synthetic 301x197 bitmap at a NEGATIVE screen origin stands in for the screen, and the
+  # real Export-TileSet / sidecar / Get-StitchPlan / Convert-TileSetToBitmap path is driven
+  # end to end - so "the stitch equals the whole capture" is measured on PNG bytes, not on
+  # the plan that produced them. Every refusal below is run against a byte-copy of the
+  # pristine set, so the only difference between green and red is the planted defect.
+  $d2RX = 1000; $d2RY = -40; $d2W = 301; $d2H = 197
+  $d2Root = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-d2-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  $d2DirA = Join-Path $d2Root 'a'
+  $d2DirB = Join-Path $d2Root 'b'
+  [void][System.IO.Directory]::CreateDirectory($d2DirA)
+  [void][System.IO.Directory]::CreateDirectory($d2DirB)
+  $d2Src = $null
+  try {
+    $d2Src = New-Object System.Drawing.Bitmap($d2W, $d2H, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $d2Fd = $d2Src.LockBits((New-Object System.Drawing.Rectangle 0, 0, $d2W, $d2H), [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+      $d2Row = New-Object byte[] ($d2W * 4)
+      for ($d2yy = 0; $d2yy -lt $d2H; $d2yy++) {
+        for ($d2xx = 0; $d2xx -lt $d2W; $d2xx++) {
+          $d2o = $d2xx * 4
+          $d2Row[$d2o] = [byte](($d2xx * 7 + $d2yy * 3) % 251)
+          $d2Row[$d2o + 1] = [byte](($d2xx * 5 + $d2yy * 11) % 241)
+          $d2Row[$d2o + 2] = [byte](($d2xx * 13 + $d2yy * 17) % 239)
+          $d2Row[$d2o + 3] = 255
+        }
+        [System.Runtime.InteropServices.Marshal]::Copy($d2Row, 0, [IntPtr]::Add($d2Fd.Scan0, $d2yy * $d2Fd.Stride), $d2W * 4)
+      }
+    } finally { $d2Src.UnlockBits($d2Fd) }
+    $d2Grab = { param($d2gx, $d2gy, $d2gw, $d2gh)
+      $d2lx = [int]$d2gx - $d2RX; $d2ly = [int]$d2gy - $d2RY
+      return $d2Src.Clone((New-Object System.Drawing.Rectangle $d2lx, $d2ly, ([int]$d2gw), ([int]$d2gh)), [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    }
+    $d2PngBytes = { param($d2bmp)
+      $d2ms = New-Object System.IO.MemoryStream
+      try { $d2bmp.Save($d2ms, [System.Drawing.Imaging.ImageFormat]::Png); return ,$d2ms.ToArray() } finally { $d2ms.Dispose() }
+    }
+    $d2ShaOf = { param([byte[]]$d2b)
+      $d2hh = [System.Security.Cryptography.SHA256]::Create()
+      try { return ([BitConverter]::ToString($d2hh.ComputeHash($d2b)) -replace '-', '').ToLower() } finally { $d2hh.Dispose() }
+    }
+
+    # --- the plan is ONE geometry, so both modes are pinned on numbers a reader can redo ---
+    $d2PlanA = Get-TilePlan $d2RX $d2RY $d2W $d2H 'grid' 0 0 3 2 0
+    $d2ATiles = @($d2PlanA.Tiles)
+    $d2OutsideA = @($d2ATiles | Where-Object { $_.X -lt $d2RX -or $_.Y -lt $d2RY -or ($_.X + $_.W) -gt ($d2RX + $d2W) -or ($_.Y + $_.H) -gt ($d2RY + $d2H) })
+    ST-Check 'unit (D-2): a --grid 3x2 plan over 301x197 strides 100x98, its last column/row absorb 101x99, and every cell stays inside the region' (
+      $d2PlanA.Cols -eq 3 -and $d2PlanA.Rows -eq 2 -and $d2PlanA.StepX -eq 100 -and $d2PlanA.StepY -eq 98 -and
+      $d2ATiles.Count -eq 6 -and (($d2PlanA.StepX * 2) + 101) -eq $d2W -and ($d2PlanA.StepY + 99) -eq $d2H -and
+      @($d2ATiles | Where-Object { $_.C -eq 2 -and $_.W -eq 101 }).Count -eq 2 -and
+      @($d2ATiles | Where-Object { $_.R -eq 1 -and $_.H -eq 99 }).Count -eq 3 -and
+      @($d2ATiles | Where-Object { $_.C -eq 1 -and $_.X -eq ($d2RX + 100) }).Count -eq 2 -and
+      @($d2ATiles | Where-Object { $_.R -eq 1 -and $_.Y -eq ($d2RY + 98) }).Count -eq 3 -and
+      $d2OutsideA.Count -eq 0)
+    $d2PlanB = Get-TilePlan $d2RX $d2RY $d2W $d2H 'tile' 120 80 0 0 20
+    $d2BTiles = @($d2PlanB.Tiles)
+    ST-Check 'unit (D-2): a --tile 120x80 plan with --overlap 20 strides 100x60 into 3x3 cells whose last column/row absorb 101x77 and whose shared strips really exist' (
+      $d2PlanB.Cols -eq 3 -and $d2PlanB.Rows -eq 3 -and $d2PlanB.StepX -eq 100 -and $d2PlanB.StepY -eq 60 -and
+      $d2BTiles.Count -eq 9 -and $d2PlanB.StepX -lt 120 -and $d2PlanB.StepY -lt 80 -and
+      @($d2BTiles | Where-Object { $_.C -eq 2 -and $_.W -eq 101 }).Count -eq 3 -and
+      @($d2BTiles | Where-Object { $_.R -eq 2 -and $_.H -eq 77 }).Count -eq 3 -and
+      @($d2BTiles | Where-Object { $_.C -le 1 -and $_.W -eq 120 }).Count -eq 6)
+
+    # --- the handler's own refusals happen BEFORE the first screen read ---
+    $d2H1 = ''
+    try { [void](Invoke-Handler-tile 'tile' @('0', '0', '10', '10', '--tile', '5x5', '--grid', '2x2', '--out-dir', $d2DirA)) } catch { $d2H1 = $_.Exception.Message }
+    $d2H2 = ''
+    try { [void](Invoke-Handler-tile 'tile' @('0', '0', '10', '10', '--out-dir', $d2DirA)) } catch { $d2H2 = $_.Exception.Message }
+    $d2H3 = ''
+    try { [void](Invoke-Handler-tile 'tile' @('0', '0', '10', '10', '--tile', '5x5')) } catch { $d2H3 = $_.Exception.Message }
+    ST-Check 'unit (D-2): tile refuses two plans, no plan, and a missing destination BEFORE it touches the screen' (
+      $d2H1.Contains('describe two different plans') -and $d2H2.Contains('exactly one plan is required') -and $d2H3.Contains('--out-dir is required'))
+    $d2H4 = ''
+    try { [void](Invoke-Handler-tile 'tile' @('0', '0', '10', '10', '--tile', '5by5', '--out-dir', $d2DirA)) } catch { $d2H4 = $_.Exception.Message }
+    ST-Check 'unit (D-2): a plan spelled without the separator is refused by name, never read as five zero-size tiles' (
+      $d2H4.Contains('--tile expects <number>x<number>') -and $d2H4.Contains('5by5'))
+    $d2P1 = ''
+    try { [void](Get-TilePlan 0 0 0 10 'grid' 0 0 2 2 0) } catch { $d2P1 = $_.Exception.Message }
+    $d2P2 = ''
+    try { [void](Get-TilePlan 0 0 10 10 'grid' 0 0 2 2 10) } catch { $d2P2 = $_.Exception.Message }
+    $d2P3 = ''
+    try { [void](Get-TilePlan 0 0 300 200 'tile' 50 50 0 0 50) } catch { $d2P3 = $_.Exception.Message }
+    ST-Check 'unit (D-2): the planner refuses an empty region and an overlap that leaves no room - against the region and against the tile size' (
+      $d2P1.Contains('at least 1x1') -and $d2P2.Contains('stay below both region dimensions') -and $d2P3.Contains('below the --tile size'))
+    $d2P4 = ''
+    try { [void](Get-TilePlan 0 0 100 100 'grid' 0 0 400 1 0) } catch { $d2P4 = $_.Exception.Message }
+    $d2P5 = ''
+    try { [void](Get-TilePlan 0 0 300 200 'grid' 0 0 40 20 0) } catch { $d2P5 = $_.Exception.Message }
+    ST-Check 'unit (D-2): a grid denser than the region allows and a plan above the 400-image cap are refused with the numbers printed' (
+      $d2P4.Contains('denser than the 100x100 region allows') -and $d2P5.Contains('800') -and $d2P5.Contains('cap is 400 images per set'))
+
+    # --- round trip: the stitched bytes must equal the direct whole capture ---
+    $d2TilesA = @(Export-TileSet $d2PlanA $d2DirA 'd2a' $d2Grab)
+    $d2StitchA = Get-StitchPlan $d2DirA
+    $d2BmpA = Convert-TileSetToBitmap $d2StitchA
+    try { $d2BytesA = & $d2PngBytes $d2BmpA } finally { $d2BmpA.Dispose() }
+    $d2WholeBmp = $d2Src.Clone((New-Object System.Drawing.Rectangle 0, 0, $d2W, $d2H), [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try { $d2BytesWhole = & $d2PngBytes $d2WholeBmp } finally { $d2WholeBmp.Dispose() }
+    $d2ShaA = & $d2ShaOf ([byte[]]$d2BytesA)
+    $d2ShaWhole = & $d2ShaOf ([byte[]]$d2BytesWhole)
+    $d2OrderA = (@($d2StitchA.Tiles | ForEach-Object { [string]$_.C + ',' + [string]$_.R }) -join ';')
+    ST-Check 'unit (D-2): a 3x2 no-overlap set stitches back to BYTES identical to the direct whole capture (PNG SHA-256 equality, row-major order)' (
+      $d2TilesA.Count -eq 6 -and @($d2StitchA.Tiles).Count -eq 6 -and
+      $d2ShaA -match '^[0-9a-f]{64}$' -and $d2ShaA -ceq $d2ShaWhole -and
+      $d2ShaWhole -cne ([string]$d2TilesA[0].Sha) -and
+      $d2OrderA -ceq '0,0;1,0;2,0;0,1;1,1;2,1')
+    $d2TilesB = @(Export-TileSet $d2PlanB $d2DirB 'd2b' $d2Grab)
+    $d2StitchB = Get-StitchPlan $d2DirB
+    $d2BmpB = Convert-TileSetToBitmap $d2StitchB
+    try { $d2BytesB = & $d2PngBytes $d2BmpB } finally { $d2BmpB.Dispose() }
+    $d2ShaB = & $d2ShaOf ([byte[]]$d2BytesB)
+    ST-Check 'unit (D-2): a --overlap 20 set also rebuilds the region byte-exactly - shared strips are cropped by ownership, never averaged' (
+      $d2TilesB.Count -eq 9 -and $d2ShaB -ceq $d2ShaWhole -and $d2ShaB -cne ([string]$d2TilesB[0].Sha) -and
+      @($d2StitchB.Tiles | Where-Object { $_.W -gt $d2PlanB.StepX }).Count -eq 9)
+
+    # --- unmap on a tile is a GLOBAL answer: 12 corners, tile output vs whole-image output ---
+    $d2WholePath = Join-Path $d2Root 'whole.png'
+    Write-MapSidecar $d2WholePath $d2RX $d2RY 1.0 $d2W $d2H 'rect' $null 0 $null $d2ShaWhole
+    [System.IO.File]::WriteAllBytes($d2WholePath, [byte[]]$d2BytesWhole)
+    $d2UmBad = New-Object System.Collections.ArrayList
+    $d2UmPairs = 0
+    foreach ($d2t in @($d2StitchA.Tiles)) {
+      foreach ($d2lp in @(@(0, 0), @(([int]$d2t.W - 1), ([int]$d2t.H - 1)))) {
+        $d2lx = [int]$d2lp[0]; $d2ly = [int]$d2lp[1]
+        $d2gx = [int]$d2t.X + $d2lx; $d2gy = [int]$d2t.Y + $d2ly
+        $d2tl = @(Invoke-Handler-unmap 'unmap' @([string]$d2t.Path, [string]$d2lx, [string]$d2ly))
+        $d2wl = @(Invoke-Handler-unmap 'unmap' @($d2WholePath, [string]($d2gx - $d2RX), [string]($d2gy - $d2RY)))
+        $d2UmPairs = $d2UmPairs + 1
+        $d2tm = [regex]::Match([string]$d2tl[0], '-> screen \((-?\d+),(-?\d+)\)')
+        $d2wm = [regex]::Match([string]$d2wl[0], '-> screen \((-?\d+),(-?\d+)\)')
+        if (-not $d2tm.Success -or -not $d2wm.Success) { [void]$d2UmBad.Add('no screen clause for c' + $d2t.C + ' r' + $d2t.R); continue }
+        if ([int]$d2tm.Groups[1].Value -ne $d2gx -or [int]$d2tm.Groups[2].Value -ne $d2gy) {
+          [void]$d2UmBad.Add('tile c' + $d2t.C + ' r' + $d2t.R + ' -> ' + $d2tm.Value + ' want ' + $d2gx + ',' + $d2gy)
+        }
+        if ([string]$d2tm.Value -cne [string]$d2wm.Value) {
+          [void]$d2UmBad.Add('tile c' + $d2t.C + ' r' + $d2t.R + ' disagrees with the whole image at ' + $d2gx + ',' + $d2gy)
+        }
+      }
+    }
+    ST-Check 'unit (D-2): unmap on EVERY tile prints the GLOBAL screen point and agrees with the whole image at the same pixel (12 corner pairs)' (
+      $d2UmPairs -eq 12 -and @($d2UmBad).Count -eq 0)
+
+    # --- planted defects: each case dir is a byte-copy of the set that just stitched ---
+    $d2DirC = Join-Path $d2Root 'c1'
+    [void][System.IO.Directory]::CreateDirectory($d2DirC)
+    Get-ChildItem -LiteralPath $d2DirA -File | Copy-Item -Destination $d2DirC
+    Remove-Item -LiteralPath (Join-Path $d2DirC 'tile_d2a_r1_c1.png') -Force
+    Remove-Item -LiteralPath (Join-Path $d2DirC 'tile_d2a_r1_c1.png.map.txt') -Force
+    $d2Miss = ''
+    try { [void](Get-StitchPlan $d2DirC) } catch { $d2Miss = $_.Exception.Message }
+    ST-Check 'unit (D-2): a set missing one cell is refused BY NAME (a partial set cannot be rebuilt honestly)' (
+      $d2Miss.Contains('INCOMPLETE') -and $d2Miss.Contains('1 of 6') -and $d2Miss.Contains('c=1 r=1'))
+    $d2DirC = Join-Path $d2Root 'c2'
+    [void][System.IO.Directory]::CreateDirectory($d2DirC)
+    Get-ChildItem -LiteralPath $d2DirA -File | Copy-Item -Destination $d2DirC
+    Copy-Item -LiteralPath (Join-Path $d2DirC 'tile_d2a_r0_c0.png') -Destination (Join-Path $d2DirC 'dupe_r0_c0.png')
+    Copy-Item -LiteralPath (Join-Path $d2DirC 'tile_d2a_r0_c0.png.map.txt') -Destination (Join-Path $d2DirC 'dupe_r0_c0.png.map.txt')
+    $d2Dup = ''
+    try { [void](Get-StitchPlan $d2DirC) } catch { $d2Dup = $_.Exception.Message }
+    ST-Check 'unit (D-2): two files claiming the same cell are refused (one directory, one set)' (
+      $d2Dup.Contains('two tiles claim c=0 r=0'))
+    $d2DirC = Join-Path $d2Root 'c3'
+    [void][System.IO.Directory]::CreateDirectory($d2DirC)
+    Get-ChildItem -LiteralPath $d2DirA -File | Copy-Item -Destination $d2DirC
+    $d2NoisePath = Join-Path $d2DirC 'noise.png'
+    [System.IO.File]::WriteAllBytes($d2NoisePath, [byte[]]$d2BytesWhole)
+    Write-MapSidecar $d2NoisePath $d2RX $d2RY 1.0 $d2W $d2H 'rect' $null 0 $null $d2ShaWhole
+    $d2St3 = Get-StitchPlan $d2DirC
+    $d2Ign = @($d2St3.Ignored)
+    ST-Check 'unit (D-2): a foreign map in the folder is ignored AND named, and the tile set still stitches (a shared folder stays usable)' (
+      @($d2St3.Tiles).Count -eq 6 -and $d2Ign.Count -eq 1 -and ([string]$d2Ign[0]).Contains('noise.png') -and
+      ([string]$d2Ign[0]).Contains('kind=rect') -and @($d2StitchA.Ignored).Count -eq 0)
+    $d2DirC = Join-Path $d2Root 'c4'
+    [void][System.IO.Directory]::CreateDirectory($d2DirC)
+    Get-ChildItem -LiteralPath $d2DirA -File | Copy-Item -Destination $d2DirC
+    $d2MisPath = Join-Path $d2DirC 'tile_d2a_r0_c1.png.map.txt'
+    $d2MisTxt = [System.IO.File]::ReadAllText($d2MisPath, [System.Text.Encoding]::UTF8)
+    $d2MisTxt = $d2MisTxt -replace '(?m)^origin_x=1100\r?$', ("origin_x=1101" + "`r")
+    [System.IO.File]::WriteAllText($d2MisPath, $d2MisTxt, (New-Object System.Text.UTF8Encoding($false)))
+    $d2Mis = ''
+    try { [void](Get-StitchPlan $d2DirC) } catch { $d2Mis = $_.Exception.Message }
+    ST-Check 'unit (D-2): a tile whose origin is not where its own grid says is refused - the sidecar and the grid must agree' (
+      $d2Mis.Contains('does not sit where its own grid says') -and $d2Mis.Contains('r0_c1'))
+    $d2DirC = Join-Path $d2Root 'c5'
+    [void][System.IO.Directory]::CreateDirectory($d2DirC)
+    Get-ChildItem -LiteralPath $d2DirA -File | Copy-Item -Destination $d2DirC
+    $d2NgPath = Join-Path $d2DirC 'tile_d2a_r0_c0.png.map.txt'
+    $d2NgTxt = [System.IO.File]::ReadAllText($d2NgPath, [System.Text.Encoding]::UTF8)
+    $d2NgTxt = ((@($d2NgTxt -split "`r?`n") | Where-Object { $_ -notmatch '^(tile_|region_)' }) -join "`r`n")
+    [System.IO.File]::WriteAllText($d2NgPath, $d2NgTxt, (New-Object System.Text.UTF8Encoding($false)))
+    $d2Ng = ''
+    try { [void](Read-MapSidecar (Join-Path $d2DirC 'tile_d2a_r0_c0.png')) } catch { $d2Ng = $_.Exception.Message }
+    ST-Check 'unit (D-2): a kind=tile map stripped of its grid is refused at the one chokepoint every reader passes' (
+      $d2Ng.Contains('kind=tile without its grid'))
+  } finally {
+    if ($null -ne $d2Src) { $d2Src.Dispose() }
+    try { if (Test-Path -LiteralPath $d2Root) { Remove-Item -LiteralPath $d2Root -Recurse -Force } } catch { }
+  }
+
+  # ---------- D-4 (v4.6.13): grid denoise - planned geometry, three styles, text boxes kept clear ----------
+  # The grid used to be drawn by a loop with its arithmetic inline. It is now PLANNED by one pure
+  # function, RENDERED by one function, and the text it must not swallow is read off the same 1:1
+  # frame by the OCR road the tool already ships. Everything below is offline: planner and
+  # renderer run on synthetic bitmaps, and the single OCR leg runs on a rendered fixture through
+  # Invoke-OcrFile - no window, no desktop, no screen. Every "the feature is on" claim below has
+  # the matching "feature off" measurement beside it, so a renderer that ignored the plan fails.
+  $d4Styles = @('thin', 'bold', 'contrast')
+  $d4Specs = @($d4Styles | ForEach-Object { Get-GridStyleSpec $_ })
+  $d4Widths = @($d4Specs | ForEach-Object { [int]$_.Width })
+  $d4Alphas = @($d4Specs | ForEach-Object { [int]$_.Alpha })
+  $d4BadStyle = ''
+  try { [void](Get-GridStyleSpec 'wobbly') } catch { $d4BadStyle = $_.Exception.Message }
+  ST-Check 'unit (D-4): the three grid styles resolve to three DIFFERENT line widths with rising opacity, and a fourth name is refused by name (never silently rendered as thin)' (
+    ($d4Widths.Count -eq 3) -and (@($d4Widths | Sort-Object -Unique).Count -eq 3) -and
+    ($d4Alphas[0] -lt $d4Alphas[1]) -and ($d4Alphas[1] -lt $d4Alphas[2]) -and
+    ($d4BadStyle.Contains('thin|bold|contrast')) -and ($d4BadStyle.Contains('wobbly')))
+  if (-not (($d4Widths.Count -eq 3) -and (@($d4Widths | Sort-Object -Unique).Count -eq 3))) {
+    Write-Output ('      D-4 styles: widths=[' + ($d4Widths -join ',') + '] alphas=[' + ($d4Alphas -join ',') + '] refusal=[' + $d4BadStyle + ']')
+  }
+  # The planner is a refactor of a loop whose behaviour is the contract: with nothing to avoid it
+  # must reproduce that loop EXACTLY - the same round-screen labels, the same image index for each,
+  # and one full run per line. The expected lists are recomputed here from the OLD formula (not
+  # read back out of the planner), so dropping the screen->image arithmetic turns this red.
+  $d4LegRect = @{ X = 1000; Y = -40; W = 301; H = 197 }
+  $d4Plan0 = New-GridOverlayPlan 301 197 $d4LegRect 1.0 50 'thin' @()
+  $d4LegV = @(); $d4LegH = @()
+  $d4sx = [int]([math]::Ceiling($d4LegRect.X / 50) * 50)
+  while ($d4sx -le ($d4LegRect.X + $d4LegRect.W)) {
+    $d4ix = [int][math]::Round(($d4sx - $d4LegRect.X) * 1.0)
+    if ($d4ix -ge 0 -and $d4ix -lt 301) { $d4LegV += ("$d4sx@$d4ix") }
+    $d4sx += 50
+  }
+  $d4sy = [int]([math]::Ceiling($d4LegRect.Y / 50) * 50)
+  while ($d4sy -le ($d4LegRect.Y + $d4LegRect.H)) {
+    $d4iy = [int][math]::Round(($d4sy - $d4LegRect.Y) * 1.0)
+    if ($d4iy -ge 0 -and $d4iy -lt 197) { $d4LegH += ("$d4sy@$d4iy") }
+    $d4sy += 50
+  }
+  $d4GotV = @(@($d4Plan0.Lines) | Where-Object { $_.Vertical } | ForEach-Object { "$($_.Sx)@$($_.Ix)" })
+  $d4GotH = @(@($d4Plan0.Lines) | Where-Object { -not $_.Vertical } | ForEach-Object { "$($_.Sy)@$($_.Iy)" })
+  # the same screen values through a 0.7 --fit: the LAST column must fall off the same way the
+  # old loop's ($ix -lt $iw) test dropped it (ix=210 on a 210px image), which is the seam most
+  # likely to be lost when the loop is re-expressed.
+  $d4FitRect = @{ X = 1000; Y = -40; W = 300; H = 200 }
+  $d4Plan1 = New-GridOverlayPlan 210 140 $d4FitRect 0.7 50 'thin' @()
+  $d4FitV = @()
+  $d4sx = [int]([math]::Ceiling($d4FitRect.X / 50) * 50)
+  while ($d4sx -le ($d4FitRect.X + $d4FitRect.W)) {
+    $d4ix = [int][math]::Round(($d4sx - $d4FitRect.X) * 0.7)
+    if ($d4ix -ge 0 -and $d4ix -lt 210) { $d4FitV += ("$d4sx@$d4ix") }
+    $d4sx += 50
+  }
+  $d4GotFit = @(@($d4Plan1.Lines) | Where-Object { $_.Vertical } | ForEach-Object { "$($_.Sx)@$($_.Ix)" })
+  $d4BadRuns = @(@($d4Plan0.Lines) | Where-Object {
+      $sg = @($_.Segs)
+      if ($_.Vertical) { return ($sg.Count -ne 1) -or ($sg[0].A -ne 0) -or ($sg[0].B -ne 197) }
+      return ($sg.Count -ne 1) -or ($sg[0].A -ne 0) -or ($sg[0].B -ne 301)
+    })
+  $d4BadLabels = @(@($d4Plan0.Lines) | Where-Object { $_.Vertical -and ([string]$_.Label -ne "$($_.Sx)") })
+  ST-Check 'unit (D-4): with nothing to avoid, the planner reproduces the pre-D-4 loop exactly - same screen labels, same image index per line (1:1 AND --fit, including the last column it drops), one full run each' (
+    (($d4LegV -join ',') -ceq ($d4GotV -join ',')) -and (($d4LegH -join ',') -ceq ($d4GotH -join ',')) -and
+    (($d4FitV -join ',') -ceq ($d4GotFit -join ',')) -and (@($d4BadRuns).Count -eq 0) -and
+    (@($d4BadLabels).Count -eq 0) -and ($d4LegV.Count -eq 7) -and ($d4LegH.Count -eq 4) -and ($d4FitV.Count -eq 6))
+  if ((($d4LegV -join ',') -cne ($d4GotV -join ',')) -or (($d4FitV -join ',') -cne ($d4GotFit -join ','))) {
+    Write-Output ('      D-4 legacy geometry: want-v=[' + ($d4LegV -join ',') + '] got-v=[' + ($d4GotV -join ',') + '] want-fit=[' + ($d4FitV -join ',') + '] got-fit=[' + ($d4GotFit -join ',') + ']')
+  }
+  # The avoidance rule is containment, not proximity: a box that does not span the line leaves it
+  # whole, two boxes that overlap cost ONE seam, full coverage removes the line, and a label that
+  # would sit on text is dropped (a moved label would name a coordinate the line is not at).
+  # A text box is 2-D, so the one below cuts a vertical AND a horizontal line and Avoided counts
+  # the LINES cut (2), not the boxes - both cuts are named here so the count stays explainable.
+  $d4AvRect = @{ X = 0; Y = 0; W = 400; H = 200 }
+  $d4BoxA = @{ X = 95; Y = 40; W = 11; H = 21 }
+  $d4BoxB = @{ X = 95; Y = 55; W = 11; H = 31 }
+  $d4BoxC = @{ X = 195; Y = -10; W = 11; H = 300 }
+  $d4PlanA = New-GridOverlayPlan 400 200 $d4AvRect 1.0 50 'thin' @($d4BoxA)
+  $d4PlanM = New-GridOverlayPlan 400 200 $d4AvRect 1.0 50 'thin' @($d4BoxA, $d4BoxB)
+  $d4PlanC = New-GridOverlayPlan 400 200 $d4AvRect 1.0 50 'thin' @($d4BoxC)
+  $d4LineA = @(@($d4PlanA.Lines) | Where-Object { $_.Vertical -and [int]$_.Ix -eq 100 })[0]
+  $d4LineH = @(@($d4PlanA.Lines) | Where-Object { -not $_.Vertical -and [int]$_.Iy -eq 50 })[0]
+  $d4LineX = @(@($d4PlanA.Lines) | Where-Object { $_.Vertical -and [int]$_.Ix -eq 150 })[0]
+  $d4LineM = @(@($d4PlanM.Lines) | Where-Object { $_.Vertical -and [int]$_.Ix -eq 100 })[0]
+  $d4LineC = @(@($d4PlanC.Lines) | Where-Object { $_.Vertical -and [int]$_.Ix -eq 200 })[0]
+  $d4SegA = (@(@($d4LineA.Segs) | ForEach-Object { "$($_.A)-$($_.B)" }) -join ',')
+  $d4SegH = (@(@($d4LineH.Segs) | ForEach-Object { "$($_.A)-$($_.B)" }) -join ',')
+  $d4SegX = (@(@($d4LineX.Segs) | ForEach-Object { "$($_.A)-$($_.B)" }) -join ',')
+  $d4SegM = (@(@($d4LineM.Segs) | ForEach-Object { "$($_.A)-$($_.B)" }) -join ',')
+  $d4SegC = (@(@($d4LineC.Segs) | ForEach-Object { "$($_.A)-$($_.B)" }) -join ',')
+  $d4LblPlan = New-GridOverlayPlan 400 200 $d4AvRect 1.0 50 'thin' @(@{ X = 145; Y = 0; W = 40; H = 20 })
+  $d4LblDropped = @(@($d4LblPlan.Lines) | Where-Object { $_.Vertical -and [int]$_.Ix -eq 150 })[0]
+  $d4LblKept = @(@($d4LblPlan.Lines) | Where-Object { $_.Vertical -and [int]$_.Ix -eq 100 })[0]
+  $d4Ok3 = ($d4SegA -ceq '0-37,63-200') -and ($d4SegH -ceq '0-92,108-400') -and ($d4SegX -ceq '0-200') -and
+    ($d4SegM -ceq '0-37,88-200') -and ($d4SegC -ceq '') -and ([int]$d4PlanC.Avoided -eq 5) -and
+    ([int]$d4PlanA.Avoided -eq 2) -and ([int]$d4LblPlan.LabelsDropped -eq 1) -and
+    ([string]$d4LblDropped.Label -eq '') -and ([string]$d4LblKept.Label -ceq '100')
+  ST-Check 'unit (D-4): a text box splits the one line it covers into two runs (and the horizontal line it also crosses), a second overlapping box merges into ONE seam, a box that misses the line changes nothing, full coverage leaves no run, and a label that would sit on text is dropped' $d4Ok3
+  if (-not $d4Ok3) {
+    Write-Output ('      D-4 segments: v=[' + $d4SegA + '] h=[' + $d4SegH + '] miss=[' + $d4SegX + '] merged=[' + $d4SegM + '] full=[' + $d4SegC + '] avoidedA=' + [int]$d4PlanA.Avoided + ' avoidedC=' + [int]$d4PlanC.Avoided + ' dropped=' + [int]$d4LblPlan.LabelsDropped + ' droppedLabel=[' + [string]$d4LblDropped.Label + '] keptLabel=[' + [string]$d4LblKept.Label + ']')
+  }
+  # The promise is pixel-level: a box the planner was told to keep clear is BYTE-identical to the
+  # same image with no grid at all, while the line still exists immediately above and below that
+  # gap. The empty-avoid draw is the planted "avoidance disabled" control - same renderer, same
+  # geometry, and the box gets painted over.
+  $d4PxW = 200; $d4PxH = 120
+  $d4PxRect = @{ X = 0; Y = 0; W = 200; H = 120 }
+  $d4PxBox = @{ X = 40; Y = 50; W = 41; H = 11 }
+  $d4Base = New-Object System.Drawing.Bitmap($d4PxW, $d4PxH, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $d4Keep = $null; $d4NoAv = $null
+  try {
+    $d4gb = [System.Drawing.Graphics]::FromImage($d4Base)
+    $d4gb.Clear([System.Drawing.Color]::White); $d4gb.Dispose()
+    $d4Keep = $d4Base.Clone()
+    $d4gk = [System.Drawing.Graphics]::FromImage($d4Keep)
+    $d4Pk = New-GridOverlayPlan $d4PxW $d4PxH $d4PxRect 1.0 50 'thin' @($d4PxBox)
+    Draw-GridOverlay $d4gk $d4Pk
+    $d4gk.Dispose()
+    $d4NoAv = $d4Base.Clone()
+    $d4gn = [System.Drawing.Graphics]::FromImage($d4NoAv)
+    Draw-GridOverlay $d4gn (New-GridOverlayPlan $d4PxW $d4PxH $d4PxRect 1.0 50 'thin' @())
+    $d4gn.Dispose()
+    $d4InsideSame = 0; $d4InsideDiff = 0; $d4NoAvDiff = 0
+    for ($d4yy = 50; $d4yy -lt 61; $d4yy++) {
+      for ($d4xx = 40; $d4xx -lt 81; $d4xx++) {
+        $d4c0 = $d4Base.GetPixel($d4xx, $d4yy).ToArgb()
+        if ($d4Keep.GetPixel($d4xx, $d4yy).ToArgb() -eq $d4c0) { $d4InsideSame++ } else { $d4InsideDiff++ }
+        if ($d4NoAv.GetPixel($d4xx, $d4yy).ToArgb() -ne $d4c0) { $d4NoAvDiff++ }
+      }
+    }
+    $d4LineAbove = 0; $d4LineBelow = 0; $d4GapClean = 0
+    for ($d4yy = 30; $d4yy -le 47; $d4yy++) { if ($d4Keep.GetPixel(50, $d4yy).ToArgb() -ne $d4Base.GetPixel(50, $d4yy).ToArgb()) { $d4LineAbove++ } }
+    for ($d4yy = 63; $d4yy -le 80; $d4yy++) { if ($d4Keep.GetPixel(50, $d4yy).ToArgb() -ne $d4Base.GetPixel(50, $d4yy).ToArgb()) { $d4LineBelow++ } }
+    for ($d4yy = 48; $d4yy -le 62; $d4yy++) { if ($d4Keep.GetPixel(50, $d4yy).ToArgb() -eq $d4Base.GetPixel(50, $d4yy).ToArgb()) { $d4GapClean++ } }
+    $d4RowGapClean = 0
+    for ($d4xx = 38; $d4xx -le 82; $d4xx++) { if ($d4Keep.GetPixel($d4xx, 50).ToArgb() -eq $d4Base.GetPixel($d4xx, 50).ToArgb()) { $d4RowGapClean++ } }
+    $d4Ok4 = ($d4InsideSame -eq 451) -and ($d4InsideDiff -eq 0) -and ($d4NoAvDiff -gt 0) -and
+      ($d4LineAbove -eq 18) -and ($d4LineBelow -eq 18) -and ($d4GapClean -eq 15) -and ($d4RowGapClean -eq 45)
+    ST-Check 'unit (D-4): a planned gap leaves every pixel of the text box untouched while the line survives above and below it, and the same plan with an EMPTY avoid list paints over that box (planted control)' $d4Ok4
+    if (-not $d4Ok4) {
+      Write-Output ('      D-4 pixels: inside-same=' + $d4InsideSame + ' inside-diff=' + $d4InsideDiff + ' noavoid-diff=' + $d4NoAvDiff + ' above=' + $d4LineAbove + ' below=' + $d4LineBelow + ' gap=' + $d4GapClean + ' rowgap=' + $d4RowGapClean)
+    }
+  } finally {
+    if ($null -ne $d4Keep) { $d4Keep.Dispose() }
+    if ($null -ne $d4NoAv) { $d4NoAv.Dispose() }
+    $d4Base.Dispose()
+  }
+  # "Three styles" has to mean three MEASURED widths, not three names. Each style paints ONE
+  # vertical line on an identical white bitmap and the changed columns plus the centre pixel are
+  # read back. A renderer that ignored the style table would report 1px and alpha-140 three times.
+  $d4MsRect = @{ X = 30; Y = 30; W = 100; H = 100 }
+  $d4Meas = @()
+  foreach ($d4st in $d4Styles) {
+    $d4bm = New-Object System.Drawing.Bitmap(200, 200, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+      $d4gm = [System.Drawing.Graphics]::FromImage($d4bm)
+      $d4gm.Clear([System.Drawing.Color]::White)
+      Draw-GridOverlay $d4gm (New-GridOverlayPlan 200 200 $d4MsRect 1.0 100 $d4st @())
+      $d4gm.Dispose()
+      $d4cols = @()
+      for ($d4xx = 0; $d4xx -lt 200; $d4xx++) {
+        if ($d4bm.GetPixel($d4xx, 30).ToArgb() -ne [System.Drawing.Color]::White.ToArgb()) { $d4cols += $d4xx }
+      }
+      $d4mid = $d4bm.GetPixel(70, 30)
+      $d4Meas += [pscustomobject]@{ Style = $d4st; Cols = @($d4cols).Count; First = [int]$d4cols[0]; G = [int]$d4mid.G; B = [int]$d4mid.B }
+    } finally { $d4bm.Dispose() }
+  }
+  $d4MeasTxt = (@($d4Meas | ForEach-Object { "$($_.Style)=$($_.Cols)px@$($_.First)/g$($_.G)" }) -join ' ')
+  ST-Check 'unit (D-4): the three styles MEASURE 1/3/2 px on an identical synthetic capture and the centre pixel darkens from alpha 140 to 200 to fully opaque - the style table cannot be bypassed silently' (
+    ($d4Meas[0].Cols -eq 1) -and ($d4Meas[1].Cols -eq 3) -and ($d4Meas[2].Cols -eq 2) -and
+    ($d4Meas[0].First -eq 70) -and ($d4Meas[1].First -eq 69) -and ($d4Meas[2].First -eq 69) -and
+    ($d4Meas[0].G -eq 115) -and ($d4Meas[1].G -eq 55) -and ($d4Meas[2].G -eq 0) -and ($d4Meas[2].B -eq 0))
+  Write-Output ('      D-4 measured styles: ' + $d4MeasTxt)
+  # The OCR leg is the blueprint's own criterion: a thin grid drawn with avoidance must not eat the
+  # fixture's text. The fixture is real text, the avoid boxes come from the shipped reader
+  # (Get-GridAvoidRects), and the check first proves the fixture forces a collision (2 fixture
+  # lines, boxes >= 2 AND at least one planned line was cut) - otherwise equality would be
+  # vacuous. No language pack: a named skip, never a green tick.
+  $d4OcrPack = ''
+  try { $d4Eng = Get-OcrEngine; if ($null -ne $d4Eng) { $d4OcrPack = "$($d4Eng.RecognizerLanguage.LanguageTag)" } } catch { $d4OcrPack = '' }
+  $script:StRecord = New-Object System.Collections.ArrayList
+  if ($d4OcrPack -eq '') {
+    ST-SkipRegion 'grid-avoid' 'no OCR language pack / recognizer unreachable from this engine - the thin-vs-no-grid read cannot be measured, so this is not a regression'
+  } else {
+  # REGION-BEGIN grid-avoid  (one check; the skip branch emits the same name, so a machine
+  # without a language pack moves the outcome but not the family total)
+    $d4Fdir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-d4-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    [void][System.IO.Directory]::CreateDirectory($d4Fdir)
+    $d4Fbmp = $null; $d4Fgrid = $null
+    $d4ReadPlain = @(); $d4ReadGrid = @(); $d4Fboxes = @(); $d4FCut = 0; $d4OcrErr = ''
+    try {
+      $d4Fbmp = New-Object System.Drawing.Bitmap(760, 170, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+      $d4Fg = [System.Drawing.Graphics]::FromImage($d4Fbmp)
+      $d4Fg.Clear([System.Drawing.Color]::White)
+      $d4Fg.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAlias
+      $d4Ffnt = New-Object System.Drawing.Font('Consolas', 24, [System.Drawing.FontStyle]::Bold)
+      $d4Fg.DrawString('DTXGRIDONE42', $d4Ffnt, [System.Drawing.Brushes]::Black, 12, 18)
+      $d4Fg.DrawString('DTXGRIDTWO77', $d4Ffnt, [System.Drawing.Brushes]::Black, 12, 92)
+      $d4Ffnt.Dispose(); $d4Fg.Dispose()
+      $d4PngPlain = Join-Path $d4Fdir 'plain.png'
+      $d4Fbmp.Save($d4PngPlain, [System.Drawing.Imaging.ImageFormat]::Png)
+      $d4Fboxes = @((Get-GridAvoidRects $d4Fbmp 0 0).Rects)
+      $d4Fgrid = $d4Fbmp.Clone()
+      $d4Fg2 = [System.Drawing.Graphics]::FromImage($d4Fgrid)
+      $d4Fplan = New-GridOverlayPlan 760 170 @{ X = 0; Y = 0; W = 760; H = 170 } 1.0 40 'thin' $d4Fboxes
+      $d4FCut = [int]$d4Fplan.Avoided
+      Draw-GridOverlay $d4Fg2 $d4Fplan
+      $d4Fg2.Dispose()
+      $d4PngGrid = Join-Path $d4Fdir 'grid.png'
+      $d4Fgrid.Save($d4PngGrid, [System.Drawing.Imaging.ImageFormat]::Png)
+      $d4ReadPlain = @(@((Invoke-OcrFile $d4PngPlain 1.0).Lines) | ForEach-Object { ([string]$_.Text).Trim() } | Where-Object { $_ })
+      $d4ReadGrid = @(@((Invoke-OcrFile $d4PngGrid 1.0).Lines) | ForEach-Object { ([string]$_.Text).Trim() } | Where-Object { $_ })
+    } catch { $d4OcrErr = "$($_.Exception.Message)" } finally {
+      if ($null -ne $d4Fgrid) { $d4Fgrid.Dispose() }
+      if ($null -ne $d4Fbmp) { $d4Fbmp.Dispose() }
+      try { if (Test-Path -LiteralPath $d4Fdir) { Remove-Item -LiteralPath $d4Fdir -Recurse -Force } } catch { }
+    }
+    if ($d4OcrErr) {
+      ST-SkipRegion 'grid-avoid' ("the grid-avoid OCR leg could not run on this machine: " + $d4OcrErr)
+    } else {
+      $d4PlainTxt = (@($d4ReadPlain) -join '|')
+      $d4GridTxt = (@($d4ReadGrid) -join '|')
+      # Every line the plain image read must come back from the gridded image VERBATIM and IN ORDER.
+      # Exact list equality is not the criterion and cannot be: the grid's own coordinate labels are
+      # text too, and the reader legitimately joins the label row into ONE extra line (measured and
+      # printed below). Equality would go red on a correct grid; discarding the label row to make it
+      # green would hide what the reader really returns. So the fixture's text is what is pinned, the
+      # extra line is BOUNDED at one label row, and the fixture's own read is asserted first (two
+      # lines, both DTXGRID...) so a fixture that failed to render cannot make this green.
+      $d4SeqOk = $true; $d4SeqAt = 0; $d4GridN = @($d4ReadGrid).Count
+      foreach ($d4Pl in @($d4ReadPlain)) {
+        $d4Hit = -1
+        for ($d4k = $d4SeqAt; $d4k -lt $d4GridN; $d4k++) { if ([string]$d4ReadGrid[$d4k] -ceq [string]$d4Pl) { $d4Hit = $d4k; break } }
+        if ($d4Hit -lt 0) { $d4SeqOk = $false; break }
+        $d4SeqAt = $d4Hit + 1
+      }
+      $d4PlainOk = (@($d4ReadPlain).Count -eq 2) -and (@(@($d4ReadPlain) | Where-Object { -not ([string]$_).StartsWith('DTXGRID') }).Count -eq 0)
+      $d4Ok6 = (@($d4Fboxes).Count -ge 2) -and ($d4FCut -gt 0) -and $d4PlainOk -and $d4SeqOk -and
+        (@($d4ReadGrid).Count -le (@($d4ReadPlain).Count + 1))
+      ST-Check 'unit (D-4): OCR of a thin grid drawn with text avoidance still reads every line of the plain fixture verbatim and in order, the label row costs at most one extra line, and the fixture really forces collisions (2 fixture lines, >=2 text boxes, lines cut)' $d4Ok6
+      Write-Output ('      D-4 ocr: pack=' + $d4OcrPack + ' boxes=' + @($d4Fboxes).Count + ' cut=' + $d4FCut + ' plain=[' + $d4PlainTxt + '] grid=[' + $d4GridTxt + ']')
+    }
+  # REGION-END grid-avoid
+  }
+  $d4OcrEmitted = @($script:StRecord)
+  $script:StRecord = $null
+  ST-ReconcileRegion 'grid-avoid' $d4OcrEmitted
+  # The flag has to be REACHABLE and the two refusals have to happen through the real command
+  # line: a bad style name is refused by the parser, and a style with no grid is refused before
+  # a single pixel is grabbed. Neither may leave an image behind.
+  $d4CliDir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-d4cli-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($d4CliDir)
+  try {
+    $d4Run = {
+      param([string]$ArgLine, [string]$OutName)
+      $o = Join-Path $d4CliDir $OutName
+      $pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $ArgLine -RedirectStandardOutput $o -RedirectStandardError "$o.err" -Wait -PassThru -NoNewWindow
+      $txt = ''
+      if (Test-Path -LiteralPath $o) { $txt += [IO.File]::ReadAllText($o) }
+      if (Test-Path -LiteralPath "$o.err") { $txt += [IO.File]::ReadAllText("$o.err") }
+      return @{ Exit = $pr.ExitCode; Txt = $txt }
+    }
+    $d4BadPng = Join-Path $d4CliDir 'bad-style.png'
+    $d4Bad = & $d4Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect 0 0 40 40 "' + $d4BadPng + '" --grid 20 --fit 0 --grid-style wobbly') 'bad.txt'
+    $d4NonePng = Join-Path $d4CliDir 'no-grid.png'
+    $d4None = & $d4Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect 0 0 40 40 "' + $d4NonePng + '" --fit 0 --no-grid --grid-style thin') 'none.txt'
+    ST-Check 'e2e (D-4): --grid-style is reachable through the real entry, a bad style name is refused by name and a style with no grid is refused BEFORE capture - neither leaves an image behind' (
+      ($d4Bad.Exit -ne 0) -and ($d4Bad.Txt -match '--grid-style must be thin\|bold\|contrast') -and (-not (Test-Path -LiteralPath $d4BadPng)) -and
+      ($d4None.Exit -ne 0) -and ($d4None.Txt -match '--grid-style only applies when a grid is actually drawn') -and (-not (Test-Path -LiteralPath $d4NonePng)))
+    if (($d4Bad.Exit -eq 0) -or ($d4None.Exit -eq 0)) {
+      Write-Output ('      D-4 e2e refusals: bad exit=' + $d4Bad.Exit + ' out=[' + $d4Bad.Txt + '] nogrid exit=' + $d4None.Exit + ' out=[' + $d4None.Txt + ']')
+    }
+    # and the positive leg: a real tiny capture with an explicit style carries style= AND the
+    # avoid shape into the echo, and the sidecar keeps naming the step (imgclick's warning).
+    # Nothing here asserts WHAT the screen showed - only that the flag travelled end to end.
+    $d4OkPng = Join-Path $d4CliDir 'style-ok.png'
+    $d4Ok = & $d4Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect 0 0 200 120 "' + $d4OkPng + '" --grid 50 --fit 0 --grid-style contrast') 'ok.txt'
+    $d4OkMap = ''
+    if (Test-Path -LiteralPath ($d4OkPng + '.map.txt')) { $d4OkMap = [IO.File]::ReadAllText($d4OkPng + '.map.txt') }
+    ST-Check 'e2e (D-4): a real gridded capture carries style=contrast and the avoid= line into its echo, and the sidecar still names the grid step' (
+      ($d4Ok.Exit -eq 0) -and ($d4Ok.Txt -match 'grid=50 style=contrast') -and ($d4Ok.Txt -match 'avoid=') -and
+      (Test-Path -LiteralPath $d4OkPng) -and ($d4OkMap -match '(?m)^grid=50\r?$'))
+    if (($d4Ok.Exit -ne 0) -or -not ($d4Ok.Txt -match 'grid=50 style=contrast')) {
+      Write-Output ('      D-4 e2e positive: exit=' + $d4Ok.Exit + ' map=[grid]=' + ($d4OkMap -match '(?m)^grid=50\r?$') + ' out=[' + $d4Ok.Txt + ']')
+    }
+  } finally {
+    try { if (Test-Path -LiteralPath $d4CliDir) { Remove-Item -LiteralPath $d4CliDir -Recurse -Force } } catch { }
+  }
+  # ---------- v4.8.0 (B-3): the grid note MEASURES this point's distance to the grid ----------
+  # D-6 made every point on a gridded image carry the same "may sit on a line" sentence - the noise
+  # shape this repo keeps retiring: a point 20px clear of every line read exactly like a point on
+  # one. The note now measures per point (Resolve-GridProximity off the SAME overlay plan the
+  # renderer drew), names BOTH units (image px and screen px, which differ whenever the capture was
+  # downscaled), and only a caller-named margin can raise "near" when the map predates grid-style -
+  # an unknown stroke width is reported as unknown, never guessed into a false "clear".
+  $b3Dir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-b3-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($b3Dir)
+  try {
+    # (1) the near verdict flips at the STROKE WIDTH, and both sides of the flip are measured: a
+    # thin line (1px, radius 0.5) claims only the pixel it covers, a bold line (3px, radius 1.5)
+    # still claims a point 1px off, and one pixel further is CLEAR on both - so a radius that
+    # silently became 0 or +inf cannot pass either branch. The points are chosen 25px clear of the
+    # OTHER axis's lines, so the verdict is the tested axis's and not a coincidence of the min().
+    $b3ThinOn = Resolve-GridProximity 50 75 50 1.0 0 0 'thin' -1.0 200 200
+    $b3ThinOff = Resolve-GridProximity 51 75 50 1.0 0 0 'thin' -1.0 200 200
+    $b3BoldOn = Resolve-GridProximity 51 75 50 1.0 0 0 'bold' -1.0 200 200
+    $b3BoldOff = Resolve-GridProximity 52 75 50 1.0 0 0 'bold' -1.0 200 200
+    ST-Check 'unit (B-3): the near verdict flips at the stroke width - a thin line claims only its own pixel (radius 0.5), a bold line still claims 1px off (radius 1.5), and one pixel further is CLEAR on both' (
+      ([bool]$b3ThinOn.Near) -and (-not [bool]$b3ThinOff.Near) -and
+      ([bool]$b3BoldOn.Near) -and (-not [bool]$b3BoldOff.Near) -and
+      ([double]$b3ThinOn.Radius -eq 0.5) -and ([double]$b3BoldOn.Radius -eq 1.5) -and
+      ([int]$b3ThinOn.LineWidth -eq 1) -and ([int]$b3BoldOn.LineWidth -eq 3))
+    # (2) the two units are both real: at scale 0.5 the nearest line sits 1 IMAGE px away and 2
+    # SCREEN px away, the resolver returns both, and the formatter names both in one sentence - a
+    # note that printed only one number would be wrong in one of the two spaces a caller thinks in.
+    $b3Half = Resolve-GridProximity 26 12 50 0.5 0 0 'thin' -1.0 200 100
+    $b3HalfTxt = Format-GridProximity $b3Half 50 'thin'
+    ST-Check 'unit (B-3): at scale 0.5 the same line is 1 image-px AND 2 screen-px away - both numbers are returned and the sentence names both, so neither unit is implied' (
+      ([double]$b3Half.VDistPx -eq 1) -and ([double]$b3Half.VScreenPx -eq 2) -and
+      ($b3HalfTxt.Contains('is 1 image-px = 2 screen-px away')))
+    # (3) no grid drawn - no note at all: the proximity machinery is gridded-capture behaviour, and
+    # a map without a grid has nothing to be near (the empty string keeps the echo unchanged).
+    $b3NoGrid = Resolve-GridProximity 5 5 0 1.0 0 0 'thin' -1.0 100 100
+    ST-Check 'unit (B-3): a sidecar with no grid short-circuits - Enabled=false and the formatter renders nothing, so a plain capture gains no sentence it never earned' (
+      (-not [bool]$b3NoGrid.Enabled) -and ((Format-GridProximity $b3NoGrid 0 'thin') -ceq ''))
+    # (4) an unknown stroke width is reported, not guessed: no style named means no radius and no
+    # verdict unless the CALLER names a margin (--on-grid-alert), and the sentence says whose
+    # number the alert-radius then is.
+    $b3Unk = Resolve-GridProximity 50 75 50 1.0 0 0 'unknown' -1.0 200 200
+    $b3UnkTxt = Format-GridProximity $b3Unk 50 'unknown'
+    $b3UnkMargin = Resolve-GridProximity 52 75 50 1.0 0 0 'unknown' 3.0 200 200
+    $b3UnkMarginTxt = Format-GridProximity $b3UnkMargin 50 'unknown'
+    ST-Check 'unit (B-3): a map that predates grid-style yields distances with NO verdict (line width unknown, not guessed), and only a caller-named margin raises the alert - the sentence names that margin as the source' (
+      (-not [bool]$b3Unk.StyleKnown) -and ([int]$b3Unk.LineWidth -eq -1) -and ([double]$b3Unk.Radius -eq -1) -and
+      (-not [bool]$b3Unk.Near) -and
+      ($b3UnkTxt.Contains('line-width=unknown (map predates grid-style; not guessed)')) -and
+      ($b3UnkTxt.Contains('alert=not evaluated')) -and
+      ([bool]$b3UnkMargin.Near) -and ([double]$b3UnkMargin.Radius -eq 3.0) -and
+      ($b3UnkMarginTxt.Contains('--on-grid-alert only (line width unknown, not guessed)')))
+    # (5) a gridded frame whose lines all fall outside the image says so instead of inventing a
+    # nearest line (the formatter's no-lines branch is its own sentence, not the measured one).
+    ST-Check 'unit (B-3): a grid whose lines never enter the image gets its own sentence - no distance is invented for a frame with no line in it' (
+      ((Format-GridProximity @{ Enabled = $true; Reason = 'no-lines-in-image' } 50 'thin').Contains("carries no line inside this image's own bounds")))
+    # (6) the style travels with the file and the OLD maps stay honest: a written sidecar carries
+    # grid-style=bold back through the reader; a legacy sidecar WITHOUT the line reads as unknown
+    # (never as thin); a style the renderer cannot produce is refused as damage; and the new field
+    # coexists with the png_sha256 binding - a mismatched image is still refused with the style present.
+    Add-Type -AssemblyName System.Drawing
+    $b3Png = Join-Path $b3Dir 'b3.png'
+    $b3Bm = New-Object System.Drawing.Bitmap(16, 16, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $b3G = [System.Drawing.Graphics]::FromImage($b3Bm)
+    $b3G.Clear([System.Drawing.Color]::Gray)
+    $b3G.Dispose()
+    $b3Bm.Save($b3Png, [System.Drawing.Imaging.ImageFormat]::Png)
+    $b3Bm.Dispose()
+    $b3Sha = ''
+    $b3ShaH = [System.Security.Cryptography.SHA256]::Create()
+    try { $b3Fs = [System.IO.File]::OpenRead($b3Png); try { $b3Sha = ([System.BitConverter]::ToString($b3ShaH.ComputeHash($b3Fs))).Replace('-', '').ToLowerInvariant() } finally { $b3Fs.Dispose() } } finally { $b3ShaH.Dispose() }
+    [void](Write-MapSidecar $b3Png 0 0 1.0 16 16 'rect' $null 50 $null $b3Sha $null 'bold')
+    $b3Map = Read-MapSidecar $b3Png
+    $b3LegacyPath = Join-Path $b3Dir 'b3-legacy.png'
+    Copy-Item -LiteralPath $b3Png -Destination $b3LegacyPath
+    $b3LegacyText = ("origin_x=0`r`norigin_y=0`r`nscale=1`r`nout_w=16`r`nout_h=16`r`nkind=rect`r`ngrid=50`r`n")
+    [System.IO.File]::WriteAllText(($b3LegacyPath + '.map.txt'), $b3LegacyText, (New-Object System.Text.UTF8Encoding($false)))
+    $b3LegacyMap = Read-MapSidecar $b3LegacyPath
+    $b3BadPath = Join-Path $b3Dir 'b3-bad.png'
+    Copy-Item -LiteralPath $b3Png -Destination $b3BadPath
+    [System.IO.File]::WriteAllText(($b3BadPath + '.map.txt'), ($b3LegacyText + "grid-style=swirly`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+    $b3BadErr = ''
+    try { [void](Read-MapSidecar $b3BadPath) } catch { $b3BadErr = "$($_.Exception.Message)" }
+    $b3SwapPath = Join-Path $b3Dir 'b3-swap.png'
+    $b3Bm2 = New-Object System.Drawing.Bitmap(16, 16, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $b3G2 = [System.Drawing.Graphics]::FromImage($b3Bm2)
+    $b3G2.Clear([System.Drawing.Color]::Black)
+    $b3G2.Dispose()
+    $b3Bm2.Save($b3SwapPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $b3Bm2.Dispose()
+    Copy-Item -LiteralPath ($b3Png + '.map.txt') -Destination ($b3SwapPath + '.map.txt') -Force
+    $b3SwapErr = ''
+    try { [void](Read-MapSidecar $b3SwapPath) } catch { $b3SwapErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (B-3): grid-style round-trips through the sidecar writer and reader, a legacy map without the field reads unknown (never thin), a style the renderer cannot draw is refused as damage, and the field coexists with the png_sha256 binding (a swapped image is still refused)' (
+      ([int]$b3Map.Grid -eq 50) -and ([string]$b3Map.GridStyle -ceq 'bold') -and
+      (([System.IO.File]::ReadAllText($b3Png + '.map.txt')).Contains('grid-style=bold')) -and
+      ([string]$b3LegacyMap.GridStyle -ceq 'unknown') -and
+      ($b3BadErr.Contains("grid-style='swirly' is not unknown|thin|bold|contrast")) -and
+      ($b3SwapErr.Contains('map sidecar describes a DIFFERENT image')) -and
+      ([string]$b3Map.PngSha -ceq $b3Sha))
+    # (7) end to end through the real handlers, no desktop: the legacy gridded pair prints both
+    # distances and no verdict; the thin pair flips between CLEAR and ON as the point moves one
+    # pixel across the line (both directions of the same move); and imgclick --dry with a caller
+    # margin turns that legacy pair into a warning without any stroke width being guessed.
+    $b3Big = Join-Path $b3Dir 'b3-big.png'
+    $b3Bm3 = New-Object System.Drawing.Bitmap(200, 100, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $b3G3 = [System.Drawing.Graphics]::FromImage($b3Bm3)
+    $b3G3.Clear([System.Drawing.Color]::White)
+    $b3G3.Dispose()
+    $b3Bm3.Save($b3Big, [System.Drawing.Imaging.ImageFormat]::Png)
+    $b3Bm3.Dispose()
+    $b3LegacyBigText = ("origin_x=0`r`norigin_y=0`r`nscale=1`r`nout_w=200`r`nout_h=100`r`nkind=rect`r`ngrid=50`r`n")
+    [System.IO.File]::WriteAllText(($b3Big + '.map.txt'), $b3LegacyBigText, (New-Object System.Text.UTF8Encoding($false)))
+    $b3UnmapEcho = @(Invoke-DesktopCommand 'unmap' @($b3Big, '52', '75')) -join "`n"
+    [void](Write-MapSidecar $b3Big 0 0 1.0 200 100 'rect' $null 50 $null '' $null 'thin')
+    $b3ClearEcho = @(Invoke-DesktopCommand 'unmap' @($b3Big, '52', '75')) -join "`n"
+    $b3OnEcho = @(Invoke-DesktopCommand 'unmap' @($b3Big, '50', '75')) -join "`n"
+    $b3DryEcho = @(Invoke-DesktopCommand 'imgclick' @($b3Big, '52', '75', '--dry', '--on-grid-alert', '3')) -join "`n"
+    ST-Check 'e2e (B-3): the real unmap prints both units for a legacy map with NO verdict, the thin map flips CLEAR -> ON as the point crosses the line and back, and imgclick --dry with a caller margin alerts without guessing a stroke width' (
+      ($b3UnmapEcho.Contains('line-width=unknown (map predates grid-style; not guessed)')) -and
+      ($b3UnmapEcho.Contains('is 2 image-px = 2 screen-px away')) -and
+      (-not $b3UnmapEcho.Contains('ON or beside a grid line')) -and
+      ($b3ClearEcho.Contains('CLEAR of every grid line')) -and
+      ($b3OnEcho.Contains('ON or beside a grid line')) -and
+      ($b3DryEcho.Contains('ON or beside a grid line')) -and
+      ($b3DryEcho.Contains('dry run') -or $b3DryEcho.Contains('[dry run]')))
+  } finally {
+    try { if (Test-Path -LiteralPath $b3Dir) { Remove-Item -LiteralPath $b3Dir -Recurse -Force } } catch { }
+  }
+  # ---------- v4.8.0 (C): the capture quality gate judges the 1:1 frame, and the re-capture loop is bounded ----------
+  # The owner's two decisions live here: the gate NEVER runs unless --min-ink names a threshold
+  # (a legal white canvas is a legal frame), and a refused frame publishes NOTHING - the loop
+  # captures and measures only; the write path sits entirely outside it, so a same-name previous
+  # pair stays byte-identical. The measurement runs on the 1:1 captured pixels (pre-fit, pre-grid,
+  # pre-overlay). Every leg below is OFFLINE: the frames are synthetic bitmaps and the capture
+  # step is an injected scriptblock (the seam Save-RectEx carries for exactly this), so nothing
+  # here owns the desktop or guesses at a real screen.
+  $cqDir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-cq-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($cqDir)
+  try {
+    Add-Type -AssemblyName System.Drawing
+    # (1) the defaults and the grammar: the six flags parse into the capture table with the
+    # documented defaults (gate OFF, mode reference, tolerance 24, whole frame, stride 1, no
+    # retries), and every bound refuses BY NAME before any screen is read - the parse runs
+    # pre-capture by construction, so a bad value can never cost a frame.
+    $cqD = Parse-CaptureFlags @() $false
+    $cqDefaultsOk = (([double]$cqD['MinInk'] -eq -1.0) -and ([string]$cqD['InkVs'] -ceq 'auto') -and ([int]$cqD['InkTol'] -eq 24) -and
+      ($null -eq $cqD['InkArea']) -and ([int]$cqD['InkStride'] -eq 1) -and ([int]$cqD['Retry'] -eq 0) -and ([int]$cqD['RetryBudget'] -eq 0))
+    $cqP = Parse-CaptureFlags @('--min-ink', '5.5', '--ink-vs', '#00FF7F', '--ink-tol', '9', '--ink-area', '3,4,50,60', '--ink-stride', '2', '--retry', '2', '--retry-budget', '500') $false
+    $cqParsOk = (([double]$cqP['MinInk'] -eq 5.5) -and ([string]$cqP['InkVs'] -ceq '#00FF7F') -and ([int]$cqP['InkTol'] -eq 9) -and
+      ((@($cqP['InkArea']) -join ',') -eq '3,4,50,60') -and ([int]$cqP['InkStride'] -eq 2) -and ([int]$cqP['Retry'] -eq 2) -and ([int]$cqP['RetryBudget'] -eq 500))
+    $cqBad = @()
+    foreach ($cqArg in @(@('--min-ink', '101'), @('--min-ink', 'abc'), @('--ink-tol', '256'), @('--ink-stride', '0'), @('--retry', '6'), @('--retry-budget', '600001'), @('--ink-vs', 'red'), @('--ink-area', '1,2,0,5'))) {
+      $cqE = ''
+      try { [void](Parse-CaptureFlags $cqArg $false) } catch { $cqE = "$($_.Exception.Message)" }
+      if ($cqE -eq '') { $cqBad += ('accepted:' + ($cqArg -join ' ')) }
+    }
+    ST-Check 'unit (C): the quality flags default to gate-off with the documented values, parse into the capture table, and every out-of-range or malformed value is refused by name in the pre-capture parse (nothing costs a frame)' (
+      $cqDefaultsOk -and $cqParsOk -and (@($cqBad).Count -eq 0))
+    if (@($cqBad).Count -gt 0) { Write-Output ('      C parse gaps: ' + ($cqBad -join '; ')) }
+    # synthetic frames: an all-white 200x100, and the same canvas with the RIGHT HALF inked
+    # (red on white) - deterministic content the metric can be asserted against exactly.
+    $cqWhite = New-Object System.Drawing.Bitmap(200, 100, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $cqGw = [System.Drawing.Graphics]::FromImage($cqWhite)
+    $cqGw.Clear([System.Drawing.Color]::White)
+    $cqGw.Dispose()
+    $cqHalf = New-Object System.Drawing.Bitmap(200, 100, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $cqGh = [System.Drawing.Graphics]::FromImage($cqHalf)
+    $cqGh.Clear([System.Drawing.Color]::White)
+    $cqGh.FillRectangle([System.Drawing.Brushes]::Red, 100, 0, 100, 100)
+    $cqGh.Dispose()
+    # (2) the measurement on a legal white frame: auto resolves the reference to the frame's own
+    # mode colour (echoed back), the measured ink is 0%, and the verdict belongs to the CALLER's
+    # threshold - with no --min-ink the gate is off and a white frame is a legal frame.
+    $cqSpecOff = New-CaptureQualityDefaults
+    $cqW = Get-FrameInkQuality $cqWhite $cqSpecOff 10000
+    ST-Check 'unit (C): a legal white frame measures ink 0% with the mode colour as the auto reference, and with the gate off (no --min-ink) it is a legal capture - nothing judges a blank canvas by default (the floor of -1 is met by every frame; the gate-off decision lives in Save-RectEx)' (
+      ([double]$cqW.InkPct -eq 0) -and ($cqW.ModeColor -ceq '#FFFFFF') -and ([long]$cqW.ModeCount -eq 20000) -and
+      ([long]$cqW.Sampled -eq 20000) -and ([bool]$cqW.Pass) -and ([string]$cqW.RefText).StartsWith('auto (mode #FFFFFF)'))
+    Write-Output ('      C white measure: ink=' + $cqW.InkPct + '% mode=' + $cqW.ModeColor + ' count=' + $cqW.ModeCount + ' sampled=' + $cqW.Sampled + ' ref=' + $cqW.RefText + ' pass=' + $cqW.Pass)
+    # (3) the reference decides what counts as ink: the SAME white frame measured against an
+    # explicit #000000 reference is 100% ink - and the echo carries which reference was used.
+    $cqSpecBlack = New-CaptureQualityDefaults
+    $cqSpecBlack['MinInk'] = 5.0
+    $cqSpecBlack['InkVs'] = '#000000'
+    $cqWB = Get-FrameInkQuality $cqWhite $cqSpecBlack 10000
+    ST-Check 'unit (C): the reference is what the caller named - a white frame against #000000 is 100% ink and passes a 5% threshold, with the echo naming the given colour' (
+      ([double]$cqWB.InkPct -eq 100) -and ([bool]$cqWB.Pass) -and ([string]$cqWB.RefText -ceq '#000000'))
+    # (4) the area and the stride are the caller's: the right half inked measures ~25% over the
+    # whole frame, exactly 100% inside the inked --ink-area, and stride 2 quarters the sample
+    # count without changing the verdict - the loop's echo prints sampled-of-total so the
+    # denominator is never implied.
+    $cqSpecHalf = New-CaptureQualityDefaults
+    $cqSpecHalf['MinInk'] = 5.0
+    $cqH = Get-FrameInkQuality $cqHalf $cqSpecHalf 10000
+    $cqSpecArea = New-CaptureQualityDefaults
+    $cqSpecArea['MinInk'] = 5.0
+    $cqSpecArea['InkArea'] = @(100, 0, 100, 100)
+    $cqHA = Get-FrameInkQuality $cqHalf $cqSpecArea 10000
+    $cqSpecStride = New-CaptureQualityDefaults
+    $cqSpecStride['MinInk'] = 5.0
+    $cqSpecStride['InkStride'] = 2
+    $cqHS = Get-FrameInkQuality $cqHalf $cqSpecStride 10000
+    ST-Check 'unit (C): a half-inked frame measures 50% whole-frame and 100% inside the named --ink-area (the auto reference is the WHOLE frame mode, so a uniform area never measures against itself), stride 2 quarters the sampled count while the verdict holds, and the numbers carry their own denominator' (
+      ([double]$cqH.InkPct -eq 50) -and ([double]$cqHA.InkPct -eq 100) -and ([string]$cqHA.AreaText -ceq '100,0,100x100') -and
+      ([long]$cqHS.Sampled -eq 5000) -and ([double]$cqHS.InkPct -eq 50) -and ([bool]$cqH.Pass))
+    Write-Output ('      C half measures: whole=' + $cqH.InkPct + '% area=' + $cqHA.InkPct + '% (' + $cqHA.AreaText + ') stride2=' + $cqHS.InkPct + '% sampled=' + $cqHS.Sampled + ' pass=' + $cqH.Pass)
+    # (5) the measurement budget refuses to report a fraction it did not finish: a 1ms cap on a
+    # frame big enough to exceed it comes back OverBudget with NO pass - budget-hit is a refusal,
+    # never a number of unknown completeness.
+    $cqBig = New-Object System.Drawing.Bitmap(4000, 3000, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $cqGb = [System.Drawing.Graphics]::FromImage($cqBig)
+    $cqGb.Clear([System.Drawing.Color]::White)
+    $cqGb.Dispose()
+    $cqSpecBud = New-CaptureQualityDefaults
+    $cqSpecBud['MinInk'] = 0.0
+    $cqBud = Get-FrameInkQuality $cqBig $cqSpecBud 1
+    $cqBig.Dispose()
+    ST-Check 'unit (C): a measurement that hits its own budget reports OverBudget and no pass - a fraction of unknown completeness is never printed' (
+      ([bool]$cqBud.OverBudget) -and (-not [bool]$cqBud.Pass))
+    # (6) the bounded loop: a capture step that returns a white frame then the inked one passes on
+    # attempt 2 and the lines name both attempts; a white-only step with retry 0 refuses naming
+    # the knob; a slow step under a tiny budget refuses naming the budget - each refusal is a
+    # throw, never a published file.
+    $cqSeq = @($cqWhite, $cqHalf)
+    $script:cqSeqIx = 0
+    $cqStep = { param([int]$n) $f = $cqSeq[$script:cqSeqIx]; $script:cqSeqIx++; return $f.Clone() }
+    $cqSpecLoop = New-CaptureQualityDefaults
+    $cqSpecLoop['MinInk'] = 5.0
+    $cqSpecLoop['Retry'] = 2
+    $cqLoop = Invoke-BoundedCapture $cqStep $cqSpecLoop $null
+    $cqWhiteOnly = { param([int]$n) return $cqWhite }
+    $cqSpecRefuse = New-CaptureQualityDefaults
+    $cqSpecRefuse['MinInk'] = 5.0
+    $cqRefuseErr = ''
+    try { [void](Invoke-BoundedCapture $cqWhiteOnly $cqSpecRefuse $null) } catch { $cqRefuseErr = "$($_.Exception.Message)" }
+    $cqSlow = { param([int]$n) [void]([System.Threading.Thread]::Sleep(120)); return $cqWhite }
+    $cqSpecBudget = New-CaptureQualityDefaults
+    $cqSpecBudget['MinInk'] = 5.0
+    $cqSpecBudget['Retry'] = 5
+    $cqSpecBudget['RetryBudget'] = 40
+    $cqBudgetErr = ''
+    try { [void](Invoke-BoundedCapture $cqSlow $cqSpecBudget $null) } catch { $cqBudgetErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (C): the loop re-captures until the frame passes (attempt=1 below-threshold, attempt=2 pass), exhaustion refuses naming --retry and the last ink, and the time budget refuses naming --retry-budget - every refusal is a throw, never a file' (
+      ([int]$cqLoop.Attempts -eq 2) -and ($cqLoop.Lines[0].Contains('attempt=1 ink=0%')) -and ($cqLoop.Lines[0].Contains('below-threshold')) -and
+      ($cqLoop.Lines[1].Contains('attempt=2 ink=50%')) -and ($cqLoop.Lines[1].Contains('verdict=pass')) -and
+      ($cqRefuseErr.Contains('refused after 1 attempt(s) (--retry 0)')) -and ($cqRefuseErr.Contains('last ink=0%')) -and
+      ($cqRefuseErr.Contains('no PNG or map was written')) -and
+      ($cqBudgetErr.Contains('refused on the time budget')) -and ($cqBudgetErr.Contains('--retry-budget 40 ms')))
+    # (7) end to end through the REAL Save-RectEx with the capture step injected: the gate runs on
+    # the 1:1 frame, the published PNG is the frame that PASSED (byte-compared against the second
+    # frame's own encoding), and the echo carries the per-attempt lines plus the quality tail.
+    $cqPath = Join-Path $cqDir 'cq-pass.png'
+    $cqSpecSave = New-CaptureQualityDefaults
+    $cqSpecSave['MinInk'] = 5.0
+    $cqSpecSave['Retry'] = 2
+    $script:cqSeqIx2 = 0
+    $cqStep2 = { param([int]$n) $f = $cqSeq[$script:cqSeqIx2]; $script:cqSeqIx2++; return $f.Clone() }
+    $cqSaveLines = Save-RectEx 0 0 200 100 $cqPath 0 -1 @() '' $null $null $cqSpecSave $null $cqStep2
+    $cqSaveOut = (@($cqSaveLines) -join "`
+")
+    $cqSavedOk = $false
+    if (Test-Path -LiteralPath $cqPath) {
+      $cqSavedBytes = [System.IO.File]::ReadAllBytes($cqPath)
+      $cqWant = New-Object System.IO.MemoryStream
+      try { $cqHalf.Save($cqWant, [System.Drawing.Imaging.ImageFormat]::Png); $cqSavedOk = (($cqWant.ToArray() -join ',') -eq ($cqSavedBytes -join ',')) } finally { $cqWant.Dispose() }
+    }
+    ST-Check 'e2e (C): the real Save-RectEx with the capture step injected passes on the second frame, publishes THAT frame byte-exactly, and the echo carries attempt=1/attempt=2 plus the quality tail with attempts and spent' (
+      ($cqSaveOut.Contains('attempt=1 ink=0%')) -and ($cqSaveOut.Contains('attempt=2 ink=50%')) -and
+      ($cqSaveOut.Contains('quality: verdict=pass attempts=2')) -and ($cqSaveOut.Contains('occlusion=not re-checked (no gate on this path)')) -and
+      $cqSavedOk)
+    # (8) a refused capture publishes NOTHING and leaves a same-name previous pair byte-identical:
+    # an old PNG + old map written first survive a gate refusal exactly as they survive a failed
+    # re-capture (the v4.6.8/v4.6.10 order conclusions, now covering the quality gate too).
+    $cqOldPath = Join-Path $cqDir 'cq-old.png'
+    $cqWhite.Save($cqOldPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    [System.IO.File]::WriteAllText(($cqOldPath + '.map.txt'), "origin_x=0`r`norigin_y=0`r`nscale=1`r`nout_w=200`r`nout_h=100`r`nkind=rect`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $cqOldPng = [System.IO.File]::ReadAllBytes($cqOldPath)
+    $cqOldMap = [System.IO.File]::ReadAllBytes($cqOldPath + '.map.txt')
+    $cqSpecRefuseSave = New-CaptureQualityDefaults
+    $cqSpecRefuseSave['MinInk'] = 5.0
+    # every Save-RectEx leg hands in its capture step: the offline gate never grabs the real
+    # desktop (a CopyFromScreen here would read the room and make the verdict environment-dependent).
+    $cqWhiteOnly2 = { param([int]$n) return $cqWhite.Clone() }
+    $cqRefuseSaveErr = ''
+    try { [void](Save-RectEx 0 0 200 100 $cqOldPath 0 -1 @() '' $null $null $cqSpecRefuseSave $null $cqWhiteOnly2) } catch { $cqRefuseSaveErr = "$($_.Exception.Message)" }
+    $cqOldUntouched = (([System.IO.File]::ReadAllBytes($cqOldPath) -join ',') -eq ($cqOldPng -join ',')) -and
+      (([System.IO.File]::ReadAllBytes($cqOldPath + '.map.txt') -join ',') -eq ($cqOldMap -join ','))
+    ST-Check 'e2e (C): a frame that never passes the gate is refused with nothing published - a same-name previous PNG and its map stay byte-identical, and a first-time path gets no files at all' (
+      ($cqRefuseSaveErr.Contains('refused after 1 attempt(s) (--retry 0)')) -and $cqOldUntouched)
+    $cqNewPath = Join-Path $cqDir 'cq-new.png'
+    $cqNewErr = ''
+    try { [void](Save-RectEx 0 0 200 100 $cqNewPath 0 -1 @() '' $null $null $cqSpecRefuseSave $null $cqWhiteOnly2) } catch { $cqNewErr = "$($_.Exception.Message)" }
+    Write-Output ('      C leg8: err=[' + $cqNewErr + '] png=' + (Test-Path -LiteralPath $cqNewPath) + ' map=' + (Test-Path -LiteralPath ($cqNewPath + '.map.txt')))
+    ST-Check 'e2e (C): a first-time path whose frames never pass gets neither a PNG nor a map - the pair cannot exist to be misread' (
+      ($cqNewErr.Contains('refused after')) -and (-not (Test-Path -LiteralPath $cqNewPath)) -and (-not (Test-Path -LiteralPath ($cqNewPath + '.map.txt'))))
+    # (9) the per-attempt checks belong to the caller's path: a bound crop whose host assert fails
+    # on the second attempt is refused mid-loop and publishes nothing (the mock throws the same
+    # message the real assert throws on a moved host).
+    $script:cqHostCalls = 0
+    $cqHostOrig = (Get-Item 'function:Assert-CaptureHostStable').ScriptBlock
+    try {
+      Set-Item -Path 'function:Assert-CaptureHostStable' -Value { param($snap, $kind) $script:cqHostCalls++; if ($script:cqHostCalls -ge 2) { throw 'rect : the host window moved after the capture was resolved (was 0,0 200x100, now 40,40 200x100) - refusing to publish a binding that no longer describes the window' } }
+      $script:cqSeqIx3 = 0
+      $cqStep3 = { param([int]$n) $f = $cqSeq[$script:cqSeqIx3]; $script:cqSeqIx3++; return $f.Clone() }
+      $cqHostPath = Join-Path $cqDir 'cq-host.png'
+      $cqHostWinMock = [pscustomobject]@{ Pid = 4242; Handle = [IntPtr]::new(99); Title = 'cq-host-fake' }
+      $cqHostSnapMock = @{ Pid = 4242; Handle = [IntPtr]::new(99); Title = 'cq-host-fake'; X = 0; Y = 0; W = 200; H = 100; Sel = '' }
+      $cqHostErr = ''
+      try { [void](Save-RectEx 0 0 200 100 $cqHostPath 0 -1 @() 'rect' $cqHostWinMock $cqHostSnapMock $cqSpecSave $null $cqStep3) } catch { $cqHostErr = "$($_.Exception.Message)" }
+      Write-Output ('      C leg9: err=[' + $cqHostErr + '] calls=' + $script:cqHostCalls + ' png=' + (Test-Path -LiteralPath $cqHostPath))
+    ST-Check 'e2e (C): a bound crop whose host check fails on a LATER attempt is refused mid-loop with the assert message and publishes nothing - the per-attempt re-check is wired, not decorative' (
+        ($cqHostErr.Contains('the host window moved after the capture was resolved')) -and
+        (-not (Test-Path -LiteralPath $cqHostPath)) -and ($script:cqHostCalls -eq 2))
+    } finally {
+      Set-Item -Path 'function:Assert-CaptureHostStable' -Value $cqHostOrig
+    }
+    # (10) the loop is read-only by construction: a re-capture re-READS the screen and never
+    # touches it - the compiled metric, the measure wrapper and the loop body contain no input API.
+    # A-22 shape: the face enumeration needs lib/, so in single-file mode this half skips named.
+    if ($script:StSourceMode -cne 'aggregate') {
+      ST-Skip 'lint (C): the quality loop contains no input API and the six-flag grammar has ONE consumer over entry+lib files' 'single-file source mode (no lib/ beside the entry) - the product-face file set this lint enumerates does not exist'
+    } else {
+    $cqProdFace = @(@('desktop.ps1') + @((Get-ChildItem -LiteralPath (Join-Path $script:ToolRootPath 'lib') -Filter '*.ps1' -File | Where-Object { ([string]$_.Name) -notlike 'selftest*' } | Sort-Object Name | ForEach-Object { 'lib/' + $_.Name })))
+    $cqInputTokens = @((('Send' + 'Input')), ('mouse_' + 'event'), ('Set-Cursor' + 'Position'), ('Move-' + 'Click'), ('Set-Foreground' + 'Window'), ('keybd_' + 'event'))
+    $cqLoopBody = @()
+    $cqAllLines = @([System.IO.File]::ReadAllLines((Join-Path $script:ToolRootPath 'desktop.ps1')))
+    foreach ($cqFn in @('function Invoke-BoundedCapture', 'function Get-FrameInkQuality')) {
+      $cqFs = -1
+      for ($cqi = 0; $cqi -lt $cqAllLines.Count; $cqi++) { if (([string]$cqAllLines[$cqi]).StartsWith($cqFn)) { $cqFs = $cqi; break } }
+      if ($cqFs -ge 0) {
+        $cqFe = $cqAllLines.Count
+        for ($cqj = $cqFs + 1; $cqj -lt $cqAllLines.Count; $cqj++) { if (([string]$cqAllLines[$cqj]).StartsWith('function ')) { $cqFe = $cqj; break } }
+        for ($cqk = $cqFs; $cqk -lt $cqFe; $cqk++) { $cqLoopBody += [string]$cqAllLines[$cqk] }
+      }
+    }
+    $cqInputHits = @($cqInputTokens | Where-Object { (@($cqLoopBody) -join "`n").Contains($_) })
+    $cqQFlagSites = 0
+    foreach ($cqp in @($cqProdFace)) {
+      $cqPl = @([System.IO.File]::ReadAllLines((Join-Path $script:ToolRootPath $cqp)))
+      foreach ($cql in @($cqPl)) {
+        if (([string]$cql).TrimStart().StartsWith('#')) { continue }
+        if (([string]$cql).TrimStart().StartsWith('function ')) { continue }
+        if (([string]$cql).Contains('Test-CaptureQualityFlag')) { $cqQFlagSites++ }
+      }
+    }
+    ST-Check 'lint (C): the quality loop and the measure wrapper contain no input API (a re-capture re-reads, never touches), and the six-flag grammar has ONE consumer called from exactly the two capture parsers (planted third site would be counted)' (
+      (@($cqInputHits).Count -eq 0) -and ($cqQFlagSites -eq 2) -and ($cqLoopBody.Count -ge 20))
+    if (@($cqInputHits).Count -gt 0) { Write-Output ('      C input tokens in the loop: ' + ($cqInputHits -join ', ')) }
+    if ($cqQFlagSites -ne 2) { Write-Output ('      C quality-flag consumer sites: ' + $cqQFlagSites + ' (want 2)') }
+    }
+  } finally {
+    try { if (Test-Path -LiteralPath $cqDir) { Remove-Item -LiteralPath $cqDir -Recurse -Force } } catch { }
+  }
+  # ---------- D-5 (v4.6.13): cluster-color - the palette an image file really holds ----------
+  # The blueprint's two criteria are the FIRST check below (a three-block fixture: cluster
+  # COUNT and SHARES correct, BBOXES equal to the rectangles that were painted). Everything
+  # after them is what the rule adds that one fixture cannot show: the tolerance is PER
+  # CHANNEL and inclusive at the boundary (a Euclidean reader would split where this merges),
+  # the report order is a contract, the mean is the pixel-weighted FLOOR, invisible pixels are
+  # counted rather than averaged, both trims self-report, and the two ceilings REFUSE instead
+  # of returning a shorter list. Check 1 compares the compiled pass against a separate
+  # PowerShell histogram over the SAME decoded bytes - if [CLC] read the stride wrong or
+  # swapped red for blue, the two disagree, and a fixture of three flat blocks cannot tell
+  # that apart on its own.
+  $d5Dir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-d5-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($d5Dir)
+  $d5Fill = {
+    param([string]$Name, [int]$W, [int]$H, [object[]]$Blocks)
+    $d5p = Join-Path $d5Dir $Name
+    $d5bm = New-Object System.Drawing.Bitmap($W, $H, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+      $d5gm = [System.Drawing.Graphics]::FromImage($d5bm)
+      try {
+        foreach ($d5bk in @($Blocks)) {
+          $d5br = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, [int]$d5bk[0], [int]$d5bk[1], [int]$d5bk[2]))
+          try { $d5gm.FillRectangle($d5br, [int]$d5bk[3], [int]$d5bk[4], [int]$d5bk[5], [int]$d5bk[6]) } finally { $d5br.Dispose() }
+        }
+      } finally { $d5gm.Dispose() }
+      $d5ms = New-Object System.IO.MemoryStream
+      try { $d5bm.Save($d5ms, [System.Drawing.Imaging.ImageFormat]::Png); [System.IO.File]::WriteAllBytes($d5p, $d5ms.ToArray()) } finally { $d5ms.Dispose() }
+    } finally { $d5bm.Dispose() }
+    return $d5p
+  }
+  try {
+    # (1) the fixture is the region the caller paints: three blocks, full coverage, no gaps.
+    $d5Three = & $d5Fill 'three.png' 100 50 @(
+      @(255, 0, 0, 0, 0, 60, 25),
+      @(0, 0, 255, 0, 25, 60, 25),
+      @(0, 255, 0, 60, 0, 40, 50))
+    $d5Img = Read-ClusterImage $d5Three
+    $d5Zero = Get-ColorClusters $d5Img.Bytes $d5Img.Stride $d5Img.W $d5Img.H 0 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5Ind = @{}
+    for ($d5y = 0; $d5y -lt $d5Img.H; $d5y++) {
+      $d5Row = $d5y * $d5Img.Stride
+      for ($d5x = 0; $d5x -lt $d5Img.W; $d5x++) {
+        $d5o = $d5Row + $d5x * 4
+        $d5k = ([int] $d5Img.Bytes[$d5o + 2] * 65536) + ([int] $d5Img.Bytes[$d5o + 1] * 256) + [int] $d5Img.Bytes[$d5o]
+        if (-not $d5Ind.ContainsKey($d5k)) { $d5Ind[$d5k] = @{ N = 0; X0 = $d5x; Y0 = $d5y; X1 = $d5x; Y1 = $d5y } }
+        $d5e = $d5Ind[$d5k]
+        $d5e.N = $d5e.N + 1
+        if ($d5x -lt $d5e.X0) { $d5e.X0 = $d5x }
+        if ($d5x -gt $d5e.X1) { $d5e.X1 = $d5x }
+        if ($d5y -lt $d5e.Y0) { $d5e.Y0 = $d5y }
+        if ($d5y -gt $d5e.Y1) { $d5e.Y1 = $d5y }
+      }
+    }
+    $d5IndPx = 0
+    foreach ($d5k in @($d5Ind.Keys)) { $d5IndPx = $d5IndPx + [long] $d5Ind[$d5k].N }
+    $d5Bad = @()
+    foreach ($d5c in @($d5Zero.Rows)) {
+      $d5ck = [int] $d5c.R * 65536 + [int] $d5c.G * 256 + [int] $d5c.B
+      if (-not $d5Ind.ContainsKey($d5ck)) { $d5Bad += ('colour-not-in-histogram=' + $d5c.Hex); continue }
+      $d5ie = $d5Ind[$d5ck]
+      if ([long] $d5c.Count -ne [long] $d5ie.N) { $d5Bad += ($d5c.Hex + '=count' + $d5c.Count + '-want' + $d5ie.N) }
+      if ($d5c.X -ne $d5ie.X0 -or $d5c.Y -ne $d5ie.Y0) { $d5Bad += ($d5c.Hex + '=origin' + $d5c.X + ',' + $d5c.Y + '-want' + $d5ie.X0 + ',' + $d5ie.Y0) }
+      if (($d5c.X + $d5c.BoxW - 1) -ne $d5ie.X1 -or ($d5c.Y + $d5c.BoxH - 1) -ne $d5ie.Y1) { $d5Bad += ($d5c.Hex + '=far' + ($d5c.X + $d5c.BoxW - 1) + ',' + ($d5c.Y + $d5c.BoxH - 1) + '-want' + $d5ie.X1 + ',' + $d5ie.Y1) }
+    }
+    $d5BySize = @($d5Zero.Rows | Sort-Object -Property @{ Expression = 'Count'; Descending = $true }, 'R', 'G', 'B', 'Y', 'X')
+    $d5Ok1 = (@($d5Zero.Rows).Count -eq 3) -and ($d5Zero.Seeds -eq 3) -and ($d5IndPx -eq 5000) -and
+      ($d5Zero.Opaque -eq 5000L) -and ($d5Zero.Transparent -eq 0L) -and (@($d5Zero.Pixels) -eq 5000) -and
+      (@($d5Bad).Count -eq 0) -and (@($d5Ind.Keys).Count -eq 3) -and
+      ($d5BySize[0].Hex -ceq '#00FF00') -and ($d5BySize[0].Count -eq 2000) -and
+      ($d5BySize[0].X -eq 60) -and ($d5BySize[0].Y -eq 0) -and ($d5BySize[0].BoxW -eq 40) -and ($d5BySize[0].BoxH -eq 50) -and
+      ($d5BySize[1].Hex -ceq '#0000FF') -and ($d5BySize[1].Count -eq 1500) -and
+      ($d5BySize[1].X -eq 0) -and ($d5BySize[1].Y -eq 25) -and ($d5BySize[1].BoxW -eq 60) -and ($d5BySize[1].BoxH -eq 25) -and
+      ($d5BySize[2].Hex -ceq '#FF0000') -and ($d5BySize[2].Count -eq 1500) -and
+      ($d5BySize[2].X -eq 0) -and ($d5BySize[2].Y -eq 0) -and ($d5BySize[2].BoxW -eq 60) -and ($d5BySize[2].BoxH -eq 25)
+    ST-Check 'unit (D-5): a three-block fixture yields exactly three clusters whose counts, pixel-weighted colours and bboxes equal the rectangles painted AND an independent PowerShell histogram over the same decoded bytes (planted control for a stride or channel-order bug)' $d5Ok1
+    if (-not $d5Ok1) {
+      Write-Output ('      D-5 fixture: rows=' + @($d5Zero.Rows).Count + ' seeds=' + $d5Zero.Seeds + ' opaque=' + $d5Zero.Opaque +
+        ' transparent=' + $d5Zero.Transparent + ' pixels=' + $d5Zero.Pixels + ' hist-colours=' + @($d5Ind.Keys).Count +
+        ' hist-pixels=' + $d5IndPx + ' bad=[' + (@($d5Bad) -join '; ') + '] order=[' +
+        ((@($d5BySize | ForEach-Object { "$($_.Hex):$($_.Count)@($($_.X),$($_.Y),$($_.BoxW),$($_.BoxH))" })) -join ' ') + ']')
+    }
+    # (2) the tolerance is a PER-CHANNEL bound, INCLUSIVE at the boundary. Two blocks whose
+    # colours differ by 5 on RED and 5 on GREEN are 7.07 apart in Euclidean terms: a reader
+    # that measured distance would keep them apart at --tolerance 5, this rule merges them and
+    # the dev columns print 5,5,0 as the evidence. A second pair differs on BLUE only.
+    $d5Cheb = & $d5Fill 'cheb.png' 20 10 @(
+      @(255, 0, 0, 0, 0, 10, 10),
+      @(250, 5, 0, 10, 0, 10, 10))
+    $d5Cimg = Read-ClusterImage $d5Cheb
+    $d5C4 = Get-ColorClusters $d5Cimg.Bytes $d5Cimg.Stride $d5Cimg.W $d5Cimg.H 4 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5C5 = Get-ColorClusters $d5Cimg.Bytes $d5Cimg.Stride $d5Cimg.W $d5Cimg.H 5 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5Blue = & $d5Fill 'blue.png' 20 10 @(
+      @(10, 10, 10, 0, 0, 10, 10),
+      @(10, 10, 16, 10, 0, 10, 10))
+    $d5Bimg = Read-ClusterImage $d5Blue
+    $d5B5 = Get-ColorClusters $d5Bimg.Bytes $d5Bimg.Stride $d5Bimg.W $d5Bimg.H 5 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5B6 = Get-ColorClusters $d5Bimg.Bytes $d5Bimg.Stride $d5Bimg.W $d5Bimg.H 6 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5C5row = @($d5C5.Rows)[0]
+    $d5Ok2 = (@($d5C4.Rows).Count -eq 2) -and (@($d5C5.Rows).Count -eq 1) -and
+      ($d5C5row.Count -eq 200) -and ($d5C5row.R -eq 252) -and ($d5C5row.G -eq 2) -and ($d5C5row.B -eq 0) -and
+      ($d5C5row.SeedR -eq 255) -and ($d5C5row.DevR -eq 5) -and ($d5C5row.DevG -eq 5) -and ($d5C5row.DevB -eq 0) -and
+      (@($d5B5.Rows).Count -eq 2) -and (@($d5B6.Rows).Count -eq 1) -and
+      (@($d5B6.Rows)[0].DevB -eq 6) -and (@($d5B6.Rows)[0].DevR -eq 0)
+    ST-Check 'unit (D-5): --tolerance is a PER-CHANNEL bound and inclusive at the boundary - a pair 5 apart on red and 5 apart on green (7.07 apart as the crow flies) merges at 5 and splits at 4, and a pair differing on blue alone does the same at 6' (
+      $d5Ok2)
+    if (-not $d5Ok2) {
+      Write-Output ('      D-5 cheb: at4=' + @($d5C4.Rows).Count + ' at5=' + @($d5C5.Rows).Count +
+        ' merged=[' + ($d5C5row.R.ToString() + ',' + $d5C5row.G + ',' + $d5C5row.B + ') seed=' + $d5C5row.SeedR + ',' + $d5C5row.SeedG + ',' + $d5C5row.SeedB + ' dev=' + $d5C5row.DevR + ',' + $d5C5row.DevG + ',' + $d5C5row.DevB + ' n=' + $d5C5row.Count) +
+        '] blue: at5=' + @($d5B5.Rows).Count + ' at6=' + @($d5B6.Rows).Count)
+    }
+    # (3) the ORDER is part of the answer. Biggest first; an equal-size tie falls back to the
+    # cluster's own numbers (blue 0,0,255 before red 255,0,0), and every dev printed is inside
+    # the tolerance that produced it - the bound the report claims is the bound it holds.
+    $d5RankTxt = (@($d5BySize | ForEach-Object { $_.Hex }) -join ' ')
+    # Each set is judged against the tolerance that PRODUCED it: 5 for the pair that merged at
+    # 5, 6 for the pair that merged at 6, 0 for the three flat blocks. One hard-coded bound
+    # across mixed sources is not "inside the tolerance that produced it" - it is a guess, and
+    # it reddens on correct data (measured r1: the blue pair at tolerance 6 dev=0,0,6).
+    $d5OverDev = @()
+    foreach ($d5Set in @(@{ Rows = @($d5C5.Rows); Tol = 5 }, @{ Rows = @($d5B5.Rows); Tol = 5 },
+                         @{ Rows = @($d5B6.Rows); Tol = 6 }, @{ Rows = @($d5BySize); Tol = 0 })) {
+      foreach ($d5rr in @($d5Set.Rows)) {
+        if ($d5rr.DevR -gt $d5Set.Tol -or $d5rr.DevG -gt $d5Set.Tol -or $d5rr.DevB -gt $d5Set.Tol) {
+          $d5OverDev += ($d5rr.Hex + '=' + $d5rr.DevR + ',' + $d5rr.DevG + ',' + $d5rr.DevB + '-over-tol' + $d5Set.Tol)
+        }
+      }
+    }
+    $d5Ok3 = ($d5RankTxt -ceq '#00FF00 #0000FF #FF0000') -and (@($d5OverDev).Count -eq 0) -and
+      (@($d5BySize | Where-Object { $_.DevR -ne 0 -or $_.DevG -ne 0 -or $_.DevB -ne 0 }).Count -eq 0)
+    ST-Check 'unit (D-5): clusters come back biggest first with the stated tie-break (equal 1500-pixel clusters fall back to their own colour numbers), and at tolerance 0 every cluster is one exact colour with zero deviation' (
+      $d5Ok3)
+    if (-not $d5Ok3) { Write-Output ('      D-5 order: [' + $d5RankTxt + '] over-dev=[' + (@($d5OverDev) -join '; ') + ']') }
+    # (4) the mean is the pixel-weighted FLOOR and alpha-0 pixels are invisible, not black.
+    $d5Floor = & $d5Fill 'floor.png' 4 1 @(
+      @(10, 0, 0, 0, 0, 1, 1),
+      @(11, 0, 0, 1, 0, 1, 1),
+      @(10, 0, 0, 2, 0, 1, 1),
+      @(11, 0, 0, 3, 0, 1, 1))
+    $d5Fimg = Read-ClusterImage $d5Floor
+    $d5F1 = Get-ColorClusters $d5Fimg.Bytes $d5Fimg.Stride $d5Fimg.W $d5Fimg.H 1 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5Frow = @($d5F1.Rows)[0]
+    $d5AlphaP = Join-Path $d5Dir 'alpha.png'
+    $d5Abm = New-Object System.Drawing.Bitmap(10, 10, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+      for ($d5ax = 0; $d5ax -lt 10; $d5ax++) {
+        for ($d5ay = 0; $d5ay -lt 10; $d5ay++) {
+          if ($d5ax -lt 5) { $d5Abm.SetPixel($d5ax, $d5ay, [System.Drawing.Color]::FromArgb(255, 200, 30, 30)) }
+          else { $d5Abm.SetPixel($d5ax, $d5ay, [System.Drawing.Color]::FromArgb(0, 9, 9, 9)) }
+        }
+      }
+      $d5Ams = New-Object System.IO.MemoryStream
+      try { $d5Abm.Save($d5Ams, [System.Drawing.Imaging.ImageFormat]::Png); [System.IO.File]::WriteAllBytes($d5AlphaP, $d5Ams.ToArray()) } finally { $d5Ams.Dispose() }
+    } finally { $d5Abm.Dispose() }
+    $d5Avimg = Read-ClusterImage $d5AlphaP
+    $d5Av = Get-ColorClusters $d5Avimg.Bytes $d5Avimg.Stride $d5Avimg.W $d5Avimg.H 20 (Get-ClusterCeiling 'MaxSeeds') (Get-ClusterCeiling 'MaxMs')
+    $d5Avrow = @($d5Av.Rows)[0]
+    $d5Ok4 = (@($d5F1.Rows).Count -eq 1) -and ($d5Frow.Count -eq 4) -and ($d5Frow.R -eq 10) -and
+      ($d5Frow.Hex -ceq '#0A0000') -and ($d5Frow.SeedR -eq 10) -and ($d5Frow.DevR -eq 1) -and
+      (@($d5Av.Rows).Count -eq 1) -and ($d5Av.Opaque -eq 50L) -and ($d5Av.Transparent -eq 50L) -and
+      ($d5Av.Pixels -eq 100L) -and ($d5Avrow.Count -eq 50) -and ($d5Avrow.R -eq 200) -and
+      (Format-ClusterShare $d5Avrow.Count $d5Av.Opaque -ceq '100.00') -and
+      (Format-ClusterShare 2000L 5000L -ceq '40.00') -and (Format-ClusterShare 1L 3L -ceq '33.33')
+    ST-Check 'unit (D-5): the printed colour is the pixel-weighted mean FLOORED (two 10s and two 11s print 10, never 11), and alpha-0 pixels are counted and skipped so a share is taken over the opaque pixels only' (
+      $d5Ok4)
+    if (-not $d5Ok4) {
+      Write-Output ('      D-5 floor/alpha: mean=' + $d5Frow.R + ' hex=' + $d5Frow.Hex + ' seed=' + $d5Frow.SeedR + ' dev=' + $d5Frow.DevR +
+        ' | opaque=' + $d5Av.Opaque + ' transparent=' + $d5Av.Transparent + ' pixels=' + $d5Av.Pixels + ' rows=' + @($d5Av.Rows).Count + ' r=' + $d5Avrow.R)
+    }
+    # (5) both cuts self-report. Twelve blocks of two sizes: --min-cluster 100 keeps the six
+    # big ones and says how many pixels it dropped; with no trim the TEXT page stops at the top
+    # ten and says so, while --json carries all twelve (the page is a reading limit, the data
+    # is not). A drop that is not announced is the same lie as a truncation that is not.
+    $d5Twelve = & $d5Fill 'twelve.png' 144 10 @(
+      @(10, 40, 60, 0, 0, 20, 10), @(30, 40, 60, 20, 0, 20, 10), @(50, 40, 60, 40, 0, 20, 10),
+      @(70, 40, 60, 60, 0, 20, 10), @(90, 40, 60, 80, 0, 20, 10), @(110, 40, 60, 100, 0, 20, 10),
+      @(130, 40, 60, 120, 0, 4, 10), @(150, 40, 60, 124, 0, 4, 10), @(170, 40, 60, 128, 0, 4, 10),
+      @(190, 40, 60, 132, 0, 4, 10), @(210, 40, 60, 136, 0, 4, 10), @(230, 40, 60, 140, 0, 4, 10))
+    $d5JsonSave = $script:Json
+    $script:Json = $false
+    $d5T1 = @(Invoke-Handler-cluster-color 'cluster-color' @($d5Twelve, '--tolerance', '0'))
+    $d5T2 = @(Invoke-Handler-cluster-color 'cluster-color' @($d5Twelve, '--tolerance', '0', '--min-cluster', '100'))
+    $script:Json = $true
+    $d5J1 = (Invoke-Handler-cluster-color 'cluster-color' @($d5Twelve, '--tolerance', '0')) | ConvertFrom-Json
+    $d5J2 = (Invoke-Handler-cluster-color 'cluster-color' @($d5Twelve, '--tolerance', '0', '--min-cluster', '100')) | ConvertFrom-Json
+    $script:Json = $d5JsonSave
+    $d5T1txt = ($d5T1 -join "`n")
+    $d5T2txt = ($d5T2 -join "`n")
+    $d5Ok5 = (@($d5T1 | Where-Object { $_ -like '  #*' }).Count -eq 10) -and
+      ($d5T1txt.Contains('10 of 12 cluster(s) over 1440 opaque pixel(s)')) -and
+      ($d5T1txt.Contains('showing the top 10 of 12 cluster(s) that passed --min-cluster')) -and
+      (@($d5T2 | Where-Object { $_ -like '  #*' }).Count -eq 6) -and
+      ($d5T2txt.Contains('6 of 12 cluster(s)')) -and ($d5T2txt.Contains('6 cluster(s) fell below --min-cluster 100 (240 pixel(s))')) -and
+      (-not $d5T2txt.Contains('#82283C')) -and
+      (@($d5J1.palette).Count -eq 12) -and ($d5J1.clusters -eq 12) -and ($d5J1.kept -eq 12) -and ($d5J1.below_min -eq 0) -and
+      (@($d5J2.palette).Count -eq 6) -and ($d5J2.kept -eq 6) -and ($d5J2.below_min -eq 6) -and ($d5J2.below_min_pixels -eq 240) -and
+      ((@($d5J1.palette) | Measure-Object -Property count -Minimum).Minimum -eq 40) -and
+      ((@($d5J2.palette) | Measure-Object -Property count -Minimum).Minimum -eq 200)
+    ST-Check 'unit (D-5): --min-cluster trims small clusters and reports how many it trimmed with their pixel total, the text page stops at the top ten and says so, and --json carries every cluster that passed the trim' (
+      $d5Ok5)
+    if (-not $d5Ok5) {
+      Write-Output ('      D-5 trim: text-lines=' + @($d5T1 | Where-Object { $_ -like '  #*' }).Count +
+        ' kept-lines=' + @($d5T2 | Where-Object { $_ -like '  #*' }).Count + ' json-all=' + @($d5J1.palette).Count +
+        ' json-kept=' + @($d5J2.palette).Count + ' dropped=' + $d5J2.below_min + '/' + $d5J2.below_min_pixels +
+        ' | t1=[' + $d5T1txt.Replace("`n", ' | ') + '] t2=[' + $d5T2txt.Replace("`n", ' | ') + ']')
+    }
+    # (6) every refusal names what it found. Five different defects must not collapse into one
+    # sentence, and no two messages may be identical (that is how a reader learns WHICH thing
+    # to fix); the handler rejects a missing or doubled positional before the file is touched.
+    $d5EmptyP = Join-Path $d5Dir 'empty.png'
+    [System.IO.File]::WriteAllBytes($d5EmptyP, @())
+    $d5TextP = Join-Path $d5Dir 'notanimage.png'
+    [System.IO.File]::WriteAllText($d5TextP, 'this is not a PNG at all, it is a sentence', (New-Object System.Text.UTF8Encoding($false)))
+    $d5Why = @()
+    try { [void](Read-ClusterImage (Join-Path $d5Dir 'nope.png')) } catch { $d5Why += [string] $_.Exception.Message }
+    try { [void](Read-ClusterImage $d5Dir) } catch { $d5Why += [string] $_.Exception.Message }
+    try { [void](Read-ClusterImage $d5EmptyP) } catch { $d5Why += [string] $_.Exception.Message }
+    try { [void](Read-ClusterImage $d5TextP) } catch { $d5Why += [string] $_.Exception.Message }
+    $d5WhyArgs = @()
+    try { [void](Invoke-Handler-cluster-color 'cluster-color' @()) } catch { $d5WhyArgs += [string] $_.Exception.Message }
+    try { [void](Invoke-Handler-cluster-color 'cluster-color' @($d5Three, 'extra.png')) } catch { $d5WhyArgs += [string] $_.Exception.Message }
+    $d5Distinct = @($d5Why | Sort-Object -Unique).Count
+    $d5Ok6 = (@($d5Why).Count -eq 4) -and ($d5Distinct -eq 4) -and
+      ($d5Why[0].Contains('no image at')) -and ($d5Why[1].Contains('is a directory')) -and
+      ($d5Why[2].Contains('empty file')) -and ($d5Why[3].Contains('could not be decoded')) -and
+      (@($d5WhyArgs).Count -eq 2) -and ($d5WhyArgs[0].Contains('usage: cluster-color')) -and
+      ($d5WhyArgs[1].Contains('one positional argument')) -and ($d5WhyArgs[1].Contains('extra.png'))
+    ST-Check 'unit (D-5): a missing path, a directory, an empty file and undecodable bytes are each refused by their own reason (four distinct sentences, never one shared ''not an image''), and a missing or doubled positional is refused before the file is opened' (
+      $d5Ok6)
+    if (-not $d5Ok6) { Write-Output ('      D-5 refusals: n=' + @($d5Why).Count + ' distinct=' + $d5Distinct + ' [' + (@($d5Why) -join ' || ') + '] args=[' + (@($d5WhyArgs) -join ' || ') + ']') }
+    # (7) the two ceilings. Both are driven through the helper's OWN parameters so a fixture
+    # does not have to be eight megapixels: a cap of two clusters on a three-colour file, and a
+    # budget of -1 ms on a 512x512 one (the sentinel is what makes the time leg deterministic -
+    # a real stopwatch reading at 0 ms would depend on the machine). Neither may return a
+    # partial list, because a shorter palette reads as a complete one.
+    $d5Big = & $d5Fill 'big.png' 512 512 @(
+      @(0, 128, 0, 0, 0, 512, 512), @(0, 129, 0, 0, 0, 1, 1))
+    $d5Gimg = Read-ClusterImage $d5Big
+    $d5Ceil = @()
+    try { [void](Get-ColorClusters $d5Img.Bytes $d5Img.Stride $d5Img.W $d5Img.H 0 2 (Get-ClusterCeiling 'MaxMs')) } catch { $d5Ceil += [string] $_.Exception.Message }
+    try { [void](Get-ColorClusters $d5Gimg.Bytes $d5Gimg.Stride $d5Gimg.W $d5Gimg.H 0 (Get-ClusterCeiling 'MaxSeeds') (-1)) } catch { $d5Ceil += [string] $_.Exception.Message }
+    $d5CeilUnknown = ''
+    try { [void](Get-ClusterCeiling 'MaxEverything') } catch { $d5CeilUnknown = [string] $_.Exception.Message }
+    # Neither number is guessed. The cap trips on the FIRST pixel that needs a third seed, so
+    # the pixels already counted are exactly the opaque ones before it in raster order - here
+    # the 25 full rows of red+green. The budget is tested on the first counted total divisible
+    # by 0x10000, which is why a -1 ms budget still reports a fixed pixel count on any machine.
+    $d5CapWant = 'stopped at ' + (25 * $d5Img.W) + ' opaque pixel(s) of ' + ($d5Img.W * $d5Img.H)
+    $d5OverWant = 'after ' + [string] 0x10000 + ' opaque pixel(s) of ' + ($d5Gimg.W * $d5Gimg.H)
+    $d5Ok7 = (@($d5Ceil).Count -eq 2) -and ($d5Ceil[0].Contains('more than 2 clusters')) -and
+      ($d5Ceil[0].Contains('NO palette is reported')) -and ($d5Ceil[1].Contains('-1 ms budget')) -and
+      ($d5Ceil[0].Contains('--tolerance 0 merges too little')) -and
+      ($d5Ceil[0].Contains($d5CapWant)) -and ($d5Ceil[1].Contains($d5OverWant)) -and
+      (@($d5Ceil | Where-Object { $_ -like '*partial list*' }).Count -eq 2) -and
+      ((Get-ClusterCeiling 'MaxSeeds') -eq 4096) -and ((Get-ClusterCeiling 'MaxMs') -eq 5000) -and
+      ((Get-ClusterCeiling 'TopK') -eq 10) -and ($d5CeilUnknown.Contains('the ceilings are MaxSeeds, MaxMs and TopK'))
+    ST-Check 'unit (D-5): both ceilings refuse with the number that fired and return NO partial list - the cluster cap names the tolerance and the pixels counted before it stopped, the time budget names the same against the whole image, and the shipped ceilings are 4096/5000/10' (
+      $d5Ok7)
+    if (-not $d5Ok7) { Write-Output ('      D-5 ceilings: cap-want=[' + $d5CapWant + '] over-want=[' + $d5OverWant + '] n=' + @($d5Ceil).Count + ' [' + (@($d5Ceil) -join ' || ') + '] unknown-ceiling=[' + $d5CeilUnknown + ']') }
+    # (8) the registration sweep, with a planted ghost. cluster-color must be a real dispatch
+    # case, have exactly one handler in the file the read group declares, own a help entry, be
+    # tabled for both of its flags, route NO shared flag, and be JSON-capable - while a name
+    # that does not exist must fail the same tests (a scan that cannot say no is not evidence).
+    $d5Case = @($codeLines | Where-Object { $_ -match ("^    '" + 'cluster-color' + "' \{") }).Count
+    $d5GhostCase = @($codeLines | Where-Object { $_ -match ("^    '" + 'cluster-colorzzz' + "' \{") }).Count
+    $d5Fn = @($codeLines | Where-Object { $_ -match '^function Invoke-Handler-cluster-color\(' }).Count
+    # The help page lives inside a single-quoted here-string, and $codeLines blanks every
+    # here-string body on purpose, so the entry is read from the function that RENDERS it -
+    # scanning the source here would measure a blank line and report the help page as missing.
+    $d5Help = @(((Get-UsageText) -split "`r?`n") | Where-Object { $_ -ceq '    cluster-color <image> [--min-cluster N] [--tolerance d]' }).Count
+    $d5FlagRow = @($codeLines | Where-Object { $_ -match ("^    '" + 'cluster-color' + "' = @\{ '--tolerance' = @\{ Min = 0; Max = 255; Default = 20 \}") }).Count
+    $d5Spec = Get-OwnFlagSpec 'cluster-color'
+    $d5Ok8 = ($d5Case -eq 1) -and ($d5GhostCase -eq 0) -and ($d5Fn -eq 1) -and ($d5Help -eq 1) -and ($d5FlagRow -eq 1) -and
+      (Test-JsonCapableCommand 'cluster-color') -and (-not (Test-JsonCapableCommand 'cluster-colorzzz')) -and
+      (@(Get-CommandSharedSet 'cluster-color').Count -eq 0) -and
+      (@(Get-CommandSharedSet 'cluster-colorzzz').Count -gt 0) -and
+      ($d5Spec.ContainsKey('--tolerance')) -and ($d5Spec.ContainsKey('--min-cluster')) -and
+      ($d5Spec['--tolerance']['Min'] -eq 0) -and ($d5Spec['--tolerance']['Max'] -eq 255) -and ($d5Spec['--tolerance']['Default'] -eq 20) -and
+      ($d5Spec['--min-cluster']['Min'] -eq 1) -and ($d5Spec['--min-cluster']['Max'] -eq 100000000) -and ($d5Spec['--min-cluster']['Default'] -eq 1) -and
+      (-not (Get-OwnFlagSpec 'cluster-colorzzz').ContainsKey('--tolerance'))
+    ST-Check 'lint (D-5): cluster-color is one dispatch case with one handler, one help entry and both flags tabled, routes no shared flag, renders --json, and a ghost name fails every one of those tests (the sweep is not vacuous)' (
+      $d5Ok8)
+    if (-not $d5Ok8) {
+      Write-Output ('      D-5 registration: case=' + $d5Case + ' ghost=' + $d5GhostCase + ' handler=' + $d5Fn +
+        ' help=' + $d5Help + ' flagrow=' + $d5FlagRow + ' json=' + (Test-JsonCapableCommand 'cluster-color') +
+        ' shared=' + (@(Get-CommandSharedSet 'cluster-color').Count) + ' spec=' + (@(Get-HashKeys (Get-OwnFlagSpec 'cluster-color')).Count))
+    }
+    # (9) end to end through the real entry: the numbers a child prints are the numbers the
+    # library computed (two outlets, one measurement), a bad --tolerance is refused by the
+    # table BEFORE the image is decoded, and an unknown flag names itself. A box that cannot
+    # spawn a child gets a named skip, never a silent pass.
+    $d5Run = {
+      param([string]$ArgLine, [string]$OutName)
+      $d5o = Join-Path $d5Dir $OutName
+      try {
+        $d5pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $ArgLine -RedirectStandardOutput $d5o -RedirectStandardError "$d5o.err" -Wait -PassThru -NoNewWindow
+        $d5txt = ''
+        if (Test-Path -LiteralPath $d5o) { $d5txt += [IO.File]::ReadAllText($d5o) }
+        $d5errt = ''
+        if (Test-Path -LiteralPath "$d5o.err") { $d5errt += [IO.File]::ReadAllText("$d5o.err") }
+        return @{ Ok = $true; Exit = [int] $d5pr.ExitCode; Out = $d5txt; Err = $d5errt }
+      } catch { return @{ Ok = $false; Why = [string] $_.Exception.Message; Exit = -1; Out = ''; Err = '' } }
+    }
+    $d5Q = '-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" cluster-color '
+    $d5E1 = & $d5Run ($d5Q + '"' + $d5Three + '" --tolerance 0') 'e1.txt'
+    $d5E2 = & $d5Run ($d5Q + '"' + $d5Three + '" --tolerance 0 --json') 'e2.txt'
+    $d5E3 = & $d5Run ($d5Q + '"' + $d5Three + '" --tolerance 256') 'e3.txt'
+    $d5E4 = & $d5Run ($d5Q + '"' + (Join-Path $d5Dir 'gone.png') + '"') 'e4.txt'
+    $d5E5 = & $d5Run ($d5Q + '"' + $d5Three + '" --nope') 'e5.txt'
+    if (-not $d5E1.Ok) {
+      ST-Skip 'e2e (D-5): a real child reports the same palette the library computed, in text and in --json, and refuses a bad tolerance before decoding' ($d5E1.Why + ' - the check spawns a child process')
+    } else {
+      $d5E1txt = $d5E1.Out + $d5E1.Err
+      $d5Ej = $null
+      try { $d5Ej = $d5E2.Out | ConvertFrom-Json } catch { $d5Ej = $null }
+      $d5Ok9 = ($d5E1.Exit -eq 0) -and ($d5E1txt.Contains('3 of 3 cluster(s) over 5000 opaque pixel(s)')) -and
+        ($d5E1txt.Contains('#00FF00 share=40.00% count=2000 bbox=(60,0,40,50)')) -and
+        ($d5E2.Exit -eq 0) -and ($null -ne $d5Ej) -and ($d5Ej.clusters -eq 3) -and (@($d5Ej.palette).Count -eq 3) -and
+        ($d5Ej.width -eq 100) -and ($d5Ej.height -eq 50) -and ($d5Ej.opaque -eq 5000) -and
+        (@($d5Ej.palette | Where-Object { $_.count -eq 2000 }).Count -eq 1) -and
+        ((@($d5Ej.palette | Where-Object { $_.hex -ceq '#0000FF' })[0].bbox -join ',') -ceq '0,25,60,25') -and
+        ($d5E3.Exit -ne 0) -and (($d5E3.Out + $d5E3.Err).Contains('--tolerance')) -and (($d5E3.Out + $d5E3.Err).Contains('0..255')) -and
+        ($d5E4.Exit -ne 0) -and (($d5E4.Out + $d5E4.Err).Contains('no image at')) -and
+        ($d5E5.Exit -ne 0) -and (($d5E5.Out + $d5E5.Err).Contains('unknown flag ''--nope'''))
+      ST-Check 'e2e (D-5): a real child prints the same palette the library computed for the same file, text and --json agree cluster-for-cluster, and a tolerance of 256, a missing file and an unknown flag are each refused by name' (
+        $d5Ok9)
+      if (-not $d5Ok9) {
+        Write-Output ('      D-5 e2e: text exit=' + $d5E1.Exit + ' out=[' + $d5E1txt.Replace("`n", ' | ') + ']' +
+          ' json exit=' + $d5E2.Exit + ' clusters=' + $(if ($null -ne $d5Ej) { $d5Ej.clusters } else { 'UNPARSED' }) + ' out=[' + $d5E2.Out.Trim().Replace("`n", ' | ') + ']' +
+          ' bad-tol exit=' + $d5E3.Exit + ' out=[' + ($d5E3.Out + $d5E3.Err).Replace("`n", ' | ') + ']' +
+          ' missing exit=' + $d5E4.Exit + ' unknown-flag exit=' + $d5E5.Exit + ' out=[' + ($d5E5.Out + $d5E5.Err).Replace("`n", ' | ') + ']')
+      }
+    }
+  } finally {
+    try { if (Test-Path -LiteralPath $d5Dir) { Remove-Item -LiteralPath $d5Dir -Recurse -Force } } catch { }
+    $d5Residual = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Filter 'dtx-d5-*' -Force -ErrorAction SilentlyContinue).Count
+    if ($d5Residual -gt 0) { Write-Output ('      D-5 cleanup: ' + $d5Residual + ' temp dir(s) left behind') }
+  }
 }

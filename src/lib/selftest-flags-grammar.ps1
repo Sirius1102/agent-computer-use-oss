@@ -276,7 +276,12 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
     foreach ($fl in @(Get-HashKeys $d1Spec)) {
       # Contains, not -like: '[' is a WILDCARD character class in -like patterns,
       # so the first version of this check blew up on the pattern itself.
-      if (-not $d1Doc.Contains('[' + $fl)) { [void]$d1OwnBad.Add("$cmd : '$fl' is stripped+parsed but not documented in its help block") }
+      # B-1: the bracket is NOT required. A REQUIRED flag cannot appear as [--flag] in the
+      # synopsis without lying about its optionality (pt-calibrate's --estimate/--verify are
+      # mandatory and are documented bare), and the property here is "documented in this
+      # command's help block", not "documented as optional". A flag absent from the block is
+      # still named, which is what the check is for.
+      if (-not $d1Doc.Contains($fl)) { [void]$d1OwnBad.Add("$cmd : '$fl' is stripped+parsed but not documented in its help block") }
       if (-not $d1Block.Contains("Values['" + $fl + "']")) { [void]$d1OwnBad.Add("$cmd : '$fl' is parsed but the handler never reads its value") }
       # J-06: a table flag must not ALSO be hand-compared in the same body - that is two
       # implementations of one flag, which is how "the table says it works" and "the code
@@ -295,6 +300,13 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
   }
   ST-Check 'lint: every private flag is stripped before Split-Target, read by the handler and documented in help (D-1 anti-drift)' (@($d1OwnBad).Count -eq 0)
   foreach ($d in @($d1OwnBad)) { Write-Output "      flag-reachability gap: $d" }
+  # B-1 teeth for the documentation predicate now that the bracket is not demanded: a REQUIRED
+  # flag documented bare is accepted (bracketing it would lie about optionality) and a flag the
+  # block does not mention is still named. Both run through the same Contains test the loop uses.
+  $d1DocPlant = '    demo-cmd <a> --need <x> [--opt y]'
+  ST-Check 'lint: the help-documentation predicate takes a bare required flag and still names a flag the block never mentions (the bracket was dropped, the check was not)' (
+    ($d1DocPlant.Contains('--need')) -and ($d1DocPlant.Contains('--opt')) -and
+    (-not ('    demo-cmd <a> [--opt y]').Contains('--need')))
   # positive controls: neither scan is vacuous
   $d1Plant = "      if (`$p.Words[`$i] -eq '--dwell') { x }"
   $d1PlantHit = $false
@@ -435,8 +447,8 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
       (@($bad).Count -eq 0) -and (@(Get-HashKeys $csMap).Count -ge 4)
     ))
   # the flag-reachability lint must now cover the migrated commands, not just three
-  ST-Check 'unit: the private-flag table covers 24 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; CU-OPS adds click/rclick/dblclick for their --mods/--button/space guards, key and key-release for the native-keyboard bounds, the three process entries (proc-wait, proc-start, proc-kill), uia-state for its opt-in --text, and tpl-find/wait-cond for their bounded locator and wait values; EXPECTATION RAISED 13->21->22->24, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
-    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 24)
+  ST-Check 'unit: the private-flag table covers 30 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; CU-OPS adds click/rclick/dblclick for their --mods/--button/space guards, key and key-release for the native-keyboard bounds, the three process entries (proc-wait, proc-start, proc-kill), uia-state for its opt-in --text, tpl-find/wait-cond for their bounded locator and wait values, D-1 adds pt-profile/pt-anchor for their profile paths and strict-drift bound, D-3 adds log-index for its date/origin/log filters, D-2 adds tile for its plan and destination, D-5 adds cluster-color for its per-channel tolerance and smallest cluster worth a line, and this round (B-1) adds pt-calibrate for its index lists, rectangle, point, residual bound, baseline floor and list switch; EXPECTATION RAISED 13->21->22->24->26->27->28->29->30, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
+    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 30)
 
   # the escape route must survive the strip: everything after a value-taking flag is DATA.
   # J-06's central unknown-flag refusal nearly ate `--needle <--payload>` and only a --live
@@ -496,7 +508,10 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
     $gl = $codeLines[$gi]
     if ($gl -match '^\s*#') { continue }
     if ($gl -notmatch 'Save-RectEx .* \$pf\.') { continue }
-    if ($gl -notmatch '\$pf\s*\|\s*Write-Output') { [void]$gForw.Add("$($gi + 1): $($gl.Trim())") }
+    # v4.8.0 (C): Save-RectEx gained a 14th argument (the per-attempt occlusion recheck
+    # scriptblock), so the forward check accepts $pf followed by that argument before the pipe -
+    # what the rule owes is that the flag context reaches the capture, not a fixed arity.
+    if ($gl -notmatch '\$pf\b[^|]*\|\s*Write-Output') { [void]$gForw.Add("$($gi + 1): $($gl.Trim())") }
   }
   ST-Check 'lint: every capture call site forwards the flag context (no command quietly loses the auto grid)' (@($gForw).Count -eq 0)
   foreach ($gf in @($gForw)) { Write-Output "      Save-RectEx call without the cf argument: $gf" }
@@ -671,18 +686,21 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
 
 
   # ---------- v4.4.0 (A-15): the case shape is judged from the AST, and a shape break names the case ----------
-  # Design gate 12, landed BEFORE any case body moves. Measured on this tree (a15-probe.ps1): the
-  # dispatcher holds ONE switch with 94 clauses; 91 of them begin on a line the strict case regex
-  # sees; the other 3 are single-line cases and they are exactly selftest / script / replay; 0 clauses
-  # begin on a line that is neither. The unscoped file-wide count of the same regex is 105 - 11 more
-  # lines live in OTHER switches - which is why this gate (and the three older scans) must be scoped
-  # to the dispatcher, and why the difference is asserted rather than a number being trusted.
-  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 91 94
+  # Design gate 12, landed BEFORE any case body moves. Measured on this tree (a15-probe.ps1) and
+  # re-measured by this very gate every round: the dispatcher holds ONE switch with 100 clauses; 97
+  # of them begin on a line the strict case regex sees; the other 3 are single-line cases and they
+  # are exactly selftest / script / replay; 0 clauses begin on a line that is neither. The unscoped
+  # file-wide count of the same regex is 111 - 14 more lines match the same shape OUTSIDE this switch
+  # (3 in the clipboard-restore switch above it, 11 in the script-step normalisers below) - which is
+  # why this gate (and the three older scans) must be scoped to the dispatcher, and why the difference
+  # is asserted rather than a number being trusted. D-5 (v4.6.13) moved 96/99/110 to 97/100/111;
+  # v4.7.0 (B-1) moves them to 98/101/112 for the pt-calibrate case.
+  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 98 101
   $a15Unscoped = 0
   foreach ($a15l in $srcLines) { if ([regex]::IsMatch([string]$a15l, '^    ''[a-z0-9-]+'' \{$')) { $a15Unscoped = $a15Unscoped + 1 } }
-  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 91 and 94, and the unscoped count is larger, so the scope is what is being measured' (
-    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 91) -and ($hCaseStarts.Count -eq 91) -and
-    ($gaCasesCount -eq 94) -and ($a15Unscoped -gt 91))
+  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 98 and 101, and the unscoped count is larger, so the scope is what is being measured' (
+    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 98) -and ($hCaseStarts.Count -eq 98) -and
+    ($gaCasesCount -eq 101) -and ($a15Unscoped -gt 98))
   Write-Output ('      A-15 case shape: gap=[' + $a15Gap + '] flag-scan=' + $d1CaseStarts.Count + ' help-index=' + $hCaseStarts.Count +
     ' f-00-a=' + $gaCasesCount + ' unscoped-file-wide=' + $a15Unscoped)
   # the teeth: every note this predicate can emit is planted, on text - not on the tree. The clean

@@ -1,6 +1,94 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project are documented in this file.
+
+## v4.8.0 - 2026-10-31
+
+- **Screenshot quality gate and bounded re-capture (new, opt-in).** `shot`/`win`/`rect`/`zoom`
+  share one quality-flag grammar. `--min-ink <0..100>` turns on a gate that measures the 1:1
+  captured frame (before `--fit` and any grid overlay) for the share of sampled pixels that
+  differ from a reference colour by more than `--ink-tol` (per channel, default 24). The
+  reference is `--ink-vs auto` - the frame's own mode colour, echoed - or an explicit `#RRGGBB`;
+  `--ink-area x,y,w,h` scopes the measure, `--ink-stride 1..64` samples every Nth pixel and the
+  echo prints the denominator. A frame below the threshold is a refusal that publishes nothing: a
+  same-name previous PNG and sidecar stay byte-identical, a first-time path gets no files.
+  `--retry <0..5>` re-captures - every attempt first re-runs the window identity/rect/occlusion
+  checks that path owes, and never resends any input; `--retry-budget <ms>` caps the loop's total
+  time; exhaustion exits non-zero naming the knob that fired. Without `--min-ink` nothing changes:
+  a legal white canvas is a legal frame.
+- **`pt-calibrate` (new): "what was this canvas zoomed to".** Two anchors fit a
+  uniform-scale+translation model, a third anchor the fit never saw verifies it; per-axis ratios
+  are computed and their disagreement is a refusal, never an average. Every refusal names itself
+  and quotes the number it measured. Anchors are named by the 1-based index `--list` prints.
+  `pt-profile` / `pt-anchor` (added in v4.6.13) complete the family.
+- **`log-index --scope current|day|all` (new).** The date index now walks the rotated audit
+  archives: `day` and `all` read every `actions_*.log` the rotator left beside the live log and
+  print per-file rows; the date filter runs on the LINE's UTC date, never on the archive's
+  local-clock name, and the output says which clock it used plus what the retention policy
+  deleted (a missing day is "the record is gone", never "nothing happened"). Every audit line
+  also carries a fifth column `origin=` resolved from an explicit `--origin` tag, the declared
+  gate mode, or the caller-declared environment label, else `unknown`.
+- **Grid notes now measure instead of warning for everyone.** On a gridded capture, `imgclick`
+  and `unmap` print the distance from THIS point to the nearest grid line in both units
+  (image px and screen px), the stroke width from the sidecar's `grid-style=`, and a near/clear
+  verdict at half the stroke width. A map that predates the field reports
+  `line-width=unknown (not guessed)` and stays silent unless the caller passes `--on-grid-alert`.
+- **`tile` / `stitch` (new, added in v4.6.13).** A region no single capture can carry is written
+  as a grid of 1:1 PNGs, each with a sidecar recording the whole grid and the region origin, so
+  `unmap` on any tile prints global screen coordinates and `stitch` rebuilds the region with one
+  unambiguous owner per output pixel.
+- **`cluster-color` (new, added in v4.6.13).** Which colours an image file actually holds:
+  clusters with pixel shares and bounding boxes, per-channel inclusive tolerance, alpha-0 pixels
+  counted and skipped, both ceilings (cluster cap, time budget) refusing with the number that
+  fired instead of returning a shorter list.
+- **Single-file delivery guards.** The stitched artifact's selftest skips the source-tree lints
+  by name in single-file mode instead of scanning a `lib/` directory that does not exist there.
+
+## v4.7.0 - 2026-10-30
+
+- **The clipboard never destroys content it cannot restore.** A companion format whose raw
+  content cannot be proven equal to the canonical text (it threw, or it returned a different
+  string) is treated as unrestorable and refuses the overwrite by name; a raw read that answers
+  null is the managed view of the same text payload - measured on real clipboards, where the
+  format list names `System.String` while only `UnicodeText` carries bytes - and does not block
+  the restore. (The first shipped check refused every paste on a real machine; the live round
+  caught it and the null case is now admitted with the throw and different-content negatives
+  kept.)
+- **`paste`/`copy-file` write the shared clipboard under a guard.** Before the write, the state
+  is snapshotted and judged restorable; a state the tool cannot put back refuses the write
+  instead of replacing it, and every exit path (success, failure, exception, cancellation)
+  restores. The restore result is checked by content, not by a format flag.
+- **Caller identity isolation.** The `unknown` caller-identity warning is only silenced for a
+  child whose environment genuinely declares no identity source; an explicit label and the
+  fallback path both keep working, and no other stderr is suppressed.
+- **Wheel semantics made explicit.** `wheel` keeps the raw-delta default, gains `--unit notches`
+  and `--axis horizontal`, validates the actual scroll point against `--to`, and offers
+  opt-in `--verify-scroll` with UIA scroll-position, pixel-change and visible-text outcomes.
+- **Staleness made strict for crops.** `rect`/`zoom ... --to <sel>` bind the crop to the host
+  window's identity and its rect at capture time; `imgclick --require-verified` refuses an
+  unverifiable or moved binding before any input, and re-checks the same baseline immediately
+  before the click.
+
+## v4.6.12 - 2026-10-29
+
+- **Live stderr resilience.** A native child's stderr line turned into a terminating
+  `NativeCommandError` under `ErrorActionPreference=Stop` and killed a whole live ladder at its
+  first spawn. The live fixtures now declare their caller identity (so no spurious warning is
+  emitted), capture split streams, and read files instead of merged faces.
+- **The clipboard normalization before fixture writes runs under the same guard** as any other
+  shared-clipboard write: snapshot, restorable verdict, restore on every exit.
+- **Empty-stderr reads and CLI heads fixed** in the capture helpers; `System.String` and the
+  FileName variants joined the restorable pure-format list.
+
+## v4.6.13 - 2026-10-30
+
+- **`tile` / `stitch`** as described under v4.8.0 (first shipped here).
+- **`cluster-color`** as described under v4.8.0 (first shipped here).
+- **Grid text avoidance.** Every grid style first reads the text on the frame it just grabbed and
+  cuts the line segments that would cross a word, so the grid cannot swallow what it exists to
+  measure; a label that would sit on text is dropped rather than moved.
+- **The occlusion negative leg establishes its own premise** - a covered rect is disclosed
+  instead of being read as a verdict, and `SetForegroundWindow`'s return value is kept.
 
 ## v4.6.11 - 2026-10-29
 

@@ -1,10 +1,10 @@
-﻿# Agent Computer Use 开源版 v4.6.11
+﻿# Agent Computer Use 开源版 v4.8.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1121%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1252%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -49,7 +49,7 @@
 - **默认带守卫。** 按键物理上永远落在"当前焦点窗口"上，所以 `type` / `keys` / `paste` / `paste-file` 带 `--to <sel>` 时，会**先校验目标确实拿到了前台，才发第一个键**；校验不过直接 `ERROR` + 退出码 1，一个键都不发（`--force` 可跳过，退回旧行为）。发完之后**还会再查一次前台**，中途被抢走焦点同样算失败并告警。这条规则来自真实事故：`SetForegroundWindow` 可能被系统前台锁静默拒绝，盲发的按键落进了别的程序。
 - **知道自己是怎么知道的，并且说出来。** 这是整套功能围绕生长的设计准则：一个数字、一句"没找到"，如果不同时打印它来自哪次测量，就没有价值。于是 `find` 会报 `source=uia|ocr`；落空时会说出两条路各自量到了什么；`hit-window:` 打印你的点击**真实落在**哪个窗口；截图类命令回显图像→屏幕的换算式；`--expect` 的判词会写明实际生效的耐心值与轮询间隔；`paste` 会点名它凭哪种"回执"接受了一个被折叠成附件条的长文本。**0 从来不是"不存在"的证据**，一个只可能通过的检查不算检查。
 - **有审计。** 每条实际执行的 act/text/clipboard/uia-settext 命令向 `shots/actions.log` 追加一行：UTC 时间戳、命令、参数、解析到的目标。键入内容与守卫串以 `<redacted:Nchars>` 存（要原文就显式传 `--log-payload`）；只记文件**路径**，绝不记剪贴板内容和文件正文。日志 512KB 轮转，保留最新 5 个 `actions_*.log` 存档；`replay` 会**拒绝**正文已被脱敏的步骤——把占位符重放出去就等于把占位符打进目标。
-- **自带回归。** `selftest` 跑离线门禁（当前 1121 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
+- **自带回归。** `selftest` 跑离线门禁（当前 1252 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
 - **DPI 安全。** 读取任何坐标前，进程先声明 **Per-Monitor V2** DPI 感知（Windows 10 1703+；更老的系统自动回退 System-aware）。不做这一步，Windows 会按显示缩放比例虚拟化所有数值（150% 缩放下，2100×1350 的窗口会被读成 1400×900），截图裁切、点击偏移。Per-Monitor V2 还额外保证多块显示器**缩放比例不一致**（混合 DPI 多屏）时，副屏上的坐标与截图同样逐像素准确。用 `dpi` 命令可查看实际拿到的感知模式和每块显示器的物理像素边界。
 - **源码纯 ASCII。** PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 误读，所以脚本里没有任何非 ASCII 字面量（文件本身带 UTF-8 BOM，这正是 5.1 按 UTF-8 解码的原因）。中文等非 ASCII 文本一律通过 `paste <file>` 或 `uia-settext <sel> <name> <file>` 从外部 UTF-8 文件进入。
 
@@ -171,6 +171,14 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `status-summary [--json]` | 只读汇总一次工作区状态：HEAD、是否干净 / 领先、离线 selftest 三数、最新一次 live 日志及其红位数、残留的夹具窗口 |
 | `shots-cleanup [--keep n] [--go] [--quarantine <目录>]` | 给运行期截图目录封顶 —— **默认空跑**；`--go` 是把文件**移入**隔离目录并写清单，不是删除。`--go` 的目标，按序：`--quarantine <目录>`，其次进程环境里的 `DTX_QUARANTINE`，再次 User 作用域注册表里的 `DTX_QUARANTINE`，然后 Machine 作用域，都没有就拒绝执行（exit 2）并点名两条出路——不再内置任何机器专属路径。**v2.6.0 起这个上限还会自己生效**：任何写出截图的命令跑完都收一次（默认留最近 100 张；`DTX_SHOT_KEEP=<n>` 改上限，`DTX_SHOT_AUTOTRIM=0` 关掉自动这一路）——走的是同一段"移动 + 写清单"代码，没超出就不出声，动了就回显移了几个，没配隔离区就跳过并说明原因，selftest 期间不跑 |
 | `help [<命令>|--<旗标>]` | 不带参数是本页；`help shot` 只看一条；`help --grid` 打印提到该旗标的所有行 |
+| `capabilities` | 从分派器自己的注册表推导命令面（分组、旗标、JSON 支持） |
+| `pt-profile <sel|--file <png>> [--save <路径>]` | 把一个面写成 profile JSON：窗口身份 + OCR 行（窗口相对坐标） |
+| `pt-anchor <profile> --needle <文本>` | 重读档案的面，报告那条线真实移动了多少（精确读数差，不是记忆坐标算术） |
+| `pt-calibrate <profile> --estimate <i,j> --verify <k>` | 回答"这块画布被缩放到几成"：两锚点拟合 uniform-scale+translation，第三点独立验证 |
+| `log-index [--date <UTC日>] [--origin <标签>] [--scope current\|day\|all]` | 审计日志的只读索引（day/all 会把轮转档一并索引，按行 UTC 日期过滤） |
+| `tile <x> <y> <w> <h> (--tile WxH\|--grid CxR) --out-dir <dir>` | 把一块过宽区域切成 1:1 PNG 网格，每块自带 sidecar |
+| `stitch <dir> <out.png>` | 从 tile 集重建整块区域（每个输出像素恰有一个归属） |
+| `cluster-color <图像> [--tolerance d] [--min-cluster N]` | 图像里实际有哪些颜色：簇、占比、bbox |
 
 ### 断言（退出码检查点，绝不点击）
 
@@ -252,6 +260,12 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `copy-file <路径>` | 把本地文件以 FileDrop 放上剪贴板并自证；**刻意留在**剪贴板上 |
 | `paste-file [--to <sel>] <路径> [--guard-text <串>] [--force]` | copy-file + 前台守卫 + 内容守卫 + Ctrl+V + 恢复剪贴板；默认回读找的是**文件名**。v3.1.0 说明：`paste-file` 不走这条路——弱回执三腿只服务"长正文被折叠成附件 chip、框里永远读不到正文"的输入框；附件卡片渲染的就是文件名，语义与 v1.5.9 一字不动（这是机主批准过的差异，不是漏传参数，判据 `lint (P-06)` 钉住两处调用形状与这句话一致） |
 | `clip-info` | 剪贴板**只报元信息**：类型、格式数量与名称、字符数、文件数、是否有图像、本工具能否恢复。不打印正文、不解码图像、不写任何东西 |
+
+### 截图质量旗标（shot / win / rect / zoom 共用同一语法）
+
+`--min-ink <0..100>` 打开质量门：每次抓屏后先在 **1:1 帧**（`--fit` 与网格叠加之前）上量"墨迹占比"——与参照色任一通道差超过 `--ink-tol`（缺省 24，逐通道）的采样像素份额。参照色 `--ink-vs auto`（缺省，本帧众数色，回显是哪个 `#RRGGBB`）或显式 `#RRGGBB`；`--ink-area x,y,w,h` 收窄度量区域；`--ink-stride 1..64` 隔行跳样（回显自报分母）。低于阈值的帧是**拒绝、零发布**——同名旧 PNG+map 逐字节不动；`--retry <0..5>` 重抓（每次尝试先重跑窗口身份/矩形/遮挡校验，绝不重发输入）；`--retry-budget <ms>` 给循环总时长上限；耗尽非零退出并点名哪个旋钮开火。不给 `--min-ink` 门就不跑——合法白画布是合法帧。
+
+`--grid-style thin|bold|contrast` 决定网格画多响；每档都先读帧上的文字，把压住字的线段直接不画。
 
 ### 遮挡自证开关（每条读像素的命令都有）
 

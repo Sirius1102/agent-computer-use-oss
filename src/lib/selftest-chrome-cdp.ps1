@@ -149,10 +149,10 @@ function Invoke-SelftestFamily-ChromeCdp($Ctx) {
     if ($codeLines[$c9i].Contains('= Measure-A11yTree ')) { $c9Calls += ($c9i + 1) }
     if ($codeLines[$c9i].Contains('= Restart-ChromeWithFlags ')) { $c10Calls += ($c9i + 1) }
   }
-  # 4 = a11y-probe's first measurement + its cold-zero re-probe (A-6b), plus chrome-a11y's
-  # before/after pair. Pinned exactly, so dropping OR adding a call site both go red.
+  # 5 = a11y-probe's first measurement + its cold-zero re-probe (A-6b), chrome-a11y's
+  # before/after pair, and pt-profile's tree summary (D-1). Pinned exactly, so dropping OR adding a call site both go red.
   ST-Check 'lint: the page-area a11y verdict has exactly one implementation and both a11y-probe and chrome-a11y call it' (
-    (@($c9Defs).Count -eq 1) -and (@($c9Calls).Count -eq 4))
+    (@($c9Defs).Count -eq 1) -and (@($c9Calls).Count -eq 5))
   ST-Check 'lint: the graceful Chrome restart has exactly one implementation, called by chrome-a11y and chrome-debug-off' (
     (@($c10Defs).Count -eq 1) -and (@($c10Calls).Count -eq 2))
   $c11Mark = 'Top + [int]($win.H / 2)'

@@ -9,6 +9,9 @@
 function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   # context handover (the one thing in this file that is not lifted text)
   $codeLines = $Ctx['codeLines']
+  # INC-01: the wiring lint walks the body of Save-ClipboardState, so it needs the hoisted line
+  # count - a loop condition that re-reads @($codeLines).Count is O(n^2) over the aggregate.
+  $clCount = $Ctx['clCount']
 
   # ---------- unit: v1.5.2 WP-4 clipboard kind branch (audit R-05) ----------
   # The 'both' state cannot be produced faithfully from a script (see the note on
@@ -198,5 +201,134 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
     @($d7JsonLine).Count -eq 1 -and (@($d7Keys | Sort-Object) -join ',') -ceq (($d7Want | Sort-Object) -join ','))
   if (@($d7JsonLine).Count -ne 1) { Write-Output "      wins json projection lines found: $(@($d7JsonLine).Count)" }
   if (@($d7Keys).Count -gt 0) { Write-Output "      wins json keys: $(@($d7Keys) -join ' ')" }
+
+
+  # INC-01 (CU-REMAINDER-FINAL-20261029-01): the companion-content check is a pure function, so
+  # every leg below - the refusal included - runs with no clipboard in sight (red line: this
+  # process never reads or writes the shared clipboard). The plans come from the real producer
+  # Get-ClipboardFormatPlan, not from hand-made objects, so a change to the name whitelist moves
+  # these expectations with it.
+  $qPlanText = Get-ClipboardFormatPlan @('UnicodeText', 'Text', 'Locale', 'OEMText', 'System.String')
+  $qSame = [pscustomobject]@{ Format = 'System.String'; Value = 'VISIBLE-FIXTURE'; ReadFailed = $false }
+  $qDiff = [pscustomobject]@{ Format = 'System.String'; Value = 'DISTINCT-FIXTURE'; ReadFailed = $false }
+  $qRdFail = [pscustomobject]@{ Format = 'System.String'; Value = 'VISIBLE-FIXTURE'; ReadFailed = $true }
+  $qByteVal = [pscustomobject]@{ Format = 'System.String'; Value = [byte[]] @(65, 66); ReadFailed = $false }
+  $qEmptySame = [pscustomobject]@{ Format = 'System.String'; Value = ''; ReadFailed = $false }
+  $qOk = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @($qSame) $qPlanText
+  $qBlankOk = Resolve-ClipboardCompanionState '' @($qEmptySame) $qPlanText
+  ST-Check 'unit (INC-01): a companion proven equal to the snapshot text keeps the kind, names no conflict and adds no extra (empty text included)' (
+    ($qOk.Kind -ceq 'text') -and (@($qOk.Conflicts).Count -eq 0) -and (@($qOk.Extras).Count -eq 0) -and
+    ($qBlankOk.Kind -ceq 'text') -and (@($qBlankOk.Conflicts).Count -eq 0))
+  $qBad = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @($qDiff) $qPlanText
+  # The visible text empty while the companion holds content is the same loss from the other side:
+  # the restore writes back one value, so whatever the companion carried is gone.
+  $qBadHidden = Resolve-ClipboardCompanionState '' @($qDiff) $qPlanText
+  ST-Check 'unit (INC-01): the measured counterexample - a companion carrying DIFFERENT text drops the snapshot to other and names itself (also when the visible text is empty)' (
+    ($qBad.Kind -ceq 'other') -and ((@($qBad.Conflicts) -join ',') -ceq 'System.String=different-content') -and
+    ((@($qBad.Extras) -join ',') -ceq 'System.String=different-content') -and ($qBadHidden.Kind -ceq 'other'))
+  $qUnprovenRd = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @($qRdFail) $qPlanText
+  $qUnprovenBytes = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @($qByteVal) $qPlanText
+  ST-Check 'unit (INC-01): a read that THREW and a companion that came back as a non-string are both content-unproven - refused, never folded into equal' (
+    ($qUnprovenRd.Kind -ceq 'other') -and ((@($qUnprovenRd.Conflicts) -join ',') -ceq 'System.String=content-unproven') -and
+    ($qUnprovenBytes.Kind -ceq 'other'))
+  # v4.8.0 live finding: a raw read that answers NULL is a different shape from a read that threw.
+  # On every real text clipboard this machine produced, 'System.String' in the format list is the
+  # MANAGED VIEW of the same payload the canonical text was read from - GetData with
+  # autoConvert=false answers null because no separate raw payload exists (measured: formats
+  # [System.String, UnicodeText, Text], raw read null, converted read = the same text). The first
+  # shipped resolver treated that null as 'content-unproven' and refused EVERY paste on this
+  # machine (live v48-live-r1/r2, 5 red). The null is now admitted as the managed view it is; the
+  # throw and the non-string stay refused, and a raw read that RETURNS a string still has to be
+  # byte-equal - the divergence class this card exists for keeps its teeth.
+  $qManagedView = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @([pscustomobject]@{ Format = 'System.String'; Value = $null; ReadFailed = $false }) $qPlanText
+  ST-Check 'unit (INC-01): a raw companion read that answers NULL is the managed view of the text payload (measured on real clipboards, live v48-live-r1/r2) - it keeps the kind and names no conflict, while a THROWING read and a differing string stay refused' (
+    ($qManagedView.Kind -ceq 'text') -and (@($qManagedView.Conflicts).Count -eq 0))
+  $qCase = Resolve-ClipboardCompanionState 'abc' @([pscustomobject]@{ Format = 'System.String'; Value = 'ABC'; ReadFailed = $false }) $qPlanText
+  ST-Check 'unit (INC-01): equality is byte-exact - a case-folded companion is different-content, not a normalization win' (
+    ($qCase.Kind -ceq 'other') -and ((@($qCase.Conflicts) -join ',') -ceq 'System.String=different-content'))
+  # The scope is deliberately narrow and that choice is pinned here, in both directions: the
+  # re-encoding companions must NOT be content-checked (WinForms and Explorer write them with
+  # different bytes by design, so checking them would refuse the ordinary clipboard), and the day
+  # someone widens the whitelist this row goes red and the widening has to be argued.
+  $qReenc = @()
+  foreach ($qName in @('Text', 'OEMText', 'Locale', 'FileNameW', 'FileName')) {
+    $qReenc += [pscustomobject]@{ Format = $qName; Value = 'ANSI-OR-SHORT-PATH-RE-ENCODING'; ReadFailed = $false }
+  }
+  $qNarrow = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' $qReenc $qPlanText
+  ST-Check 'unit (INC-01): the registered narrow scope - only System.String is content-checked, re-encoding companions pass by design (widening must be a named decision)' (
+    ($qNarrow.Kind -ceq 'text') -and (@($qNarrow.Conflicts).Count -eq 0) -and (@($qNarrow.Extras).Count -eq 0))
+  $qNone = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @() $qPlanText
+  # The canonical text here is the SAME fixture the companions were built against: at 'V' the equal
+  # companion reads as different-content and this leg fails for a reason it does not claim to test.
+  $qOtherPlan = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @($qSame) (Get-ClipboardFormatPlan @('UnicodeText', 'HTML Format'))
+  $qOtherClash = Resolve-ClipboardCompanionState 'VISIBLE-FIXTURE' @($qDiff) (Get-ClipboardFormatPlan @('UnicodeText', 'HTML Format'))
+  ST-Check 'unit (INC-01): the guard never widens a clean clipboard and never double-books an unclean one - no companion keeps its kind, an already-other plan keeps its own extras and appends the conflict once' (
+    ($qNone.Kind -ceq 'text') -and (@($qNone.Extras).Count -eq 0) -and (@($qNone.Conflicts).Count -eq 0) -and
+    ($qOtherPlan.Kind -ceq 'other') -and ((@($qOtherPlan.Extras) -join ',') -ceq 'HTML Format') -and (@($qOtherPlan.Conflicts).Count -eq 0) -and
+    ((@($qOtherClash.Extras) -join ',') -ceq 'HTML Format,System.String=different-content'))
+  Write-Output ('      INC-01 other-plan legs: none=>kind=' + [string]$qNone.Kind + ' extras=[' + (@($qNone.Extras) -join ',') + ']' +
+    ' equal-companion=>kind=' + [string]$qOtherPlan.Kind + ' extras=[' + (@($qOtherPlan.Extras) -join ',') + ']' +
+    ' conflicts=[' + (@($qOtherPlan.Conflicts) -join ',') + ']' +
+    ' clash=>extras=[' + (@($qOtherClash.Extras) -join ',') + ']')
+  # Resolver output straight into the real gate: a conflict must reach the user as a named refusal
+  # and the override must still be available, otherwise the fix would be a capability cut.
+  $qGateThrow = ''
+  try { Assert-ClipboardReplaceable $qBad $false 'paste' } catch { $qGateThrow = $_.Exception.Message }
+  $qGateOverride = 'threw'
+  try { Assert-ClipboardReplaceable $qBad $true 'paste'; $qGateOverride = 'passed' } catch { $qGateOverride = 'threw' }
+  $qGateClean = 'threw'
+  try { Assert-ClipboardReplaceable $qOk $false 'paste'; $qGateClean = 'passed' } catch { $qGateClean = 'threw' }
+  ST-Check 'unit (INC-01): the resolver output is what the write gate reads - it refuses the default overwrite naming the conflict, --replace-clipboard still passes, a proven-equal snapshot is untouched' (
+    ($qGateThrow -like 'paste : the clipboard holds formats this tool cannot restore (System.String=different-content)*--replace-clipboard*') -and
+    ($qGateOverride -ceq 'passed') -and ($qGateClean -ceq 'passed') -and
+    ((Get-ClipboardRestorableVerdict $qBad) -like 'no - unknown formats (System.String=different-content)*'))
+  # Shape of the wiring: the entry must route its snapshot through the resolver EXACTLY ONCE, read
+  # the companion off the DataObject that produced the format list with conversion OFF (autoConvert
+  # answers a System.String request with the UnicodeText payload, which can never diverge), and take
+  # the refusal decision BEFORE the file-list/image content reads.
+  # !! every needle is built by CONCATENATION: a scan line holding its own search string counts
+  # itself as a production site (the trap recorded on the wins row checks above).
+  $qFnNeedle = 'Resolve-Clipboard' + 'CompanionState'
+  $qConvNeedle = 'GetData(' + [char]39 + 'System.String' + [char]39 + ', ' + '$false)'
+  $qFilesNeedle = '$files = ' + '@()'
+  $qStart = -1
+  for ($qc = 0; $qc -lt $clCount; $qc++) { if ($codeLines[$qc] -match '^function Save-ClipboardState') { $qStart = $qc; break } }
+  $qBody = @()
+  if ($qStart -ge 0) {
+    for ($qc = $qStart + 1; $qc -lt $clCount; $qc++) {
+      if ($codeLines[$qc] -match '^function ') { break }
+      if ($codeLines[$qc] -notmatch '^\s*#') { $qBody += $codeLines[$qc] }
+    }
+  }
+  $qBodyText = $qBody -join "`n"
+  $qCallSites = @($qBody | Where-Object { $_.Contains($qFnNeedle) })
+  $qConvSites = @($qBody | Where-Object { $_.Contains($qConvNeedle) })
+  $qCallIdx = -1
+  $qFilesIdx = -1
+  for ($qc = 0; $qc -lt $qBody.Count; $qc++) {
+    if ($qCallIdx -lt 0 -and $qBody[$qc].Contains($qFnNeedle)) { $qCallIdx = $qc }
+    if ($qFilesIdx -lt 0 -and $qBody[$qc].Contains($qFilesNeedle)) { $qFilesIdx = $qc }
+  }
+  # Mutation witness for the ordering ruler: swap the two statements in a copy of the body and run
+  # the SAME scan - a ruler that cannot see the swap is not measuring the order.
+  $qSwap = @($qBody)
+  $qCallSwap = -1
+  $qFilesSwap = -1
+  if ($qCallIdx -ge 0 -and $qFilesIdx -ge 0) {
+    $qTmp = $qSwap[$qCallIdx]; $qSwap[$qCallIdx] = $qSwap[$qFilesIdx]; $qSwap[$qFilesIdx] = $qTmp
+    for ($qc = 0; $qc -lt $qSwap.Count; $qc++) {
+      if ($qCallSwap -lt 0 -and $qSwap[$qc].Contains($qFnNeedle)) { $qCallSwap = $qc }
+      if ($qFilesSwap -lt 0 -and $qSwap[$qc].Contains($qFilesNeedle)) { $qFilesSwap = $qc }
+    }
+  }
+  $qRulerHasTeeth = ($qCallSwap -ge 0) -and ($qFilesSwap -ge 0) -and ($qCallSwap -gt $qFilesSwap)
+  ST-Check 'lint (INC-01): Save-ClipboardState routes its kind through the companion resolver exactly once, reads the companion off the inventoried DataObject with autoConvert off, and refuses BEFORE reading files or image (order proven by a swap)' (
+    ($qStart -ge 0) -and (@($qCallSites).Count -eq 1) -and (@($qConvSites).Count -eq 1) -and
+    ($qCallIdx -ge 0) -and ($qFilesIdx -ge 0) -and ($qCallIdx -lt $qFilesIdx) -and $qRulerHasTeeth -and
+    ($qBodyText.Contains('$st.Kind = ' + [char]39 + 'other' + [char]39)) -and (-not $qBodyText.Contains('Clipboard]::GetData(' + [char]39)) -and
+    ($qBodyText.Contains('ReadFailed = $compFail')))
+  Write-Output ('      INC-01 wiring ruler: body-lines=' + @($qBody).Count + ' resolver-sites=' + @($qCallSites).Count +
+    ' autoConvert-off-sites=' + @($qConvSites).Count + ' call@' + $qCallIdx + ' files-read@' + $qFilesIdx +
+    ' swapped=call@' + $qCallSwap + '/files@' + $qFilesSwap + ' flip-detected=' + $qRulerHasTeeth)
 
 }

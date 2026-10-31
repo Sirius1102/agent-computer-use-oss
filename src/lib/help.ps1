@@ -206,9 +206,11 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
 # honors --json goes unrefused-by-mistake, nor one that does not gets advertised.
 # v3.1.0 (X-01): the action family joins it through ONE table of its own (below), so the
 # capable set is the union - a caller asking for JSON on an action gets the action envelope.
+# D-5 (v4.6.13): cluster-color is in it because a palette IS bulk data - every cluster the
+# file holds, not the ten lines the text report is willing to spend on it.
 function Get-JsonCapableCommandSet {
-  return (@('chrome-tabs', 'color-at', 'capabilities', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'clip-info', 'ocr-cap', 'read-text', 'rect-of', 'script', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
+  return (@('chrome-tabs', 'color-at', 'capabilities', 'cluster-color', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
+    'clip-info', 'ocr-cap', 'pt-calibrate', 'read-text', 'rect-of', 'script', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
     @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
@@ -384,7 +386,7 @@ function Get-OwnFlagTable {
     # anything but 'ok' (no host bound, stale rect, minimized, dead/reused handle) is
     # refused before any input. It cannot be combined with --stale-ok; the old unverified
     # crop stays usable only when the caller does NOT ask for verification.
-    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true }; '--require-verified' = @{ Bool = $true } }
+    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true }; '--require-verified' = @{ Bool = $true }; '--on-grid-alert' = @{ Min = 0; Max = 5000; Default = 0 } }
     'unmap' = @{ '--stale-ok' = @{ Bool = $true } }
     'type-in' = @{ '--tab' = @{ Min = 0; Max = 20; Default = 0 } }
     # CU-OPS-COMPLETE-20261026-01 (package B): gesture flags. --mods is a verbatim spec
@@ -417,6 +419,34 @@ function Get-OwnFlagTable {
     'tpl-find' = @{ '--region' = @{ Raw = $true }; '--space' = @{ Raw = $true }; '--created' = @{ Raw = $true }; '--scales' = @{ Raw = $true }; '--tolerance' = @{ Min = 0; Max = 255; Default = 0 }; '--index' = @{ Min = 0; Max = 999; Default = 0 }; '--max-ms' = @{ Min = 50; Max = 60000; Default = 5000 } }
     # wait-cond: exactly one predicate is allowed; the handler counts them and refuses 0 or 2.
     'wait-cond' = @{ '--win' = @{ Bool = $true }; '--gone' = @{ Bool = $true }; '--foreground' = @{ Bool = $true }; '--text' = @{ Raw = $true }; '--uia' = @{ Raw = $true }; '--state' = @{ Raw = $true }; '--timeout' = @{ Min = 1; Max = 3600; Default = 20 }; '--interval' = @{ Min = 50; Max = 5000; Default = 400 } }
+    # D-1 (v4.6.13): the anchor calibration pair hand-parses. --samples bounds the
+    # repeat reads (1..16 - every extra pass is a full OCR read); --save/--file are
+    # verbatim paths, and --out is deliberately NOT offered (powershell -File owns
+    # that prefix). --max-drift is the strict-mode bound in pixels.
+    'pt-profile' = @{ '--samples' = @{ Min = 1; Max = 16; Default = 1 }; '--save' = @{ Raw = $true }; '--file' = @{ Raw = $true } }
+    'pt-anchor' = @{ '--strict' = @{ Bool = $true }; '--max-drift' = @{ Min = 0; Max = 400; Default = 4 }; '--file' = @{ Raw = $true } }
+    # v4.7.0 (B-1): pt-calibrate's own knobs. --estimate/--verify are index lists parsed by
+    # the handler (Parse-PtAnchorIndexes) because an OCR line is allowed to contain a comma;
+    # --canvas/--relocate are rectangles and points, parsed by Parse-QuadSpec and the handler,
+    # never here -- this table only makes the token reachable and says it takes a value.
+    # --max-residual is the verdict bound in px, --min-spacing the baseline floor in px: both
+    # live here so the refusal text and the estimator read the SAME numbers, and both are
+    # bounded because an unbounded floor is how "refuse nothing" gets typed as a default.
+    'pt-calibrate' = @{ '--estimate' = @{ Raw = $true }; '--verify' = @{ Raw = $true }; '--canvas' = @{ Raw = $true }; '--relocate' = @{ Raw = $true }; '--file' = @{ Raw = $true }; '--max-residual' = @{ Min = 0; Max = 400; Default = 3 }; '--min-spacing' = @{ Min = 1; Max = 5000; Default = 20 }; '--list' = @{ Bool = $true } }
+    # D-3 (v4.6.13): log-index is a READER - three verbatim knobs (a UTC day, an
+    # origin tag and a log path). It strips them itself, which is why the entry
+    # leaves a log-index --origin alone: here the flag is a filter, not a label.
+    'log-index' = @{ '--date' = @{ Raw = $true }; '--origin' = @{ Raw = $true }; '--log' = @{ Raw = $true }; '--scope' = @{ Raw = $true } }
+    # D-2 (v4.6.13): the tile set's plan and destination. --tile/--grid/--overlap are
+    # Raw or bounded ints here; the handler parses WxH and CxR itself (their grammar is
+    # not a number) and Get-TilePlan validates the geometry. Note --grid is the shared
+    # capture-grid flag's NAME but not its meaning on this command: tile never calls
+    # Parse-CaptureFlags, and this table entry is what makes the token reachable.
+    'tile' = @{ '--out-dir' = @{ Raw = $true }; '--tile' = @{ Raw = $true }; '--grid' = @{ Raw = $true }; '--overlap' = @{ Min = 0; Max = 4000; Default = 0 } }
+    # D-5 (v4.6.13): cluster-color's two knobs. --tolerance is the SAME per-channel
+    # difference find-color documents (0..255), not a distance; --min-cluster is the
+    # smallest cluster still worth a line, and the handler counts what it trims.
+    'cluster-color' = @{ '--tolerance' = @{ Min = 0; Max = 255; Default = 20 }; '--min-cluster' = @{ Min = 1; Max = 100000000; Default = 1 } }
   }
 }
 
@@ -468,6 +498,27 @@ function Get-CommandSharedMap {
     'key' = @('--to', '--force', '--expect-handle', '--always-activate', '--guard-text', '--guard-region', '--expect', '--expect-gone', '--expect-any', '--expect-any-gone', '--expect-change', '--no-expect', '--log-payload')
     'key-state' = @()
     'key-release' = @()
+    # D-1 (v4.6.13): pt-profile takes no shared flag at all (it reads one surface
+    # and never acts); pt-anchor routes exactly the --needle escape for the line
+    # it must relocate, and its handler parses that token itself.
+    'pt-profile' = @()
+    'pt-anchor' = @('--needle')
+    # v4.7.0 (B-1): pt-calibrate hand-parses everything and has no target, no guard and no
+    # readback - it reads a surface and converts a point the caller names, so it routes none
+    # of the shared flags. Declaring that is what stops the unknown-flag refusal text from
+    # advertising --to on a command that would reject it.
+    'pt-calibrate' = @()
+    # D-3 (v4.6.13): log-index hand-parses everything (it has no target and no
+    # readback), so it routes none of the shared flags.
+    'log-index' = @()
+    # D-2 (v4.6.13): tile/stitch take a region or a directory plus a path - no target,
+    # no guard and no readback, so neither routes a shared flag. Declared empty on
+    # purpose: the error text must not advertise --to to a command that refuses it.
+    'tile' = @()
+    'stitch' = @()
+    # D-5 (v4.6.13): cluster-color reads one file and acts on nothing - no target to
+    # bind, no guard to read, no state to verify afterwards, so it routes no shared flag.
+    'cluster-color' = @()
   }
 }
 
@@ -755,7 +806,7 @@ function Format-OcrSampleTail($lines, [int]$max, $ctx = $null) {
 # selftest pins the table size so an unnoticed omission goes red.
 function Get-IntArgSpec([string]$cmd) {
   switch ($cmd) {
-    'rect'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step]] [--mark x,y] [--to <sel>]' } }
+    'rect'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step]] [--mark x,y] [--grid-style thin|bold|contrast] [--to <sel>]' } }
     'zoom'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]' } }
     'color-at'    { return @{ Indices = @(0, 1); Usage = 'color-at <x> <y>' } }
     'find-color'  { return @{ Indices = @(0, 1, 2, 3); Usage = 'find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n]' } }
@@ -777,6 +828,9 @@ function Get-IntArgSpec([string]$cmd) {
     'win-resize'  { return @{ Indices = @(1, 2); Usage = 'win-resize <sel> <w> <h>' } }
     'imgclick'    { return @{ Indices = @(1, 2); Usage = 'imgclick <image.png> <ix> <iy> [--to <sel>] [--dry]' } }
     'unmap'       { return @{ Indices = @(1, 2); Usage = 'unmap <image.png> <ix> <iy>' } }
+    # D-2 (v4.6.13): the four region pixels are the only numeric positions; the plan
+    # flags carry WxH/CxR shapes and are validated by Get-TilePlan after the strip.
+    'tile'        { return @{ Indices = @(0, 1, 2, 3); Usage = 'tile <x> <y> <w> <h> (--tile WxH | --grid CxR) --out-dir <dir> [--overlap px]' } }
     default       { return $null }
   }
 }

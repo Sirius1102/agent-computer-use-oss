@@ -477,10 +477,12 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 5) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 9) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
+  # call-sites 7 -> 9 (B-2): the archive-walk e2e adds two child probes (the scope=day read and
+  # the refused scope), both through the same runner - the pin moves WITH the measured count.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -962,5 +964,207 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   }
   ST-Check 'lint: every handle-pin refusal line prints through the one formatter (three routes, one wording)' (
     $hprSlice.Found -and ($hprSites -eq 3))
+
+  # ---------- v4.6.13 (D-3): the audit line carries its origin ----------
+  # The audit log gained a fifth column in this commit and one reader grew a filter over
+  # it. Three facts are asserted here, each on the REAL production function rather than a
+  # copy: the shape reader accepts both line shapes and refuses anything else; the real
+  # audit writer puts the tag in the fifth column of every line (default 'unknown'); log-index
+  # filters by day/tag and counts unreadable lines instead of dropping them. The e2e leg drives the
+  # REAL entry through a child process, but it deliberately uses the REFUSAL path for the
+  # write side (an unusable tag is stopped before dispatch, so nothing touches the desk):
+  # the offline gate must not send input just to prove a log column exists.
+  $d3Stamp = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+  $d3Log = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-d3-' + $d3Stamp + '.log')
+  $d3Rows = @(
+    '2026-10-30 01:02:03 UTC | move | coords=0,0 | id=1 | origin=d3tag',
+    '2026-10-30 02:03:04 UTC | click | coords=10,20 | id=2 | origin=other',
+    '2026-10-29 03:04:05 UTC | type | typed | id=3 | origin=d3tag',
+    '2026-10-28 04:05:06 UTC | move | coords=5,5 | id=4',
+    'this line is a note, not an audit line',
+    'a | b | c | d | e | f'
+  )
+  [System.IO.File]::WriteAllText($d3Log, (($d3Rows -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+  $d3New = ConvertFrom-ActionLogLine ([string]$d3Rows[0])
+  $d3Old = ConvertFrom-ActionLogLine ([string]$d3Rows[3])
+  $d3Note = ConvertFrom-ActionLogLine ([string]$d3Rows[4])
+  $d3Wide = ConvertFrom-ActionLogLine ([string]$d3Rows[5])
+  $d3BadTag = ConvertFrom-ActionLogLine '2026-10-30 05:06:07 UTC | move | coords=0,0 | id=5 | origin=bad tag'
+  ST-Check 'unit (D-3): one reader reads both audit-line shapes - five columns report their tag, four columns report origin=unknown with legacy=yes, and any other shape is $null (counted, never guessed)' (
+    $null -ne $d3New -and [bool]$d3New.HasOrigin -and ([string]$d3New.Origin -ceq 'd3tag') -and
+    ([string]$d3New.Date -ceq '2026-10-30') -and ([string]$d3New.Cmd -ceq 'move') -and
+    $null -ne $d3Old -and (-not [bool]$d3Old.HasOrigin) -and ([string]$d3Old.Origin -ceq 'unknown') -and
+    ([string]$d3Old.Target -ceq 'id=4') -and
+    ($null -eq $d3Note) -and ($null -eq $d3Wide) -and ($null -eq $d3BadTag))
+  Write-Output ('      D-3 shape reader: new=' + [string]$d3New.Origin + ' old=' + [string]$d3Old.Origin +
+    ' note-null=' + ($null -eq $d3Note) + ' wide-null=' + ($null -eq $d3Wide) + ' bad-tag-null=' + ($null -eq $d3BadTag))
+  $d3WLog = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-d3w-' + $d3Stamp + '.log')
+  $d3SavedLog = [string]$Ctx['actionLog']
+  $d3SavedOrigin = [string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  if ($d3SavedOrigin -eq '') { $d3SavedOrigin = 'unknown' }
+  $d3WriteErr = ''
+  $d3WriteRows = @()
+  try {
+    $ActionLog = $d3WLog
+    # The two planted writes go through a local alias whose value is the assembled token,
+    # the same trick A-08 uses: the real writer runs, but the harness does not become two
+    # more entries in the product inventory this card keeps.
+    Set-Alias -Name 'd3-planted-audit-call' -Value "$script:StCommandToken"
+    $script:LogOrigin = 'd3tag'
+    & 'd3-planted-audit-call' @('coords=0,0') 'id=777' 'd3-probe'
+    $script:LogOrigin = 'unknown'
+    & 'd3-planted-audit-call' @('coords=1,1') 'id=778' 'd3-probe'
+    $d3WriteRows = @(@([regex]::Split([System.IO.File]::ReadAllText($d3WLog), "\r?\n")) | Where-Object { $_ -ne '' })
+  } catch { $d3WriteErr = $_.Exception.Message }
+  finally {
+    $ActionLog = $d3SavedLog
+    $script:LogOrigin = $d3SavedOrigin
+    if (Test-Path Alias:d3-planted-audit-call) { Remove-Item Alias:d3-planted-audit-call -Force }
+  }
+  $d3WP1 = @()
+  if (@($d3WriteRows).Count -ge 1) { $d3WP1 = @([string]$d3WriteRows[0] -split ' \| ') }
+  $d3WP2 = @()
+  if (@($d3WriteRows).Count -ge 2) { $d3WP2 = @([string]$d3WriteRows[1] -split ' \| ') }
+  ST-Check 'unit (D-3): the real audit writer puts origin in the fifth column of every line (a set tag verbatim, the default as unknown) while the four legacy columns keep their quoting' (
+    ($d3WriteErr -eq '') -and (@($d3WriteRows).Count -eq 2) -and (@($d3WP1).Count -eq 5) -and (@($d3WP2).Count -eq 5) -and
+    ([string]$d3WP1[1] -ceq 'd3-probe') -and ([string]$d3WP1[2] -ceq 'coords=0,0') -and ([string]$d3WP1[4] -ceq 'origin=d3tag') -and
+    ([string]$d3WP2[4] -ceq 'origin=unknown') -and (([string]$d3WP1[0]).EndsWith(' UTC')))
+  Write-Output ('      D-3 writer: lines=' + @($d3WriteRows).Count + ' tag=[' + (@($d3WP1) -join ' || ') + '] default=[' + (@($d3WP2) -join ' || ') + '] err=' + $d3WriteErr)
+  $d3IndexAll = @(Invoke-Handler-log-index 'log-index' @('--log', $d3Log))
+  $d3IndexTag = @(Invoke-Handler-log-index 'log-index' @('--log', $d3Log, '--origin', 'd3tag'))
+  $d3IndexDay = @(Invoke-Handler-log-index 'log-index' @('--log', $d3Log, '--date', '2026-10-29'))
+  $d3IndexOld = @(Invoke-Handler-log-index 'log-index' @('--log', $d3Log, '--origin', 'unknown'))
+  $d3IndexBad = ''
+  try { [void](Invoke-Handler-log-index 'log-index' @('--log', $d3Log, '--date', '2026-10-30T00')) } catch { $d3IndexBad = $_.Exception.Message }
+  $d3AllTxt = ($d3IndexAll -join "`n"); $d3TagTxt = ($d3IndexTag -join "`n")
+  $d3DayTxt = ($d3IndexDay -join "`n"); $d3OldTxt = ($d3IndexOld -join "`n")
+  ST-Check 'unit (D-3): log-index indexes a planted log by origin tag and UTC day, keeps the legacy line as origin=unknown, and counts the two unreadable lines out loud instead of dropping them' (
+    $d3AllTxt.Contains('4 of 6 non-empty line(s) matched') -and $d3AllTxt.Contains('2 unreadable line(s) skipped') -and
+    $d3TagTxt.Contains('2 of 6') -and $d3TagTxt.Contains('origin=d3tag') -and (-not $d3TagTxt.Contains('origin=other')) -and
+    $d3DayTxt.Contains('1 of 6') -and $d3DayTxt.Contains('2026-10-29') -and
+    $d3OldTxt.Contains('1 of 6') -and $d3OldTxt.Contains('origin=unknown legacy=yes') -and
+    $d3IndexBad.Contains('--date'))
+  Write-Output ('      D-3 index: all=[' + $d3IndexAll.Count + ' lines] tag=[' + $d3IndexTag.Count + '] day=[' + $d3IndexDay.Count +
+    '] legacy=[' + $d3IndexOld.Count + '] bad-date=[' + $d3IndexBad + ']')
+  $d3RealLog = [string]$Ctx['actionLog']
+  $d3CountLines = {
+    param([string]$p)
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { return 0 }
+    try { return @(@([regex]::Split([System.IO.File]::ReadAllText($p), "\r?\n")) | Where-Object { $_ -ne '' }).Count } catch { return -1 }
+  }
+  $d3RealBefore = & $d3CountLines $d3RealLog
+  $d3BadChild = & $cnpRun -ChildArgs @('move', '0', '0', '--origin', 'not a tag')
+  $d3RealAfter = & $d3CountLines $d3RealLog
+  $d3IdxChild = & $cnpRun -ChildArgs @('log-index', '--log', $d3Log, '--origin', 'd3tag')
+  if (-not $script:PsChildOk) {
+    ST-Skip 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch and log-index reads the log through the real entry with --origin as a FILTER' ($script:PsChildWhy + ' - the check spawns a child process')
+  } else {
+  ST-Check 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch (exit 1, names --origin, actions.log line count unchanged) and log-index reaches the planted log through the real entry with --origin as a FILTER (the entry does not eat it)' (
+    $d3BadChild.code -eq 1 -and (($d3BadChild.out + "`n" + $d3BadChild.err).Contains('--origin')) -and
+    ($d3RealBefore -eq $d3RealAfter) -and ($d3RealBefore -ge 0) -and
+    $d3IdxChild.code -eq 0 -and $d3IdxChild.out.Contains('2 of 6') -and $d3IdxChild.out.Contains('origin=d3tag') -and
+    (-not $d3IdxChild.out.Contains('origin=other')))
+  Write-Output ('      D-3 children: bad-tag exit=' + [string]$d3BadChild.code + ' real-log=' + $d3RealBefore + '->' + $d3RealAfter +
+    ' index exit=' + [string]$d3IdxChild.code + ' out-lines=' + $d3IdxChild.outCount)
+  }
+  if (Test-Path -LiteralPath $d3Log) { Remove-Item -LiteralPath $d3Log -Force }
+  if (Test-Path -LiteralPath $d3WLog) { Remove-Item -LiteralPath $d3WLog -Force }
+
+  # ---------- v4.8.0 (B-2): the origin is resolved per context, and the index walks the archives ----------
+  # D-3 gave every audit line a fifth column and log-index a date/tag filter over ONE file. B-2
+  # closes the two gaps a one-file index leaves open: where the tag COMES FROM when the caller did
+  # not type one (a declared mode and the caller-env label, in that order, else unknown), and the
+  # archives the rotator moved aside (a day that lives only in actions_<stamp>.log must be findable
+  # by date, and its absence - the rotator DELETES old archives - must read as "the record is gone",
+  # never as "nothing happened").
+  $b2LogDir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-b2log-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($b2LogDir)
+  try {
+    # (1) the resolver's order is the contract: an explicit tag beats everything, the declared mode
+    # beats the caller env, a caller-env label is earned only from the two sources that actually
+    # expose one, anything else is unknown - and a label that fails the tag grammar degrades to
+    # unknown instead of smuggling a pipe or a space into the '|'-delimited log.
+    $b2R1 = Resolve-AuditOrigin 'explicit' 'selftest' 'Whatever' 'explicit-environment'
+    $b2R2 = Resolve-AuditOrigin '' 'selftest' 'Whatever' 'explicit-environment'
+    $b2R3 = Resolve-AuditOrigin '' '' 'MyLabel' 'explicit-environment'
+    $b2R4 = Resolve-AuditOrigin '' '' 'My-Label.2' 'partial-explicit-environment'
+    $b2R5 = Resolve-AuditOrigin '' '' 'MyLabel' 'none'
+    $b2R6 = Resolve-AuditOrigin '' '' 'bad label!' 'explicit-environment'
+    $b2R7 = Resolve-AuditOrigin '' '' '' ''
+    ST-Check 'unit (B-2): the origin resolver keeps its order - explicit tag, then the declared mode, then a caller env label from the two sources that earn one, then unknown; a label with unsafe characters is SANITIZED to a legal token (measured: it never reaches the log as typed), and a label that sanitizes to nothing stays unknown' (
+      ($b2R1 -ceq 'explicit') -and ($b2R2 -ceq 'selftest') -and ($b2R3 -ceq 'MyLabel') -and ($b2R4 -ceq 'My-Label.2') -and
+      ($b2R5 -ceq 'unknown') -and ($b2R6 -ceq 'bad-label') -and ($b2R7 -ceq 'unknown'))
+    # (2) the write path really resolves: the audit writer contains exactly one resolver call, and
+    # the same counter counts a planted second call - a writer that stopped resolving (and started
+    # printing a constant) would show up here instead of flattening every origin silently. The
+    # writer's NAME is read from the registered token rather than typed: a literal of the audited
+    # command inside a scanner is exactly the mention the A-07 exclusion sweep would have to excuse.
+    $b2EntryLines = @([System.IO.File]::ReadAllLines((Join-Path $script:ToolRootPath 'desktop.ps1')))
+    $b2LaMark = 'function ' + [string]$script:StCommandToken
+    $b2LaStart = -1
+    for ($b2i = 0; $b2i -lt $b2EntryLines.Count; $b2i++) { if (([string]$b2EntryLines[$b2i]).StartsWith($b2LaMark)) { $b2LaStart = $b2i; break } }
+    $b2LaEnd = $b2EntryLines.Count
+    if ($b2LaStart -ge 0) {
+      for ($b2j = $b2LaStart + 1; $b2j -lt $b2EntryLines.Count; $b2j++) { if (([string]$b2EntryLines[$b2j]).StartsWith('function ')) { $b2LaEnd = $b2j; break } }
+    }
+    $b2LaBody = @()
+    for ($b2k = $b2LaStart; $b2k -lt $b2LaEnd; $b2k++) { if ($b2k -ge 0) { $b2LaBody += [string]$b2EntryLines[$b2k] } }
+    # the call mark is assembled (an equals sign + the resolver name split around its middle) so
+    # this scanner cannot match its own source line the way P-05's first draft did.
+    $b2LaCallMark = [string][char]0x3D + ' Resolve-' + 'AuditOrigin '
+    $b2RealCalls = @(@($b2LaBody) | Where-Object { (-not ([string]$_).TrimStart().StartsWith([char]0x23)) -and (([string]$_).Contains($b2LaCallMark)) })
+    $b2PlantBody = @(
+      ('function Log-Plant { ' + $b2LaCallMark + "'' '' '' '' }"),
+      ('  ' + $b2LaCallMark + "'' '' '' ''"))
+    $b2PlantCalls = @(@($b2PlantBody) | Where-Object { (-not ([string]$_).TrimStart().StartsWith([char]0x23)) -and (([string]$_).Contains($b2LaCallMark)) })
+    ST-Check 'lint (B-2): the audit writer resolves the origin exactly once (one resolver call in the writer body), and the same counter counts a planted second call - the ruler is not a needle that always reads one' (
+      ($b2LaStart -ge 0) -and (@($b2RealCalls).Count -eq 1) -and (@($b2PlantCalls).Count -eq 2))
+    # (3) --scope day walks the archives BY LINE DATE, not by file name: the seeded archive is
+    # NAMED for one local day and carries lines of two UTC days, and the day filter hits the lines.
+    $b2Cur = Join-Path $b2LogDir 'cur.log'
+    $b2Arch = Join-Path $b2LogDir 'actions_20261030T080000.log'
+    $b2Line5 = {
+      param([string]$d, [string]$tag, [string]$cmd)
+      return ($d + ' 05:00:00 UTC | ' + $cmd + ' | args | target-' + $tag + ' | origin=' + $tag)
+    }
+    $b2ArchText = (& $b2Line5 '2026-10-29' 'a1' 'win') + "`r`n" + (& $b2Line5 '2026-10-30' 'a2' 'win') + "`r`n" + 'garbage line shape' + "`r`n"
+    [System.IO.File]::WriteAllText($b2Arch, $b2ArchText, (New-Object System.Text.UTF8Encoding($false)))
+    $b2CurText = (& $b2Line5 '2026-10-30' 'c1' 'rect') + "`r`n" + ('2026-10-29 06:00:00 UTC | win | args | target-old') + "`r`n"
+    [System.IO.File]::WriteAllText($b2Cur, $b2CurText, (New-Object System.Text.UTF8Encoding($false)))
+    $b2AllOut = @(Invoke-DesktopCommand 'log-index' @('--log', $b2Cur, '--scope', 'all')) -join "`n"
+    $b2DayOut = @(Invoke-DesktopCommand 'log-index' @('--log', $b2Cur, '--scope', 'day', '--date', '2026-10-29')) -join "`n"
+    $b2DayNoDateErr = ''
+    try { [void](Invoke-DesktopCommand 'log-index' @('--log', $b2Cur, '--scope', 'day')) } catch { $b2DayNoDateErr = "$($_.Exception.Message)" }
+    ST-Check 'unit (B-2): --scope all indexes the live log AND the archive the rotator left (files-scanned=2, per-file rows reconcile, the skipped shape is counted out loud, retention is disclosed as a policy); --scope day filters by the LINE date so an archive named for another day still answers; --scope day with no --date is refused by name' (
+      ($b2AllOut.Contains('scope=all 4 of 5 non-empty line(s) matched across files-scanned=2')) -and
+      ($b2AllOut.Contains('role=archive')) -and ($b2AllOut.Contains('lines=3')) -and ($b2AllOut.Contains('unreadable=1')) -and
+      ($b2AllOut.Contains('role=current')) -and ($b2AllOut.Contains('lines=2')) -and
+      ($b2AllOut.Contains('archive NAME = the rotation')) -and ($b2AllOut.Contains('DELETED BY THE TOOL')) -and
+      ($b2DayOut.Contains('scope=day 2 of 5')) -and
+      ($b2DayOut.Contains('target-a1')) -and
+      ($b2DayOut.Contains('origin=unknown legacy=yes') -and $b2DayOut.Contains('target-old')) -and
+      ($b2DayNoDateErr.Contains('--scope day needs --date')))
+    # (4) the multi-file rows name the file they came from, and --scope current stays the pre-B-2
+    # shape byte for byte: same summary line, no per-file rows, no scope token, no retention note.
+    $b2CurOnly = @(Invoke-DesktopCommand 'log-index' @('--log', $b2Cur, '--origin', 'c1')) -join "`n"
+    ST-Check 'unit (B-2): scope=current keeps the pre-B-2 output verbatim (no scope token, no per-file rows, no retention note) while the multi-file rows carry their own [file] marker' (
+      ($b2CurOnly.Contains('1 of 2 non-empty line(s) matched')) -and
+      (-not $b2CurOnly.Contains('files-scanned=')) -and (-not $b2CurOnly.Contains('retention:')) -and
+      ($b2AllOut.Contains('cur.log]')) -and ($b2AllOut.Contains('actions_20261030T080000.log]')))
+    # (5) the real entry: --scope day reaches the archives through a child, and a scope the grammar
+    # does not know is refused by name before any file is opened.
+    if (-not $script:PsChildOk) {
+      ST-Skip 'e2e (B-2): the real entry indexes the seeded archives by day and refuses an unknown scope by name' ($script:PsChildWhy + ' - the check spawns a child process')
+    } else {
+      $b2ChildDay = & $cnpRun -ChildArgs @('log-index', '--log', $b2Cur, '--scope', 'day', '--date', '2026-10-29')
+      $b2ChildBad = & $cnpRun -ChildArgs @('log-index', '--log', $b2Cur, '--scope', 'everything')
+      ST-Check 'e2e (B-2): through the real entry --scope day finds the archive line the live file does not hold (and the live line the archive does not), and --scope everything is refused by name with the three legal values' (
+        ($b2ChildDay.code -eq 0) -and $b2ChildDay.out.Contains('scope=day 2 of 5') -and
+        $b2ChildDay.out.Contains('files-scanned=2') -and $b2ChildDay.out.Contains('target-a1') -and
+        ($b2ChildBad.code -eq 1) -and $b2ChildBad.out.Contains('--scope must be current|day|all'))
+    }
+  } finally {
+    try { if (Test-Path -LiteralPath $b2LogDir) { Remove-Item -LiteralPath $b2LogDir -Recurse -Force } } catch { }
+  }
 
 }

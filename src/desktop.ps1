@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.6.11  (version sync list lives in the project overview doc)
+# version: 4.8.0  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.6.11'
+$script:ToolVersion = '4.8.0'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -491,7 +491,37 @@ Set-StrictMode -Version Latest
 # hands the final map path to a file write (shape lint), a refused publish deletes its own temp file,
 # and both publish branches (move for a new name, replace for a reused one) read back with no temp
 # left behind (1118 -> 1121).
-$script:DeclaredCheckTotal = 1121
+# D-1 (v4.6.13): +9 - the PT profile / anchor calibration block in the capture-ocr family
+# (five pure checks, one corrupt-profile e2e and two OCR-region e2e cases, plus the one
+# region-reconcile contract check the new 'pt-anchor' region emits; 1121 -> 1130).
+# D-3 (v4.6.13): +4 - the audit line's fifth column and its reader in the audit-output
+# family (two units: the shape reader and the real audit writer; one handler index
+# case over a planted log; one e2e that refuses an unusable tag and reads the index
+# through a real child process; 1130 -> 1134).
+# D-2 (v4.6.13): +14 - the tile grid and its stitch in the window-targeting family
+# (two plan geometries, four refusals that happen before the first screen read, the
+# byte-equal round trip with and without overlap, the global-coordinate unmap ledger,
+# and five planted-defect refusals; 1134 -> 1148).
+# D-4 (v4.6.13): +9 - the grid styles and text avoidance in the same family (one style
+# table and its refusal, one legacy-geometry reproduction, one avoidance-plan case, one
+# pixel-level case with its planted empty-avoid control, one three-style measurement, one
+# OCR leg on a rendered fixture, and the two e2e legs through the real entry; plus the one
+# region-reconcile contract check the new 'grid-avoid' region emits; 1148 -> 1157).
+# D-5 (v4.6.13): +9 - the colour clusters of an image file in the window-targeting family
+# (one three-block fixture measured against an independent histogram, one per-channel and
+# boundary-inclusive tolerance, one report order, one floored mean with the alpha leg, one
+# double trim that both self-report, one set of four distinct reader refusals, one refusal
+# pair for the two ceilings, one registration sweep with a planted ghost, and the e2e leg
+# through the real entry that prints the same palette in text and in --json; 1157 -> 1166).
+# CU-REMAINDER-FINAL-20261029-01 INC-01/02/03 (v4.7.0): +17 - eight clipboard legs in the
+# clipboard-input family (the companion-equality unit legs, one case-fold leg, one narrow-scope
+# leg, the other-plan legs and the gate/verdict leg, plus the source-shape wiring ruler with its
+# swap witness) and nine in the live suite (seven clipboard-guard lifecycle legs run through the
+# ISOLATED seam with a planted write-before-save inversion, the two-site wiring ruler, and the
+# four-source identity resolver legs with their order ruler). The other nine emitter lines the
+# live suite gained are inside the ladder and cannot be emitted offline, so they do not enter
+# this total (1166 -> 1183). v4.8.0 B-round (CU-REMAINDER-FINAL-20261029-01): the B-1 calibration fixture is rebuilt (labels measured CAL-A/B/C, geometry 1100x800, bands on the measured box quantization), B-2 adds the origin-resolver and archive-walk criteria (+6 emitters), B-3 adds the grid-proximity criteria (+7), and every A-14 registration moves with the measured tallies (1183 -> 1240).
+$script:DeclaredCheckTotal = 1252
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -1089,7 +1119,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 91) { $notes += ('names-total=' + $total + '-want91') }
+  if ($total -ne 98) { $notes += ('names-total=' + $total + '-want98') }
   return ($notes -join ';')
 }
 
@@ -2338,11 +2368,11 @@ $script:StFamilyFragments = @{
   'split-machine' = @('a handler group leaves the entry only by naming the file it goes to', 'v4.4.0 (A-0', 'v4.4.0 (A-11', 'v4.4.0 (A-12', 'v4.4.0 (A-14', 'v4.4.0 (A-23', 'v4.4.0 (S-9', 'file encoding invariants')
   'repo-contract' = @('version number sync', 'v4.5.5 (TB-1)', 'tracked-file count', 'tracked in the INDEX', 'offline-check total')
   'popup-occlusion' = @('same-process popup', 'no---to send path must take the SAME popup baseline', 'occlusion self-proof', 'popup survival guard', 'popup delta merge', 'red-1/red-2', 'the operating rule, made mechanical')
-  'window-targeting' = @('window label, including the anonymous', 'the main-window rule is a pure function', 'Resolve-Window selector semantics', 'the composite locator', 'idempotent activation', 'uia-tree file route', 'open-and-pick', 'the take-a-coordinate ladder', 'find --region''s inverted validator', 'the UIA-driven Chrome exit menu', 'the landing identity check and the post-activation state read')
-  'capture-ocr' = @('OCR a saved capture', 'CJK spacing', 'OCR retry decision', 'tiled OCR planner', 'one OCR tail for every miss', 'sparse-read hint', 'needle sub-span aiming', 'folded-long-payload', 'folded long payload receipt', 'CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b)')
+  'window-targeting' = @('window label, including the anonymous', 'the main-window rule is a pure function', 'Resolve-Window selector semantics', 'the composite locator', 'idempotent activation', 'uia-tree file route', 'open-and-pick', 'the take-a-coordinate ladder', 'find --region''s inverted validator', 'the UIA-driven Chrome exit menu', 'the landing identity check and the post-activation state read', 'the tile grid and the stitch that rebuilds it', 'D-4 (v4.6.13): grid denoise', 'v4.8.0 (B-3): the grid note MEASURES', 'v4.8.0 (C): the capture quality gate', 'D-5 (v4.6.13): cluster-color')
+  'capture-ocr' = @('OCR a saved capture', 'CJK spacing', 'OCR retry decision', 'tiled OCR planner', 'one OCR tail for every miss', 'sparse-read hint', 'needle sub-span aiming', 'folded-long-payload', 'folded long payload receipt', 'CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b)', 'D-1 (v4.6.13): PT profile and anchor calibration', 'v4.7.0 (B-1): two anchors estimate, a THIRD one tests')
   'expect-family' = @('the expect family names its patience', 'B-1/B-2/B-3', 'autoexpect', 'wiring (default-on must stay WIRED', 'the expectation anchor is fail-closed', 'the verbatim expectation legs', 'every verify call site passes the patience', '--verify-timeout', 'F-02: the 7th positional argument')
   'flags-grammar' = @('a flag must be REACHABLE', 'the named-stub conversion is machine-checked', 'Strip-OwnFlags', 'sibling-flag hint', 'Bool flags, per-command shared routing', 'the auto-grid decision', 'no miss message writes its own tail', 'truncation must self-report', 'the case shape is judged from the AST', 'a miss carries every premise', 'numeric arguments fail readably', 'the same hole elsewhere', 'the chrome family''s own promises', 'menu-pick target predicate', 'menu-pick''s extracted parser', 'the six "do not lose" contracts')
-  'audit-output' = @('audit-log redaction + rotation', 'the two OCR --json top-level key sets', 'covering list is rendered in ONE place', 'the action family''s --json envelope', '--json must never be accepted and ignored', '--dump (write the bulk to a file', 'a stamp that CLAIMS UTC', 'resource hygiene', 'the line/occurrence gap must be spoken out loud', 'residual resolve sentences must not enter the envelope')
+  'audit-output' = @('audit-log redaction + rotation', 'the two OCR --json top-level key sets', 'covering list is rendered in ONE place', 'the action family''s --json envelope', '--json must never be accepted and ignored', '--dump (write the bulk to a file', 'a stamp that CLAIMS UTC', 'resource hygiene', 'the line/occurrence gap must be spoken out loud', 'residual resolve sentences must not enter the envelope', 'the audit line carries its origin', 'v4.8.0 (B-2): the origin is resolved per context')
   'chrome-cdp' = @('CDP client and a11y route', 'the CDP viewport fallback had one axis', 'the UIA cold-start re-contact', 'action tokens + structural path handles', 'the Rect.Empty family', 'TB-2 (2026-10-24)')
   'challenge-workflow' = @('verification-challenge workflow', 'the process-entry environment normalizer')
   'drag-press' = @('the drag mid-state gate', 'the pairing id is HANDED OVER', 'drag''s landing guard')
@@ -2352,27 +2382,124 @@ $script:StFamilyFragments = @{
 }
 $script:StFamilyFragments['docs-contract'] += @('the uninstaller''s recursive delete is gated and bounded', 'the outward docs must not teach a send into a real conversation')
 $script:StFamilyCounts = @{
-  'split-machine' = 'banners=23,lines=1330'
+  # v4.6.12 (item-0, live stderr resilience): the pin-move comment inside the lifted
+  # split-machine body adds three lines (+3 -> 1333), re-measured by the offline gate.
+  # D-1 (v4.6.13): the total-banner pin comment there adds two more lines (+2 -> 1335).
+  # D-3 (v4.6.13): the planted-line assertion grows the five-column note (+4 -> 1339).
+  # D-2 (v4.6.13): the total-banner pin moves 170 -> 171 with its own two comment lines
+  # (+2 -> 1341), re-measured by the full offline gate.
+  # D-4 (v4.6.13): the total-banner pin moves 171 -> 172 in one more comment line (+1 -> 1342).
+  # D-5 (v4.6.13): the pin moves 172 -> 173 and the two prose lines that name which round moved
+  # it grow with it (+2 -> 1344), measured by the r1 gate against this exact file.
+  # v4.8.0 B-2 (b-wip-r3): the A-07/A-09 registration notes grow the family by 9 lines (measured).
+  # v4.8.0 B-round (b-wip-r9): the A-14a banner-pin note grows the family by 3 more (+3 -> 1356).
+  # v4.8.0 C (c-wip-r8): the banner-pin comment grows by one more line (+1 -> 1357).
+  'split-machine' = 'banners=23,lines=1357'
   'repo-contract' = 'banners=5,lines=322'
   'gate-meta' = 'banners=30,lines=2808'
-  'flags-grammar' = 'banners=16,lines=887'
-  'capture-ocr' = 'banners=9,lines=824'
+  # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
+  # line (+1 -> 888).
+  # D-5 (v4.6.13): the same prose names the new 97/100/111 and which round moved them (+1 -> 889).
+  # v4.8.0 B-2 (b-wip-r3): the --scope registration notes grow the family by 13 lines (measured).
+  # v4.8.0 C (c-wip-r7): the flag-forward lint's 14th-argument note grows it by 3 more (+3 -> 905).
+  'flags-grammar' = 'banners=16,lines=905'
+  # D-1 (v4.6.13): the PT profile / anchor banner and its two e2e cases land here; the row
+  # is the measured value from the offline gate (the D-1 block grew the family by 9 lines).
+  # v4.7.0 (B-1): the calibration banner lands here (+1 banner) and its block grows the family to
+  # 1835 measured lines (b-wip-r3) - the fixture rework (geometry, legs, diagnostics) plus the
+  # claim of the banner this row used to miss (it sat unclaimed until the fragment learned the
+  # title's version prefix).
+  # v4.8.0 B-1 (stitched-gate3): the A-22 single-file guards add 13 lines here (1882).
+  # v4.8.0 B-1 (b-wip-r7): the fixture surfaces are now rendered by a FRESH CHILD PROCESS
+  # (the family process's GDI+ font state had drifted every OCR box by +(3,5) and dropped E's
+  # duplicated row entirely - measured via the hash line: same DrawString calls, different
+  # bytes), which grew the region by 34 more lines (+34 -> 1869).
+  'capture-ocr' = 'banners=11,lines=1882'
   'popup-occlusion' = 'banners=7,lines=348'
-  'audit-output' = 'banners=10,lines=946'
+  # D-3 (v4.6.13): the origin-column banner and its block land here (+1 banner, +105 lines).
+  # v4.8.0 (B-2) (b-wip-r3): the origin-resolution / archive-walk banner and its 5 checks (one
+  # is the child-process e2e, one a conditional SKIP) add one banner and 99 lines
+  # (+1 -> 12, +99 -> 1150), measured by the b-wip-r3 attribution run on this tree.
+  'audit-output' = 'banners=12,lines=1150'
   # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
   # malformed-hash and missing-image controls add 111 more lines and no banner (+111 -> 1644).
   # v4.6.11 (CU-4610-REVIEW-20261029-01 P2): the whole-file publish lint, the temp-file cleanup
   # control and the move/replace branch control add 47 more lines and no banner (+47 -> 1691).
-  'window-targeting' = 'banners=11,lines=1691'
+  # D-2 (v4.6.13): the tile/stitch banner and its 14 checks add one banner and 200 lines
+  # (+1 -> 12, +200 -> 1891), measured by the D-2 diagnostic run.
+  # D-4 (v4.6.13): the grid-denoise banner and its block add one more banner and 288 lines
+  # (+1 -> 13, +288 -> 2179); the line number is the file's own measured growth
+  # (git diff --numstat on lib/selftest-window-targeting.ps1: 288 added, 0 deleted).
+  # D-5 (v4.6.13): the cluster-color banner and its block add one more banner and 337 lines
+  # (+1 -> 14, +337 -> 2516), same method - and 2516 is the A-14a tally re-run on this
+  # tree, which is the only reading that also proves the new banner is CLAIMED (an
+  # unregistered banner leaves the family at 13 and shows up as (unclaimed) instead).
+  # v4.8.0 (B-3): the grid-proximity banner and its 7 checks add one banner and 131 lines
+  # (+1 -> 15, +131 -> 2647), measured by the b-wip-r3 attribution run on this tree.
+  # v4.8.0 (C) (c-wip-r7): the capture-quality banner and its 10 checks add one banner and 220
+  # lines (+1 -> 16, +220 -> 2867), measured by the c-wip-r7 attribution run on this tree.
+  # v4.8.0 (C) single-file guards (stitched-gate3): the A-22 skip guards over the B-1/C lint
+  # sections add 5 lines here and 13 to capture-ocr; the A-14b AST counter counts the 8+1
+  # ST-Skip emitters the guards hold (170/263), in BOTH modes - the stitch is line-identical.
+  'window-targeting' = 'banners=16,lines=2872'
   'expect-family' = 'banners=9,lines=705'
-  'clipboard-input' = 'banners=4,lines=190'
+  # v4.7.0 (CU-REMAINDER-FINAL-20261029-01 INC-01): the companion-content resolver block - eight
+  # offline legs, the wiring ruler and its swap witness, and the fixture-shape fix in the
+  # already-other legs (+120 -> 310), tallied by the offline gate on this box.
+  # v4.8.0 (c-final live finding): the managed-view leg splits the read-failed negative (a raw
+  # read answering null is the managed view of the text payload, measured on real clipboards in
+  # live v48-live-r1/r2 where the shipped refusal broke every paste) (+9 -> 319).
+  'clipboard-input' = 'banners=4,lines=319'
   'docs-contract' = 'banners=12,lines=646'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
-  'live-suite' = 'banners=20,lines=3228'
+  # v4.6.12 (item-0, live stderr resilience): the child caller-identity block adds one banner
+  # and 47 lines (+1 -> 21, +47 -> 3275), re-measured by the offline gate on this box; the
+  # empty-file ReadAllText fix inside that block adds five more comment lines (+5 -> 3280);
+  # the repair round for the first-ever live paste ladder (split-stream --json capture with
+  # the cmd-breaks-root-id note, clipboard normalization before the receipt and step-probe
+  # blocks, the gate capture split-stream with its own note, probe detail lines) adds 51 more
+  # (+51 -> 3331); the follow-up round (full CLI head on the json args after the first run
+  # shipped them bare, split-stream capture on all three receipt scenarios with verdict
+  # diagnostics, System.String into the pure-formats whitelist note) adds 34 (+34 -> 3365);
+  # D-1 (v4.6.13) adds the pt-profile / pt-anchor live block inside the mask probe case, 66 more
+  # lines (+66 -> 3431) and no banner of its own (a sub-block keeps the family at 21 banners).
+  # v4.6.13 live-r1: the occlusion true-negative leg now renders its own disclosure through
+  # Format-OcclusionCovering/Verdict and keeps SetForegroundWindow's return value (+9 -> 3440).
+  # v4.6.13 live-r2 finding, measured outside the ladder: a fixture in a process that does not
+  # own the foreground cannot be put above the window that does - TopMost=$true plus
+  # SetWindowPos(HWND_TOPMOST) inside its own process still loses 4 of 25 sample points, and the
+  # same call issued from outside answers True with WS_EX_TOPMOST still clear. The leg now
+  # establishes its premise by hit-verified geometry before asserting, so a covered rect is
+  # disclosed instead of being read as a verdict (+37 -> 3477).
+  # v4.6.12 (item-0, live stderr resilience): the child caller-identity block adds one banner
+  # and 47 lines (+1 -> 21, +47 -> 3275), re-measured by the offline gate on this box; the
+  # empty-file ReadAllText fix inside that block adds five more comment lines (+5 -> 3280);
+  # the repair round for the first-ever live paste ladder (split-stream --json capture with
+  # the cmd-breaks-root-id note, clipboard normalization before the receipt and step-probe
+  # blocks, the gate capture split-stream with its own note, probe detail lines) adds 51 more
+  # (+51 -> 3331); the follow-up round (full CLI head on the json args after the first run
+  # shipped them bare, split-stream capture on all three receipt scenarios with verdict
+  # diagnostics, System.String into the pure-formats whitelist note) adds 34 (+34 -> 3365);
+  # D-1 (v4.6.13) adds the pt-profile / pt-anchor live block inside the mask probe case, 66 more
+  # lines (+66 -> 3431) and no banner of its own (a sub-block keeps the family at 21 banners).
+  # v4.6.13 live-r1: the occlusion true-negative leg now renders its own disclosure through
+  # Format-OcclusionCovering/Verdict and keeps SetForegroundWindow's return value (+9 -> 3440).
+  # v4.6.13 live-r2 finding, measured outside the ladder: a fixture in a process that does not
+  # own the foreground cannot be put above the window that does - TopMost=$true plus
+  # SetWindowPos(HWND_TOPMOST) inside its own process still loses 4 of 25 sample points, and the
+  # same call issued from outside answers True with WS_EX_TOPMOST still clear. The leg now
+  # establishes its premise by hit-verified geometry before asserting, so a covered rect is
+  # disclosed instead of being read as a verdict (+37 -> 3477).
+  # v4.7.0 (CU-REMAINDER-FINAL-20261029-01 INC-02/INC-03): the clipboard-guard pair and the two
+  # wired normalization sites, the seven offline seam legs plus their wiring ruler, and the
+  # four-source identity isolation with its offline resolver/order legs (+440 -> 3917). Of the
+  # eighteen emitter lines this round adds to the family, nine run offline and nine only inside
+  # the ladder, so the declared total moves by the offline nine only (A-14b rows say which).
+  'live-suite' = 'banners=21,lines=3917'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2419,7 +2546,23 @@ $script:StHandlerUnwrapped = 0
 #    (locates, never clicks), 'clip-info' (metadata only), 'wait-cond' (one bounded wait)
 #    and 'capabilities' (surface derived from THIS table) - 34 read + 23 act + 26 ui
 #    + 8 batch = 91 names.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap') }
+# D-1 (v4.6.13) moved read from 34 to 36: 'pt-profile' (one surface written down)
+#    and 'pt-anchor' (relocates a named line and reports real drift) - 36 read
+#    + 23 act + 26 ui + 8 batch = 93 names.
+# D-3 (v4.6.13) moves read from 36 to 37: 'log-index' (reads actions.log and reports
+#    date/origin rows; it never writes an audit line) - 37 read + 23 act + 26 ui
+#    + 8 batch = 94 names.
+# D-2 (v4.6.13) moves batch from 8 to 10: 'tile' (writes a tile SET, one PNG+map per
+#    cell) and 'stitch' (rebuilds the region from that set) join handlers-batch.ps1 -
+#    37 read + 23 act + 26 ui + 10 batch = 96 names.
+# D-5 (v4.6.13) moves read from 37 to 38: 'cluster-color' (reads ONE image file and
+#    reports the colours it holds; it acts on nothing and writes nothing) -
+#    38 read + 23 act + 26 ui + 10 batch = 97 names.
+# v4.7.0 (B-1) moves read from 38 to 39: 'pt-calibrate' (estimates a uniform-scale+
+#    translation model from two profile anchors and tests it against a third the fit never
+#    saw; it reads a surface, converts one point on request and acts on nothing) -
+#    39 read + 23 act + 26 ui + 10 batch = 98 names.
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'cluster-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities', 'pt-profile', 'pt-anchor', 'pt-calibrate', 'log-index'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap', 'tile', 'stitch') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2432,22 +2575,54 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # legacy-map / failed-write / no-sidecar / malformed-hash / missing-image controls added there.
 # v4.6.11 (CU-4610-REVIEW-20261029-01 P2): 206 -> 209 for the whole-file publish shape lint, the
 # temp-file cleanup control and the move/replace branch control.
+# v4.6.12 (item-0, live stderr resilience): LiveSuite 156 -> 159 for the three live-only
+# caller-identity checks (no-label still warns / labeled child stderr silent / helper lint).
+# D-1 (v4.6.13): CaptureOcr 107 -> 117 for the PT profile/anchor block (eight ST-Check
+# emitters plus the region guard pair that keeps the two OCR-dependent cases skippable by
+# name on a box without a language pack).
+# D-1 (v4.6.13): LiveSuite 159 -> 164 for the same block's real-window checks (two profile
+# checks, two anchor checks, one catch-all, all live-only and therefore outside the offline
+# DeclaredCheckTotal).
+# D-3 (v4.6.13): AuditOutput 79 -> 84 for the origin-column block (two units, one handler
+# index case and one e2e pair plus its child-unavailable skip; the live-only rules are
+# unchanged, and the skip counts here because it is an emitter the body really holds).
+# D-2 (v4.6.13): WindowTargeting 209 -> 223 for the tile/stitch block (fourteen offline
+# emitters: the two plan geometries, four refusals, the byte-equal round trip twice, the
+# global-coordinate unmap ledger, and five planted-defect refusals; no ST-Skip).
+# D-4 (v4.6.13): 223 -> 234 for the grid-denoise block (eight ST-Check emitters, the two
+# ST-SkipRegion call sites of the 'grid-avoid' region - no language pack, and the OCR leg
+# throwing mid-run - and the one ST-ReconcileRegion guard; measured by re-running the
+# A-14b counter over the family body, not by adding the numbers by hand).
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
-  'Invoke-SelftestFamily-CaptureOcr=107',
-  'Invoke-SelftestFamily-FlagsGrammar=91',
-  'Invoke-SelftestFamily-WindowTargeting=209',
+  'Invoke-SelftestFamily-CaptureOcr=170',
+  'Invoke-SelftestFamily-FlagsGrammar=92',
+  'Invoke-SelftestFamily-WindowTargeting=263',
   'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
-  'Invoke-SelftestFamily-ClipboardInput=32',
+  # INC-01 (2026-10-30): the clipboard-input family grew the companion-resolver block - eight emitters
+  # (seven unit/contract legs over the real resolver plus the source-shape wiring lint), 32 -> 40,
+  # measured by re-running the same A-14b AST counter over lib/selftest-clipboard-input.ps1
+  # (ST-Check=40, ST-Skip=0), not by adding the block's lines by hand.
+  'Invoke-SelftestFamily-ClipboardInput=41',
   'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
-  'Invoke-SelftestFamily-AuditOutput=79',
+  'Invoke-SelftestFamily-AuditOutput=90',
   'Invoke-SelftestFamily-ExpectFamily=87',
   'Invoke-SelftestFamily-DragPress=22',
-  'Invoke-SelftestFamily-LiveSuite=156',
+  # v4.6.13: the occlusion true-negative leg grew its own ST-Skip branch (premise not established),
+  # so the family counts one more emitter - 164 -> 165, measured by re-running the A-14b counter.
+  # INC-02/INC-03 (2026-10-30): +18 emitters (165 -> 183), same counter re-run over
+  # lib/selftest-live-suite.ps1 (ST-Check=158, ST-Skip=25). Twenty emitter lines were added and two
+  # were replaced by a rename (git diff -U0 over this file), and by which face emits them they split
+  # exactly nine/nine: the nine live-only ones are the two clipboard-guard outcome checks, the
+  # Codex-fallback leg with its ST-Skip, the identity-restore check, the renamed unlabeled control
+  # and the four 'environment blocked' ST-Skip lines in the receipt catch; the nine offline ones are
+  # six unit (INC-02) legs + contract (INC-02), unit (INC-03) + contract (INC-03). Only the offline
+  # nine can enter the declared total.
+  'Invoke-SelftestFamily-LiveSuite=183',
   'Invoke-SelftestFamily-GateMeta=167'
 )
 
@@ -2570,7 +2745,7 @@ $script:StLoadTimeNames = @(
   'needTrustNote=1',
   'pressWarn=1',
   'produced=3',
-  'Rest=3',
+  'Rest=4',
   'script:ActivationLine=1',
   'script:ActivationNotice=1',
   'script:AsTaskM=1',
@@ -2591,6 +2766,13 @@ $script:StLoadTimeNames = @(
   'script:InvocationResult=3',
   'script:Json=2',
   'script:JsonSchemaVersion=1',
+  # D-3 (v4.6.13): the audit origin tag is entry-level load-time state (default plus the
+  # value the flag loop assigns), registered here in the same write.
+  'script:LogOrigin=2',
+  # B-2 (v4.8.0): the dispatcher's own knowledge of what the top-level command was. Two load-time
+  # writes: the empty default and the one assignment for a `selftest` run, which is what lets a
+  # gate-written audit line be told apart from a human's without anyone typing a tag.
+  'script:LogOriginMode=2',
   'script:NoAutoTrim=1',
   'script:OcrCapNoteShown=1',
   'script:OcrEngine=1',
@@ -2643,8 +2825,11 @@ $script:StLoadTimeNames = @(
   'script:UiaActionAllowRe=1',
   'skipD=3',
   'skipNext=3',
+  # D-3 (v4.6.13): the two locals of the entry-level --origin loop (one list, one skip flag).
+  'skipO=3',
   'tmp=1',
-  'tmpD=1'
+  'tmpD=1',
+  'tmpO=1'
 )
 
 # '$Cmd' travels by argument now, so the shape of that argument is what has to be accounted for:
@@ -2663,7 +2848,9 @@ $script:StCommandNameArgs = @(
 # against the declaration site: the dispatcher and the script runner may use it because they
 # DECLARE it, and a new row only appears when somebody starts reading a scope they do not own.
 $script:StCmdVarUses = @(
-  '<script>=15',
+  # v4.7.0 B-2: +1 - the dispatcher now reads the top-level command once more (the selftest-mode
+  # origin set: `if ($Cmd -eq 'selftest')`), so the script-scope use count is 17, not 16.
+  '<script>=17',
   'fn:Invoke-DesktopCommand=5',
   'fn:Get-HandlerName=1',
   'fn:Get-CommandCodeRanges=3',
@@ -2936,6 +3123,161 @@ public class TPL {
       }
     }
     return hits.ToArray();
+  }
+}
+"@
+
+# v4.6.13 (D-5): the colour-cluster pass, compiled for the same reason [TPL] is - a
+# PowerShell pixel loop costs milliseconds per pixel and an image is eight million of
+# them. One pass, leader clustering in raster order: a pixel joins the OLDEST cluster
+# whose seed colour is within --tolerance on EVERY channel, otherwise it seeds a new
+# cluster. Seeds are looked up through a grid whose cell is (tolerance + 1) wide per
+# channel, so a seed that could be within tolerance is always inside the 27 cells
+# around the pixel's own cell - the grid is an accelerator, never an approximation:
+# the test that decides membership is the plain per-channel difference.
+# Fourteen longs per cluster, in this order: count, sumR, sumG, sumB, minX, minY,
+# maxX, maxY, seedR, seedG, seedB, maxDevR, maxDevG, maxDevB. The three sums are what
+# make the reported colour a pixel-weighted mean rather than the seed, and the three
+# deviations are what let the caller SEE how far the members strayed from the seed
+# instead of taking the tolerance on faith. A fully transparent pixel is not a colour
+# the user can see, so it is counted separately and never joins a cluster.
+Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+public class CLC {
+  static int AbsDev(long v) { return v < 0 ? (int)(-v) : (int)v; }
+  public static long[] Run(byte[] px, int stride, int w, int h, int tol, int maxSeeds, int maxMs,
+      out long seedCount, out bool capped, out bool overBudget, out long transparent, out long counted) {
+    List<long[]> cl = new List<long[]>();
+    Dictionary<int, List<int>> grid = new Dictionary<int, List<int>>();
+    seedCount = 0; capped = false; overBudget = false; transparent = 0; counted = 0;
+    if (tol < 0 || stride < 4) { return new long[0]; }
+    int cell = tol + 1;
+    Stopwatch sw = Stopwatch.StartNew();
+    int lastCell = -1;
+    List<int> cand = new List<int>();
+    for (int y = 0; y < h; y++) {
+      int row = y * stride;
+      for (int x = 0; x < w; x++) {
+        int o = row + x * 4;
+        if (px[o + 3] == 0) { transparent++; continue; }
+        int b = px[o]; int g = px[o + 1]; int r = px[o + 2];
+        int cr = r / cell; int cg = g / cell; int cb = b / cell;
+        int key = (cr << 16) | (cg << 8) | cb;
+        if (key != lastCell) {
+          cand = new List<int>();
+          for (int dr = -1; dr <= 1; dr++) {
+            int kx = cr + dr;
+            if (kx < 0 || kx > 255) { continue; }
+            for (int dg = -1; dg <= 1; dg++) {
+              int ky = cg + dg;
+              if (ky < 0 || ky > 255) { continue; }
+              for (int db = -1; db <= 1; db++) {
+                int kz = cb + db;
+                if (kz < 0 || kz > 255) { continue; }
+                List<int> bucket;
+                if (grid.TryGetValue((kx << 16) | (ky << 8) | kz, out bucket)) { cand.AddRange(bucket); }
+              }
+            }
+          }
+          cand.Sort();
+          lastCell = key;
+        }
+        int found = -1;
+        for (int i = 0; i < cand.Count; i++) {
+          long[] c = cl[cand[i]];
+          if (AbsDev(c[8] - r) <= tol && AbsDev(c[9] - g) <= tol && AbsDev(c[10] - b) <= tol) { found = cand[i]; break; }
+        }
+        if (found < 0) {
+          if (cl.Count >= maxSeeds) { capped = true; return new long[0]; }
+          long[] nc = new long[14];
+          nc[4] = x; nc[5] = y; nc[6] = x; nc[7] = y;
+          nc[8] = r; nc[9] = g; nc[10] = b;
+          found = cl.Count; cl.Add(nc);
+          List<int> nb;
+          if (!grid.TryGetValue(key, out nb)) { nb = new List<int>(); grid[key] = nb; }
+          nb.Add(found);
+          lastCell = -1;
+        }
+        long[] t = cl[found];
+        t[0]++; t[1] += r; t[2] += g; t[3] += b;
+        int dv = AbsDev(t[8] - r); if (dv > t[11]) { t[11] = dv; }
+        dv = AbsDev(t[9] - g); if (dv > t[12]) { t[12] = dv; }
+        dv = AbsDev(t[10] - b); if (dv > t[13]) { t[13] = dv; }
+        if (x < t[4]) { t[4] = x; }
+        if (x > t[6]) { t[6] = x; }
+        if (y < t[5]) { t[5] = y; }
+        if (y > t[7]) { t[7] = y; }
+        counted++;
+        if ((counted & 0xFFFF) == 0 && sw.ElapsedMilliseconds > maxMs) { overBudget = true; return new long[0]; }
+      }
+    }
+    seedCount = cl.Count;
+    long[] outp = new long[cl.Count * 14];
+    for (int i = 0; i < cl.Count; i++) { for (int f = 0; f < 14; f++) { outp[i * 14 + f] = cl[i][f]; } }
+    return outp;
+  }
+}
+"@
+
+# C (v4.8.0): the capture quality metric, compiled for the same reason as [TPL]/[CLC] - a
+# PowerShell pixel loop over a 4K frame costs seconds the advertised budget cannot carry.
+# ONE geometry: the caller names the area in FRAME pixels (x0,y0,rw,rh clamped here) and the
+# sampling stride (both axes). Pass 1 finds the MODE colour over the sampled pixels (the
+# auto reference - the colour most pixels agree on, so a frame of chrome with a small dialog
+# still measures the dialog against the chrome, not the chrome against itself); pass 2 counts
+# the sampled pixels whose ANY channel differs from the reference by MORE than tol (per-channel
+# and EXCLUSIVE at tol, the same semantics as find-color's --tolerance boundary - find-color's
+# inclusive bound lives at the match side, this side counts INK as "beyond the tolerance", so
+# a difference of exactly tol is background, tol+1 is ink). maxMs <= 0 means no budget; the
+# stopwatch fires between rows and overBudget stops the pass with whatever it counted - the
+# caller refuses with budget-hit=True instead of printing a fraction it did not finish measuring.
+# Byte layout is the 32bppArgb LockBits order ([CLC] shares it): px[o]=B, px[o+1]=G, px[o+2]=R.
+Add-Type @"
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+public class INK {
+  public static long[] Run(byte[] px, int stride, int w, int h, int x0, int y0, int rw, int rh,
+      int stepPx, bool refIsMode, int refR, int refG, int refB, int tol, int maxMs,
+      out long sampled, out long inkCount, out bool overBudget, out int modeR, out int modeG, out int modeB, out long modeCount) {
+    sampled = 0; inkCount = 0; overBudget = false; modeR = -1; modeG = -1; modeB = -1; modeCount = 0;
+    if (stepPx < 1) { stepPx = 1; }
+    if (x0 < 0) { x0 = 0; } if (y0 < 0) { y0 = 0; }
+    if (rw > w - x0) { rw = w - x0; } if (rh > h - y0) { rh = h - y0; }
+    if (rw < 1 || rh < 1) { return new long[0]; }
+    Stopwatch sw = maxMs > 0 ? Stopwatch.StartNew() : null;
+    Dictionary<int, long> hist = new Dictionary<int, long>();
+    int modeKey = -1; long modeBest = 0; int rc = 0;
+    for (int y = y0; y < y0 + rh; y += stepPx) {
+      if (sw != null && (++rc & 63) == 0 && sw.ElapsedMilliseconds > maxMs) { overBudget = true; return new long[] { sampled, inkCount }; }
+      int row = y * stride;
+      for (int x = x0; x < x0 + rw; x += stepPx) {
+        int o = row + x * 4;
+        int key = (px[o + 2] << 16) | (px[o + 1] << 8) | px[o];
+        long c;
+        if (!hist.TryGetValue(key, out c)) { c = 0; }
+        c = c + 1; hist[key] = c;
+        if (c > modeBest) { modeBest = c; modeKey = key; }
+        sampled++;
+      }
+    }
+    modeR = (modeKey >> 16) & 255; modeG = (modeKey >> 8) & 255; modeB = modeKey & 255; modeCount = modeBest;
+    if (refIsMode) { refR = modeR; refG = modeG; refB = modeB; }
+    rc = 0;
+    for (int y = y0; y < y0 + rh; y += stepPx) {
+      if (sw != null && (++rc & 63) == 0 && sw.ElapsedMilliseconds > maxMs) { overBudget = true; return new long[] { sampled, inkCount }; }
+      int row = y * stride;
+      for (int x = x0; x < x0 + rw; x += stepPx) {
+        int o = row + x * 4;
+        int dr = px[o + 2] - refR; if (dr < 0) { dr = -dr; }
+        int dg = px[o + 1] - refG; if (dg < 0) { dg = -dg; }
+        int db = px[o] - refB; if (db < 0) { db = -db; }
+        if (dr > tol || dg > tol || db > tol) { inkCount++; }
+      }
+    }
+    return new long[] { sampled, inkCount };
   }
 }
 "@
@@ -3234,15 +3576,82 @@ function Get-QuarantineManifestEntry([string]$origPath, [string]$movedPath, [str
 # actions.log rotation (audit 2026-09-29 #13, closed v1.4.1): the audit log grew
 # without bound. When it passes $maxBytes it is moved aside to a timestamped
 # actions_*.log archive and the newest $keep archives are retained.
+# B-2 (v4.8.0): the two numbers are ONE owner's, not two prose claims. log-index now tells the
+# reader what the retention policy is, and a policy quoted in one place and enforced in another is
+# the documented-vs-real class this round is closing - so the writer and the reader both ask here.
+# The archive NAME is in the same table: log-index has to find the files the rotator writes, and a
+# glob that drifted from the writer's prefix would silently scan zero archives while reporting
+# files-scanned=1 - which reads exactly like "nothing else happened".
+function Get-LogRotationPolicy { return @{ MaxBytes = 524288; Keep = 5; ArchivePrefix = 'actions_'; ArchiveGlob = 'actions_*.log' } }
+
 function Invoke-LogRotation([string]$logPath, [long]$maxBytes, [int]$keep) {
   if (-not (Test-Path -LiteralPath $logPath)) { return $false }
   if ((Get-Item -LiteralPath $logPath).Length -lt $maxBytes) { return $false }
   $stamp = (Get-Date).ToString('yyyyMMddTHHmmss')
-  $archive = Join-Path (Split-Path -Parent $logPath) ('actions_' + $stamp + '.log')
+  $archive = Join-Path (Split-Path -Parent $logPath) (((Get-LogRotationPolicy).ArchivePrefix + $stamp + '.log'))
   Move-Item -LiteralPath $logPath -Destination $archive -Force
-  $old = @(Get-ChildItem -LiteralPath (Split-Path -Parent $logPath) -Filter 'actions_*.log' | Sort-Object -Property Name -Descending)
+  $old = @(Get-ChildItem -LiteralPath (Split-Path -Parent $logPath) -Filter ((Get-LogRotationPolicy).ArchiveGlob) | Sort-Object -Property Name -Descending)
   for ($k = $keep; $k -lt $old.Count; $k++) { Remove-Item -LiteralPath $old[$k].FullName -Force }
   return $true
+}
+
+# v4.6.13 (D-3): one reader for both audit-line shapes. A line written by this version ends
+# with a fifth column `origin=<tag>`; every line written before it has four. An unreadable
+# line returns $null - the caller COUNTS it instead of guessing, and a caller that filters
+# never has to crash on a shape it did not expect. Exactly five columns must carry a
+# well-formed origin; exactly four is the legacy shape (origin 'unknown', HasOrigin false);
+# anything else is not an audit line (a blank line, a note, a foreign file).
+function ConvertFrom-ActionLogLine([string]$Line) {
+  if ([string]$Line -eq '') { return $null }
+  $parts = @([string]$Line -split ' \| ')
+  if ($parts.Count -eq 5) {
+    if ([string]$parts[4] -notmatch '^origin=([A-Za-z0-9][A-Za-z0-9._-]{0,31})$') { return $null }
+    $origin = [string]$Matches[1]
+  } elseif ($parts.Count -eq 4) {
+    $origin = 'unknown'
+  } else {
+    return $null
+  }
+  $date = ''
+  if ([string]$parts[0] -match '^(\d{4}-\d{2}-\d{2}) ') { $date = [string]$Matches[1] }
+  [pscustomobject]@{
+    Date = $date
+    Cmd = [string]$parts[1]
+    Args = [string]$parts[2]
+    Target = [string]$parts[3]
+    Origin = $origin
+    HasOrigin = ($parts.Count -eq 5)
+    Raw = [string]$Line
+  }
+}
+
+# B-2 (v4.8.0): which tag a WRITTEN audit line carries is derived by the product, not only typed.
+# D-3 gave origin a column and gave the caller --origin; nothing gave the log a way to know that
+# the line came from the gate rather than from a person, so "selftest actions and human actions are
+# the same shape in the log" stayed true. The precedence is four-valued and this is a pure function
+# of its four arguments - no env is written, no new identity source is added, the existing
+# `caller identity=unknown` WARNING is untouched (an offline CU-CALL leg reads that text as its
+# evidence, so a gate that set DTX_CALLER_LABEL in its own process would turn that leg red for a
+# reason that has nothing to do with caller identity):
+#   1. an explicit --origin (validated at the entry, so it arrives as a usable token);
+#   2. the mode the dispatcher knows about itself - top command `selftest` writes `selftest`;
+#   3. the label the CALLER declared, and only from the DTX_CALLER_LABEL channel: a Codex-thread
+#      fallback is an environment fact, not a declaration, so it is not copied into the log;
+#   4. `unknown` - the pre-B-2 default, still exactly that word when nothing above holds.
+# A label from a caller is arbitrary text (spaces, punctuation, up to 80 chars) and actions.log is
+# pipe-delimited, so it is folded into the same token shape the entry demands of --origin; anything
+# that cannot be folded falls through to `unknown` rather than writing a column-breaking line.
+function Resolve-AuditOrigin([string]$Explicit, [string]$Mode, [string]$CallerLabel, [string]$CallerSource) {
+  if ([string]$Explicit -ne '') { return [string]$Explicit }
+  if ([string]$Mode -ne '') { return [string]$Mode }
+  if ((@('explicit-environment', 'partial-explicit-environment') -contains [string]$CallerSource)) {
+    $s = [regex]::Replace([string]$CallerLabel, '[^A-Za-z0-9._-]', '-')
+    $s = [regex]::Replace($s, '-{2,}', '-')
+    $s = ([string]$s).Trim([char[]]@('-', '.'))
+    if ($s.Length -gt 32) { $s = ([string]$s).Substring(0, 32).Trim([char[]]@('-', '.')) }
+    if ($s -cmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$') { return $s }
+  }
+  return 'unknown'
 }
 
 function Log-Action([string[]]$restArgs, [string]$target, [string]$CmdName) {
@@ -3252,9 +3661,20 @@ function Log-Action([string[]]$restArgs, [string]$target, [string]$CmdName) {
   # writing a line that looks like a run of nothing. No default value, on purpose.
   if ([string]$CmdName -eq '') { throw 'the command name must be passed as the third argument of the audited-command call - refusing to fill the audit column from caller scope' }
   Ensure-OutDir
-  Invoke-LogRotation $ActionLog 524288 5 | Out-Null
+  $rotPol = Get-LogRotationPolicy
+  Invoke-LogRotation $ActionLog ([long]$rotPol.MaxBytes) ([int]$rotPol.Keep) | Out-Null
   $ts = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
-  $line = "$ts UTC | $CmdName | " + (($restArgs | ForEach-Object { Quote-LogArg $_ }) -join ' ') + " | $target"
+  # v4.6.13 (D-3): the fifth column. It is written on EVERY line so the reader can tell "the caller
+  # set no tag" from "this line predates the column" only by the shape, which is exactly what
+  # ConvertFrom-ActionLogLine reports. The value is a validated single token (entry refuses anything
+  # that could split the line). B-2 (v4.8.0): which token it is arrives from Resolve-AuditOrigin -
+  # the explicit --origin, else the dispatcher's own mode, else the caller-declared label, else
+  # 'unknown' (the pre-B-2 default, unchanged in both wording and position).
+  $logOrigin = [string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  $logMode = [string](Get-Variable -Name 'LogOriginMode' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  $logId = Get-DtxCallIdentity
+  $logOrigin = Resolve-AuditOrigin $logOrigin $logMode ([string]$logId.CallerLabel) ([string]$logId.IdentitySource)
+  $line = "$ts UTC | $CmdName | " + (($restArgs | ForEach-Object { Quote-LogArg $_ }) -join ' ') + " | $target | origin=$logOrigin"
   [System.IO.File]::AppendAllText($ActionLog, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
 }
 
@@ -3793,10 +4213,20 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
   # very PNG, so the sidecar records grid= and imgclick warns when it is non-zero.
   $fitUser = $false
   $gridUser = $false
+  # D-4 (v4.6.13): WHAT the grid is drawn with. thin repeats the pre-D-4 stroke (1px, alpha 140),
+  # so the line itself is unchanged; what changes for EVERY style is that a segment crossing a
+  # text box is not drawn at all, so a default call is not guaranteed the old image.
+  $gridStyle = 'thin'
+  $gridStyleUser = $false
   $marks = New-Object System.Collections.ArrayList
+  # C (v4.8.0): the capture-quality flags ride the same parse (ONE consumer, Test-CaptureQualityFlag,
+  # so the value rules cannot drift between the commands that take them). The keys land flat in the
+  # returned table, which is what Save-RectEx already receives as its 13th argument.
+  $q = New-CaptureQualityDefaults
   $i = 0
   while ($i -lt $words.Count) {
     $t = $words[$i]
+    if (Test-CaptureQualityFlag $t $words ([ref]$i) $q) { $i++; continue }
     if ($t -eq '--fit') {
       $fitUser = $true
       $i++
@@ -3808,6 +4238,12 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
       if ($i + 1 -lt $words.Count -and $words[$i + 1] -match '^\d+$') { $i++; $grid = Read-FlagNumber '--grid' $words[$i] $true ''}
     } elseif ($t -eq '--no-grid') {
       $gridUser = $true; $grid = -1
+    } elseif ($t -eq '--grid-style') {
+      $gridStyleUser = $true
+      $i++
+      if ($i -ge $words.Count) { throw '--grid-style needs thin|bold|contrast' }
+      $gridStyle = "$($words[$i])"
+      if (@('thin', 'bold', 'contrast') -notcontains $gridStyle) { throw "--grid-style must be thin|bold|contrast, got: $gridStyle" }
     } elseif ($t -eq '--mark') {
       $i++
       if ($i -ge $words.Count) { throw '--mark needs x,y' }
@@ -3820,7 +4256,454 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
     $i++
   }
   if ($null -eq $fit) { $fit = if ($defaultFit) { 900 } else { 0 } }
-  return @{ Rest = @($rest); Fit = [int]$fit; Grid = $grid; Marks = @($marks); FitUser = $fitUser; GridUser = $gridUser }
+  $out = @{ Rest = @($rest); Fit = [int]$fit; Grid = $grid; Marks = @($marks); FitUser = $fitUser; GridUser = $gridUser; GridStyle = $gridStyle; GridStyleUser = $gridStyleUser }
+  foreach ($qk in @(Get-HashKeys $q)) { $out[$qk] = $q[$qk] }
+  return $out
+}
+
+# C (v4.8.0): the capture-quality flag grammar, ONE consumer for every capture command that takes
+# it (Parse-CaptureFlags for win/rect/shot, the zoom loop for zoom). A per-command copy of six
+# value rules is how "accepted here, refused there, spelled differently in the third place" is
+# born. Defaults live here and nowhere else: the gate is OFF until --min-ink names a threshold
+# (a legal white canvas is a legal frame - no default judges it), the reference is the frame's
+# own mode colour, the tolerance is 24 (anti-aliased screens are never pixel-flat; a tolerance
+# of 0 measures sensor noise, not ink), the area is the whole frame, the stride is 1, and the
+# re-capture is 0 attempts / no budget (the existing capture semantics, unchanged).
+# Returns $true when $t was one of the six and consumed its value; the caller keeps its own
+# unknown-flag handling. Values are validated HERE, before any screen is read.
+function Test-CaptureQualityFlag([string]$t, [string[]]$words, [ref]$i, [hashtable]$q) {
+  if ($t -eq '--min-ink') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw '--min-ink needs a percentage within 0..100' }
+    $v = Read-FlagNumber '--min-ink' $words[$i.Value] $false ''
+    if ($v -lt 0 -or $v -gt 100) { throw "--min-ink must be within 0..100 (a percentage of sampled pixels), got: $($words[$i.Value])" }
+    $q['MinInk'] = [double]$v
+    return $true
+  }
+  if ($t -eq '--ink-vs') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw "--ink-vs needs 'auto' or a #RRGGBB colour" }
+    $v = "$($words[$i.Value])"
+    if ($v -ne 'auto' -and $v -notmatch '^#[0-9A-Fa-f]{6}$') { throw "--ink-vs must be 'auto' or #RRGGBB, got: $v" }
+    $q['InkVs'] = $v
+    return $true
+  }
+  if ($t -eq '--ink-tol') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw '--ink-tol needs a per-channel tolerance within 0..255' }
+    $v = Read-FlagNumber '--ink-tol' $words[$i.Value] $false ''
+    if ($v -lt 0 -or $v -gt 255) { throw "--ink-tol must be within 0..255 (per channel), got: $($words[$i.Value])" }
+    $q['InkTol'] = [int]$v
+    return $true
+  }
+  if ($t -eq '--ink-area') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw '--ink-area needs x,y,w,h in frame pixels' }
+    $parts = @("$($words[$i.Value])" -split ',')
+    $bad = @($parts | Where-Object { $_ -notmatch '^-?[0-9]+$' })
+    if ($parts.Count -ne 4 -or @($bad).Count -ne 0) { throw "--ink-area needs x,y,w,h in frame pixels, got: $($words[$i.Value])" }
+    if ([int]$parts[2] -le 0 -or [int]$parts[3] -le 0) { throw "--ink-area width/height must be > 0, got: $($words[$i.Value])" }
+    $q['InkArea'] = @([int]$parts[0], [int]$parts[1], [int]$parts[2], [int]$parts[3])
+    return $true
+  }
+  if ($t -eq '--ink-stride') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw '--ink-stride needs a sampling step within 1..64' }
+    $v = Read-FlagNumber '--ink-stride' $words[$i.Value] $false ''
+    if ($v -lt 1 -or $v -gt 64) { throw "--ink-stride must be within 1..64 (sampling step on both axes), got: $($words[$i.Value])" }
+    $q['InkStride'] = [int]$v
+    return $true
+  }
+  if ($t -eq '--retry') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw '--retry needs a re-capture count within 0..5' }
+    $v = Read-FlagNumber '--retry' $words[$i.Value] $false ''
+    if ($v -lt 0 -or $v -gt 5) { throw "--retry must be within 0..5 (re-captures after the first), got: $($words[$i.Value])" }
+    $q['Retry'] = [int]$v
+    return $true
+  }
+  if ($t -eq '--retry-budget') {
+    $i.Value++
+    if ($i.Value -ge $words.Count) { throw '--retry-budget needs a total duration in milliseconds within 0..600000' }
+    $v = Read-FlagNumber '--retry-budget' $words[$i.Value] $false ''
+    if ($v -lt 0 -or $v -gt 600000) { throw "--retry-budget must be within 0..600000 ms, got: $($words[$i.Value])" }
+    $q['RetryBudget'] = [int]$v
+    return $true
+  }
+  return $false
+}
+
+# The defaults for the quality flags, one shape for every caller (a hashtable the measure and
+# the loop read; Parse-CaptureFlags and the zoom handler both start from this and overwrite
+# what the caller named).
+function New-CaptureQualityDefaults {
+  return @{ MinInk = -1.0; InkVs = 'auto'; InkTol = 24; InkArea = $null; InkStride = 1; Retry = 0; RetryBudget = 0 }
+}
+
+# C (v4.8.0): ONE quality measurement of a frame, on the 1:1 captured pixels (pre-fit, pre-grid,
+# pre-overlay - a bicubic shrink blurs threshold-adjacent ink and the grid lines are ink WE drew,
+# which would measure the pen, not the screen). Returns the numbers and the verdict; throws
+# nothing. The reference colour is echoed back as the caller named it: 'auto' resolves to the
+# frame's own mode colour and the echo says which #RRGGBB that turned out to be.
+function Get-FrameInkQuality($bmp, [hashtable]$q, [int]$maxMs) {
+  $bmp32 = ConvertTo-Bitmap32 $bmp
+  $owned = $false
+  if ([object]::ReferenceEquals($bmp32, $bmp)) { $owned = $false } else { $owned = $true }
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  $b32 = Get-Bitmap32Bytes $bmp32
+  $x0 = 0; $y0 = 0; $rw = $b32.W; $rh = $b32.H
+  $areaTxt = 'whole'
+  if ($null -ne (Get-OptValue $q 'InkArea')) {
+    $a = [int[]](Get-OptValue $q 'InkArea')
+    $x0 = [Math]::Max(0, $a[0]); $y0 = [Math]::Max(0, $a[1])
+    $rw = $a[2]; $rh = $a[3]
+    $areaTxt = "$($a[0]),$($a[1]),$($a[2])x$($a[3])"
+  }
+  $refIsMode = $true
+  $refTxt = 'auto'
+  $rr = 0; $rg = 0; $rb = 0
+  $vs = [string](Get-OptValue $q 'InkVs')
+  if ($vs -ne '' -and $vs -ne 'auto') {
+    $refIsMode = $false
+    $rr = [Convert]::ToInt32($vs.Substring(1, 2), 16)
+    $rg = [Convert]::ToInt32($vs.Substring(3, 2), 16)
+    $rb = [Convert]::ToInt32($vs.Substring(5, 2), 16)
+    $refTxt = $vs.ToLower()
+  }
+  $stride = [int](Get-OptValue $q 'InkStride')
+  if ($stride -lt 1) { $stride = 1 }
+  $tol = [int](Get-OptValue $q 'InkTol')
+  $sampled = 0L; $inkC = 0L; $over = $false; $mr = 0; $mg = 0; $mb = 0; $mc = 0L
+  # the AUTO reference is the WHOLE FRAME's mode colour, never the measured area's: the gate asks
+  # "how much of this region differs from the frame's background" - an area that happens to be
+  # uniform must not become its own background and measure 0% against itself (measured: an
+  # all-red area against its own mode read 0% while the same pixels against the frame's white
+  # mode read 100%; the first wrapper took the mode over the area and disagreed with the direct
+  # class call on the same bytes).
+  if ($refIsMode) {
+    [void][INK]::Run($b32.Bytes, $b32.Stride, $b32.W, $b32.H, 0, 0, $b32.W, $b32.H, $stride, $true, 0, 0, 0, $tol, $maxMs, [ref]$sampled, [ref]$inkC, [ref]$over, [ref]$mr, [ref]$mg, [ref]$mb, [ref]$mc)
+    if ($over) {
+      $sw.Stop()
+      return @{ Sampled = $sampled; Ink = 0L; InkPct = 0.0; OverBudget = $true; ModeColor = ('#{0:X2}{1:X2}{2:X2}' -f $mr, $mg, $mb); ModeCount = $mc; RefText = 'auto (mode unreadable: the whole-frame pass hit its budget)'; AreaText = $areaTxt; Stride = $stride; Tolerance = $tol; MinInk = [double](Get-OptValue $q 'MinInk'); ElapsedMs = $sw.ElapsedMilliseconds; Pass = $false }
+    }
+    $rr = $mr; $rg = $mg; $rb = $mb
+  }
+  [void][INK]::Run($b32.Bytes, $b32.Stride, $b32.W, $b32.H, $x0, $y0, $rw, $rh, $stride, $false, $rr, $rg, $rb, $tol, $maxMs, [ref]$sampled, [ref]$inkC, [ref]$over, [ref]$mr, [ref]$mg, [ref]$mb, [ref]$mc)
+  $sw.Stop()
+  if ($owned) { try { $bmp32.Dispose() } catch { } }
+  $inkPct = 0.0
+  if ($sampled -gt 0) { $inkPct = [math]::Round((100.0 * $inkC / $sampled), 2) }
+  $minInk = [double](Get-OptValue $q 'MinInk')
+  $modeTxt = '#{0:X2}{1:X2}{2:X2}' -f $mr, $mg, $mb
+  $refText = $refTxt
+  if ($refIsMode) { $refText = "auto (mode $modeTxt)" }
+  return @{
+    Sampled = $sampled; Ink = $inkC; InkPct = $inkPct; OverBudget = $over
+    ModeColor = $modeTxt; ModeCount = $mc
+    RefText = $refText
+    AreaText = $areaTxt; Stride = $stride; Tolerance = $tol; MinInk = $minInk
+    ElapsedMs = $sw.ElapsedMilliseconds
+    Pass = ($sampled -gt 0 -and -not $over -and $inkPct -ge $minInk)
+  }
+}
+
+# C (v4.8.0): the bounded re-capture loop. ONLY reading and measuring happen inside it - the
+# write/publish path stays outside (v4.6.8/v4.6.10's order conclusions: a refused frame leaves
+# the previous pair byte-identical and a new path gets nothing). Each attempt runs the caller's
+# pre-attempt checks first (host identity/rect re-read, occlusion gate re-run - the caller
+# decides what its path owes; a path with no gate passes nothing and says so in its echo),
+# then captures ONE frame through $captureStep, then measures it. Exhaustion is a REFUSAL that
+# names which knob fired: the attempt count or the time budget. No input API exists here by
+# construction - a re-capture re-READS the screen, it never touches it.
+function Invoke-BoundedCapture([scriptblock]$captureStep, [hashtable]$q, [scriptblock]$preAttempt) {
+  $maxRetry = [int](Get-OptValue $q 'Retry')
+  $budget = [int](Get-OptValue $q 'RetryBudget')
+  $swAll = [System.Diagnostics.Stopwatch]::StartNew()
+  $lines = New-Object System.Collections.ArrayList
+  $frame = $null
+  $quality = $null
+  $attempt = 0
+  while ($true) {
+    $attempt++
+    if ($null -ne $preAttempt) { & $preAttempt $attempt }
+    $frame = & $captureStep $attempt
+    $remain = $budget - [int]$swAll.ElapsedMilliseconds
+    $measureCap = $(if ($budget -gt 0) { [Math]::Max(1, $remain) } else { 10000 })
+    $quality = Get-FrameInkQuality $frame $q $measureCap
+    if ($quality.OverBudget) {
+      [void]$lines.Add("  attempt=$attempt ink=unmeasured budget-hit=True (the pixel measurement hit its own ${measureCap}ms cap) sampled=$($quality.Sampled)")
+      throw "capture quality: the pixel measurement hit its own budget (${measureCap}ms) at attempt $attempt - budget-hit=True, and no ink fraction is reported for a measurement that did not finish; no PNG or map was written"
+    }
+    [void]$lines.Add("  attempt=$attempt ink=$($quality.InkPct)% ($($quality.Ink) of $($quality.Sampled) sampled px) ref=$($quality.RefText) tol=$($quality.Tolerance) area=$($quality.AreaText) stride=$($quality.Stride) elapsed=$($quality.ElapsedMs)ms verdict=$(if ($quality.Pass) { 'pass' } else { 'below-threshold' })")
+    if ($quality.Pass) { break }
+    if ($attempt -gt $maxRetry) {
+      throw "capture quality: refused after $attempt attempt(s) (--retry $maxRetry) - the frame never reached --min-ink $([double](Get-OptValue $q 'MinInk')) (last ink=$($quality.InkPct)%); no PNG or map was written for a frame that failed the gate"
+    }
+    if ($budget -gt 0 -and $swAll.ElapsedMilliseconds -ge $budget) {
+      throw "capture quality: refused on the time budget (--retry-budget $budget ms, spent $([int]$swAll.ElapsedMilliseconds) ms) at attempt $attempt - the frame never reached --min-ink $([double](Get-OptValue $q 'MinInk')) (last ink=$($quality.InkPct)%); no PNG or map was written"
+    }
+    try { $frame.Dispose() } catch { }
+    $frame = $null
+  }
+  $swAll.Stop()
+  return @{ Frame = $frame; Quality = $quality; Lines = @($lines); Attempts = $attempt; SpentMs = [int]$swAll.ElapsedMilliseconds }
+}
+
+# D-4 (v4.6.13): ONE table for what a grid style MEANS - the line width in image px and the
+# line's alpha. thin is the pre-D-4 stroke (1px, Argb(140,255,0,0)): same width, same colour,
+# same label position and the same vertical-then-horizontal order, so the geometry parity check
+# can recompute the old loop's (label, image index) list and match it line for line. bold widens
+# the stroke; contrast trades width for full opacity, which is the variant that survives a light
+# background where alpha 140 all but disappears. A name outside this table is refused by name -
+# never silently rendered as thin.
+function Get-GridStyleSpec([string]$style) {
+  $table = @{
+    thin = @{ Width = 1; Alpha = 140 }
+    bold = @{ Width = 3; Alpha = 200 }
+    contrast = @{ Width = 2; Alpha = 255 }
+  }
+  if (-not $table.ContainsKey([string]$style)) { throw "grid style must be thin|bold|contrast, got: $style" }
+  $s = $table[[string]$style]
+  return @{ Name = [string]$style; Width = [int]$s.Width; Alpha = [int]$s.Alpha; R = 255; G = 0; B = 0 }
+}
+
+# D-4 (v4.6.13): the complement of one line's text gaps, as the DrawLine runs that survive.
+# $gaps = @{ A; B } in image px, inclusive; the full span is $start..$end. Overlapping or
+# touching gaps are merged first, so two text boxes on one line cost one seam, not two.
+function Get-GridLineSegments($gaps, [int]$start, [int]$end) {
+  $ordered = @(@($gaps) | Where-Object { $null -ne $_ } | Sort-Object -Property @{ Expression = { [int]$_.A } })
+  $segs = New-Object System.Collections.ArrayList
+  $cur = $start
+  foreach ($g in $ordered) {
+    $ga = [int]$g.A; $gb = [int]$g.B
+    if ($ga -gt $cur) { [void]$segs.Add(@{ A = $cur; B = [int]($ga - 1) }) }
+    if ($gb -ge $cur) { $cur = $gb + 1 }
+    if ($cur -gt $end) { break }
+  }
+  if ($cur -le $end) { [void]$segs.Add(@{ A = $cur; B = $end }) }
+  return @($segs)
+}
+
+# B-3 (v4.8.0): how far is THIS point from the grid it was measured off - and is that near enough
+# to say so? D-6 answered "does this image carry a grid" and warned for EVERY point, which is the
+# same shape of noise as an unstated truncation: a point 20px clear of every line got the same
+# sentence as a point on one, so the sentence stopped meaning anything.
+# ONE geometry: the line positions come out of New-GridOverlayPlan, the same plan the renderer is
+# handed, so this can never disagree with what was drawn (D-4's reason for the plan existing at all).
+# The rect origin IS an argument: lines sit on round SCREEN coordinates, so which IMAGE index a line
+# lands on depends on where the capture started. A function that took only the step could be right
+# for a window at x=0 and wrong for every other window, and be green either way.
+# $LineStyle='unknown' means the map predates grid-style. Then the stroke width is NOT guessed
+# (guessing 'thin' would invent a 0.5px safety margin for a 3px bold line and call the point clear),
+# the distance is still reported, and the only thing that can raise an alert is a margin the CALLER
+# named. $AlertPx < 0 means nobody named one.
+function Resolve-GridProximity([int]$Ix, [int]$Iy, [int]$Grid, [double]$Scale, [int]$OriginX, [int]$OriginY, [string]$LineStyle, [double]$AlertPx, [int]$ImageW, [int]$ImageH) {
+  if ($Grid -le 0) {
+    return @{ Enabled = $false; Reason = 'no-grid'; Near = $false; VDistPx = -1.0; HDistPx = -1.0; VScreenPx = -1.0; HScreenPx = -1.0; Radius = -1.0; LineWidth = -1; StyleKnown = $false; VLineIx = -1; VLineSx = -1; HLineIy = -1; HLineSy = -1 }
+  }
+  if ($Scale -le 0) { throw "grid proximity: scale must be > 0, got: $Scale" }
+  $known = @('thin', 'bold', 'contrast') -contains [string]$LineStyle
+  $spec = $null
+  if ($known) { $spec = Get-GridStyleSpec ([string]$LineStyle) }
+  $screenW = [int][math]::Ceiling(([double]$ImageW) / $Scale)
+  $screenH = [int][math]::Ceiling(([double]$ImageH) / $Scale)
+  $plan = New-GridOverlayPlan $ImageW $ImageH @{ X = $OriginX; Y = $OriginY; W = $screenW; H = $screenH } $Scale $Grid $(if ($known) { [string]$LineStyle } else { 'thin' }) @()
+  $bestV = $null; $bestDv = [double]::PositiveInfinity
+  $bestH = $null; $bestDh = [double]::PositiveInfinity
+  foreach ($l in @($plan.Lines)) {
+    if ($l.Vertical) {
+      $d = [double][math]::Abs([int]$Ix - [int]$l.Ix)
+      if ($d -lt $bestDv) { $bestDv = $d; $bestV = $l }
+    } else {
+      $d = [double][math]::Abs([int]$Iy - [int]$l.Iy)
+      if ($d -lt $bestDh) { $bestDh = $d; $bestH = $l }
+    }
+  }
+  if ($null -eq $bestV -or $null -eq $bestH) {
+    return @{ Enabled = $true; Reason = 'no-lines-in-image'; Near = $false; VDistPx = -1.0; HDistPx = -1.0; VScreenPx = -1.0; HScreenPx = -1.0; Radius = -1.0; LineWidth = $(if ($known) { [int]$spec.Width } else { -1 }); StyleKnown = $known; VLineIx = -1; VLineSx = -1; HLineIy = -1; HLineSy = -1 }
+  }
+  $radius = -1.0
+  if ($known) {
+    $margin = 0.0
+    if ($AlertPx -gt 0) { $margin = $AlertPx }
+    # half the stroke is the ink's own reach; the caller's margin is added to it, never replaces it
+    $radius = ([double]$spec.Width / 2.0) + $margin
+  } elseif ($AlertPx -ge 0) {
+    $radius = $AlertPx
+  }
+  $min = [double][math]::Min($bestDv, $bestDh)
+  $near = $false
+  if ($radius -ge 0) { $near = ($min -le $radius) }
+  return @{
+    Enabled = $true; Reason = 'measured'; Near = $near
+    VDistPx = $bestDv; HDistPx = $bestDh
+    VScreenPx = ($bestDv / $Scale); HScreenPx = ($bestDh / $Scale)
+    Radius = $radius; LineWidth = $(if ($known) { [int]$spec.Width } else { -1 }); StyleKnown = $known
+    VLineIx = [int]$bestV.Ix; VLineSx = [int]$bestV.Sx; HLineIy = [int]$bestH.Iy; HLineSy = [int]$bestH.Sy
+  }
+}
+
+# B-3 (v4.8.0): the ONE wording for the grid note, shared by imgclick and unmap the way D-3 made
+# the three handle-pin refusals share one formatter. Two hand-written copies of a sentence about a
+# measurement drift, and the drift is invisible because both read as warnings.
+function Format-GridProximity($Gp, [int]$Grid, [string]$GridStyle) {
+  if ($null -eq $Gp) { return '' }
+  if (-not [bool]$Gp.Enabled) { return '' }
+  if ([string]$Gp.Reason -eq 'no-lines-in-image') {
+    return "  grid: step=$Grid px (labelled in screen coords) carries no line inside this image's own bounds, so there is no distance to measure - the point was read off a frame with no line near it"
+  }
+  $styleTxt = "style=$GridStyle line-width=$([int]$Gp.LineWidth)px"
+  if (-not [bool]$Gp.StyleKnown) { $styleTxt = 'line-width=unknown (map predates grid-style; not guessed)' }
+  $inv = [System.Globalization.CultureInfo]::InvariantCulture
+  $vD = [math]::Round([double]$Gp.VDistPx, 2).ToString($inv)
+  $hD = [math]::Round([double]$Gp.HDistPx, 2).ToString($inv)
+  $vS = [math]::Round([double]$Gp.VScreenPx, 2).ToString($inv)
+  $hS = [math]::Round([double]$Gp.HScreenPx, 2).ToString($inv)
+  $alertTxt = 'alert=not evaluated (line width unknown and no --on-grid-alert given, so nothing decides "near")'
+  if ([double]$Gp.Radius -ge 0) {
+    $rTxt = [math]::Round([double]$Gp.Radius, 2).ToString($inv)
+    $src = 'line-width/2 + margin'
+    if (-not [bool]$Gp.StyleKnown) { $src = '--on-grid-alert only (line width unknown, not guessed)' }
+    $alertTxt = "alert-radius=$rTxt px image ($src)"
+  }
+  $verdict = 'no verdict - nothing decides "near" here (the distances above are still the measured ones)'
+  if ([double]$Gp.Radius -ge 0) {
+    if ([bool]$Gp.Near) { $verdict = 'ON or beside a grid line - this point may carry grid ink; read the coordinate off the labels or prefer find-text <small region> --needle <text>' }
+    else { $verdict = 'CLEAR of every grid line by more than that radius' }
+  }
+  return "  grid: step=$Grid px $styleTxt | nearest vertical line image x=$([int]$Gp.VLineIx) (screen $([int]$Gp.VLineSx)) is $vD image-px = $vS screen-px away; nearest horizontal line image y=$([int]$Gp.HLineIy) (screen $([int]$Gp.HLineSy)) is $hD image-px = $hS screen-px away | $alertTxt | VERDICT: $verdict"
+}
+
+# D-4 (v4.6.13): does a coordinate label overlap any text box? A label drawn on top of text
+# swallows glyphs for the very reader the grid exists for, so it is dropped rather than moved:
+# a moved label would name a coordinate the line is no longer at.
+function Test-GridLabelBox([double]$lx, [double]$ly, [double]$lw, [double]$lh, $boxes) {
+  foreach ($b in @($boxes)) {
+    if ($null -eq $b) { continue }
+    if ($lx -le $b.X1 -and ($lx + $lw) -ge $b.X0 -and $ly -le $b.Y1 -and ($ly + $lh) -ge $b.Y0) { return $true }
+  }
+  return $false
+}
+
+# D-4 (v4.6.13): the grid is PLANNED before a single pixel is drawn. One pure function decides
+# every line's image-space position, which runs of it survive the text boxes it must not cross,
+# and which labels still fit - so the geometry can be measured with no screen, no OCR and no
+# GDI+, and the renderer has no arithmetic of its own that could drift from what the echo says.
+# $rect is the captured region in SCREEN px, $scale is screen->image, and the labels stay ROUND
+# SCREEN values exactly as before D-4. $avoidRects are SCREEN-space text boxes; each is mapped
+# through the same transform and then grown by $pad plus half the stroke, so a gap is never
+# narrower than the line varnishing over it. X1/Y1 are the LAST pixel the gap covers (the
+# exclusive edge minus one): pad=0 therefore eats exactly the box and the padding is the same
+# number of pixels above/below and left/right (an inclusive B over an exclusive edge made the
+# bottom and right gap one pixel fatter - measured as above=18/below=17 on a symmetric box).
+function New-GridOverlayPlan([int]$iw, [int]$ih, $rect, [double]$scale, [int]$step, [string]$style, $avoidRects, [int]$pad = 2) {
+  if ($iw -le 0 -or $ih -le 0) { throw "grid plan: the image must be at least 1x1 px, got: ${iw}x${ih}" }
+  if ($scale -le 0) { throw "grid plan: scale must be > 0, got: $scale" }
+  if ($step -le 0) { throw "grid plan: step must be > 0, got: $step" }
+  if ($pad -lt 0) { $pad = 0 }
+  $spec = Get-GridStyleSpec $style
+  $half = [int][math]::Floor(([int]$spec.Width / 2))
+  $x = [int]$rect.X; $y = [int]$rect.Y; $w = [int]$rect.W; $h = [int]$rect.H
+  $boxes = New-Object System.Collections.ArrayList
+  foreach ($r in @($avoidRects)) {
+    if ($null -eq $r) { continue }
+    [void]$boxes.Add(@{
+      X0 = [int][math]::Floor((([double]$r.X) - $x) * $scale) - $pad - $half
+      Y0 = [int][math]::Floor((([double]$r.Y) - $y) * $scale) - $pad - $half
+      X1 = [int][math]::Ceiling((([double]$r.X) + ([double]$r.W) - $x) * $scale) + $pad + $half - 1
+      Y1 = [int][math]::Ceiling((([double]$r.Y) + ([double]$r.H) - $y) * $scale) + $pad + $half - 1
+    })
+  }
+  $lines = New-Object System.Collections.ArrayList
+  $avoided = 0; $dropped = 0
+  # vertical lines: the label sits at (ix+1, 1); horizontal ones at (1, iy+1). Both are the
+  # pre-D-4 positions, and the span is 0..dim - the same endpoints the old loop passed, so a
+  # plan with no boxes draws exactly what that loop drew.
+  $sx = [int]([math]::Ceiling($x / $step) * $step)
+  while ($sx -le ($x + $w)) {
+    $ix = [int][math]::Round(($sx - $x) * $scale)
+    if ($ix -ge 0 -and $ix -lt $iw) {
+      $gaps = New-Object System.Collections.ArrayList
+      foreach ($b in @($boxes)) {
+        if ($ix -ge $b.X0 -and $ix -le $b.X1) {
+          $g0 = [int][math]::Max(0, $b.Y0); $g1 = [int][math]::Min($ih, $b.Y1)
+          if ($g1 -ge $g0) { [void]$gaps.Add(@{ A = $g0; B = $g1 }) }
+        }
+      }
+      if (@($gaps).Count -gt 0) { $avoided++ }
+      $segs = @(Get-GridLineSegments $gaps 0 $ih)
+      $label = "$sx"
+      if (Test-GridLabelBox ([double]($ix + 1)) 1.0 ([double](7 * $label.Length + 4)) 14.0 $boxes) { $label = ''; $dropped++ }
+      [void]$lines.Add(@{ Vertical = $true; Sx = $sx; Sy = 0; Ix = $ix; Iy = 0; Segs = $segs; Label = $label; LabelX = [int]($ix + 1); LabelY = 1 })
+    }
+    $sx += $step
+  }
+  $sy = [int]([math]::Ceiling($y / $step) * $step)
+  while ($sy -le ($y + $h)) {
+    $iy = [int][math]::Round(($sy - $y) * $scale)
+    if ($iy -ge 0 -and $iy -lt $ih) {
+      $gaps = New-Object System.Collections.ArrayList
+      foreach ($b in @($boxes)) {
+        if ($iy -ge $b.Y0 -and $iy -le $b.Y1) {
+          $g0 = [int][math]::Max(0, $b.X0); $g1 = [int][math]::Min($iw, $b.X1)
+          if ($g1 -ge $g0) { [void]$gaps.Add(@{ A = $g0; B = $g1 }) }
+        }
+      }
+      if (@($gaps).Count -gt 0) { $avoided++ }
+      $segs = @(Get-GridLineSegments $gaps 0 $iw)
+      $label = "$sy"
+      if (Test-GridLabelBox 1.0 ([double]($iy + 1)) ([double](7 * $label.Length + 4)) 14.0 $boxes) { $label = ''; $dropped++ }
+      [void]$lines.Add(@{ Vertical = $false; Sx = 0; Sy = $sy; Ix = 0; Iy = $iy; Segs = $segs; Label = $label; LabelX = 1; LabelY = [int]($iy + 1) })
+    }
+    $sy += $step
+  }
+  return @{ Style = $spec.Name; Width = [int]$spec.Width; Alpha = [int]$spec.Alpha; R = [int]$spec.R; G = [int]$spec.G; B = [int]$spec.B;
+    Lines = @($lines); AvoidBoxes = @($boxes).Count; Avoided = $avoided; LabelsDropped = $dropped }
+}
+
+# D-4 (v4.6.13): the only renderer. It owns no geometry - every coordinate and every run comes
+# from the plan - so the drawn image and the planned numbers cannot disagree. Extracted from
+# Save-RectEx so the selftest can draw the REAL renderer onto a synthetic bitmap (offline).
+function Draw-GridOverlay($g, $plan) {
+  $penCol = [System.Drawing.Color]::FromArgb([int]$plan.Alpha, [int]$plan.R, [int]$plan.G, [int]$plan.B)
+  $font = New-Object System.Drawing.Font('Consolas', 7)
+  $pen = New-Object System.Drawing.Pen($penCol, ([single][int]$plan.Width))
+  $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 255, 0, 0))
+  try {
+    foreach ($ln in @($plan.Lines)) {
+      foreach ($sg in @($ln.Segs)) {
+        if ($ln.Vertical) { $g.DrawLine($pen, [int]$ln.Ix, [int]$sg.A, [int]$ln.Ix, [int]$sg.B) }
+        else { $g.DrawLine($pen, [int]$sg.A, [int]$ln.Iy, [int]$sg.B, [int]$ln.Iy) }
+      }
+      if ([string]$ln.Label) { $g.DrawString([string]$ln.Label, $font, $brush, [single]$ln.LabelX, [single]$ln.LabelY) }
+    }
+  } finally {
+    $pen.Dispose(); $font.Dispose(); $brush.Dispose()
+  }
+}
+
+# D-4 (v4.6.13): the text boxes a grid must not cross, read from the just-captured 1:1 bitmap
+# (screen origin = $originX,$originY). This NEVER throws: a capture must not fail because OCR is
+# missing - but it must SAY the gaps are absent instead of quietly drawing through text. The
+# engine's dimension cap is checked first: a 4K grab is one the recognizer would refuse anyway,
+# and that refusal costs the same seconds as a success would.
+function Get-GridAvoidRects([System.Drawing.Bitmap]$bmp, [int]$originX, [int]$originY) {
+  try {
+    $cap = Get-OcrMaxDimension
+    if ($cap -gt 0 -and ([long]$bmp.Width -gt $cap -or [long]$bmp.Height -gt $cap)) {
+      return @{ Rects = @(); Note = "the image is larger than the OCR engine's ${cap}px dimension cap" }
+    }
+    $res = Invoke-OcrBitmap $bmp
+    $out = New-Object System.Collections.ArrayList
+    foreach ($l in @($res.Lines)) {
+      if ($null -eq $l) { continue }
+      if ([int]$l.W -le 0 -or [int]$l.H -le 0) { continue }
+      [void]$out.Add(@{ X = $originX + [int]$l.X; Y = $originY + [int]$l.Y; W = [int]$l.W; H = [int]$l.H })
+    }
+    return @{ Rects = @($out); Note = '' }
+  } catch {
+    return @{ Rects = @(); Note = "OCR unavailable: $($_.Exception.Message)" }
+  }
 }
 
 # Captures the region 1:1, applies optional downscale/grid/mark, saves PNG and
@@ -3829,15 +4712,100 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
 # v1.5.1 WP-B: $mapWin (the resolved window object, when the capture is a
 # window grab) is recorded in the sidecar so imgclick/unmap can detect that
 # the window moved/resized since capture instead of silently mis-mapping.
-function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]$fit, [int]$grid, $marks, [string]$mapKind = '', $mapWin = $null, $mapRect = $null, $cf = $null) {
+function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]$fit, [int]$grid, $marks, [string]$mapKind = '', $mapWin = $null, $mapRect = $null, $cf = $null, [scriptblock]$occlRecheck = $null, [scriptblock]$captureStep = $null) {
   $autoGrid = $false
   Ensure-OutDir
-  $bmp = New-Object System.Drawing.Bitmap($w, $h)
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
-  $g.Dispose()
   $scale = 1.0
   if ($fit -gt 0 -and $w -gt $fit) { $scale = $fit / $w }
+  # D-4 (v4.6.13): the style is resolved before anything is grabbed, and a style with no grid to
+  # draw is refused HERE - before the capture - because "accepted and did nothing" is the shape
+  # this file keeps fixing (v2.8.0's --scale note). Get-OptValue, not $cf.X: under StrictMode an
+  # absent key on a caller-built table is a terminating error (X-02).
+  $gridStyle = 'thin'
+  $optStyle = Get-OptValue $cf 'GridStyle'
+  if ($optStyle) { $gridStyle = [string]$optStyle }
+  $styleAsked = [bool](Get-OptValue $cf 'GridStyleUser')
+  # v1.5.7 (D-6, J-04 B): a capture that the USER asked to fit AND that still comes out
+  # wider than 1000px gets a grid by default - that is exactly the image class where
+  # eyeballing fails twice (the owner measured (3590,50) vs a true (3562,32) on a
+  # --fit 1200/1400 shot). --no-grid turns it off; an explicit --grid always wins.
+  # The grid only ever exists on the saved PNG: hash/assert-hash and OCR read screen
+  # pixels, so no pixel judgement can be polluted by it. imgclick is the one reader that
+  # consumes this bitmap, so the step goes into the sidecar and imgclick warns about it.
+  # The width used here is the POST-fit one, computed from $w and $fit before the pixels
+  # exist - that is what lets the decision (and the refusal below) run pre-capture.
+  $iwAfterFit = $w
+  if ($scale -ne 1.0) { $iwAfterFit = [int][math]::Round($w * $scale) }
+  if ($grid -le 0 -and $null -ne $cf -and (Get-OptValue $cf 'FitUser') -and -not (Get-OptValue $cf 'GridUser') -and $fit -gt 0 -and $iwAfterFit -gt (Get-ShotViewerWidePx)) {
+    $grid = 50
+    $autoGrid = $true
+  }
+  if ($styleAsked -and $grid -le 0) {
+    throw "grid style: --grid-style only applies when a grid is actually drawn, and this capture draws none (--no-grid, or the width already fits). Drop --grid-style, or add --grid <step>."
+  }
+  # C (v4.8.0): the quality gate and the bounded re-capture. The DEFAULT semantics are unchanged:
+  # with no --min-ink the gate is OFF and one capture happens exactly as before (a legal white
+  # canvas is a legal frame - nothing judges it by default). With --min-ink the loop captures and
+  # MEASURES on the 1:1 frame (pre-fit, pre-grid, pre-overlay: a bicubic shrink blurs
+  # threshold-adjacent ink, and the grid lines are ink WE drew - measuring them would grade the
+  # pen), re-runs the per-attempt checks the caller owes (the occlusion callback; the host-stability
+  # assert for bound crops), and only a frame that passes reaches everything below. A refused
+  # frame publishes NOTHING - the write path is entirely outside the loop, so a refused capture
+  # leaves a same-name previous pair byte-identical and a new path gets no files.
+  $q = New-CaptureQualityDefaults
+  if ($null -ne $cf) {
+    foreach ($qk in @('MinInk', 'InkVs', 'InkTol', 'InkArea', 'InkStride', 'Retry', 'RetryBudget')) {
+      $qv = Get-OptValue $cf $qk
+      if ($null -ne $qv) { $q[$qk] = $qv }
+    }
+  }
+  $gateOn = ([double]$q['MinInk'] -ge 0)
+  $capStep = $captureStep
+  if ($null -eq $capStep) {
+    $capStep = {
+      param([int]$n)
+      $b = New-Object System.Drawing.Bitmap($w, $h)
+      $g2c = [System.Drawing.Graphics]::FromImage($b)
+      $g2c.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+      $g2c.Dispose()
+      return $b
+    }
+  }
+  # the bound-crop snapshot exists BEFORE the loop so every attempt (and the publish below) reads
+  # the SAME frozen baseline the caller froze pre-capture - never a re-read that would bless a move.
+  $mapSnap = $null
+  if ($mapKind -and $mapKind -ne 'win' -and $null -ne $mapWin) {
+    if ($null -eq $mapRect) { throw "$mapKind : the host rect resolved BEFORE the capture did not reach Save-RectEx - internal call site lost the snapshot; re-run the capture" }
+    $mapSnap = @{ Pid = [int]$mapWin.Pid; Handle = [IntPtr]$mapWin.Handle; Title = [string]$mapWin.Title; X = [int]$mapRect.X; Y = [int]$mapRect.Y; W = [int]$mapRect.W; H = [int]$mapRect.H; Sel = '' }
+  }
+  $qualityLines = @()
+  $qualityTail = ''
+  if (-not $gateOn) {
+    $bmp = & $capStep 1
+  } else {
+    $preAttempt = {
+      param([int]$n)
+      if ($null -ne $occlRecheck) { & $occlRecheck $n }
+      if ($null -ne $mapSnap) { [void](Assert-CaptureHostStable $mapSnap $mapKind) }
+    }
+    $cap = Invoke-BoundedCapture $capStep $q $preAttempt
+    $bmp = $cap.Frame
+    $qualityLines = @($cap.Lines)
+    $occNote = $(if ($null -ne $occlRecheck) { 'occlusion=re-checked before every attempt' } else { 'occlusion=not re-checked (no gate on this path)' })
+    $qualityTail = "quality: verdict=pass attempts=$($cap.Attempts) spent=$($cap.SpentMs)ms budget=$([int]$q['RetryBudget'])ms $occNote"
+    foreach ($ql in $qualityLines) { Write-Output $ql }
+    Write-Output ('  ' + $qualityTail)
+  }
+  # D-4 (v4.6.13): the text boxes are read off the 1:1 frame BEFORE the --fit downscale - they
+  # are screen-space facts, and the recognizer reads more at 1:1 than after a bicubic shrink.
+  # Get-GridAvoidRects never throws; an unavailable engine becomes a named line in the echo.
+  $avoidRects = @()
+  $avoidNote = ''
+  if ($grid -gt 0) {
+    $gva = Get-GridAvoidRects $bmp $x $y
+    $avoidRects = @($gva.Rects)
+    $avoidNote = [string]$gva.Note
+  }
   if ($scale -ne 1.0) {
     $small = New-Object System.Drawing.Bitmap([int][math]::Round($w * $scale), [int][math]::Round($h * $scale))
     $g2 = [System.Drawing.Graphics]::FromImage($small)
@@ -3848,44 +4816,14 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     $bmp = $small
   }
   $iw = $bmp.Width; $ih = $bmp.Height
-  # v1.5.7 (D-6, J-04 B): a capture that the USER asked to fit AND that still comes out
-  # wider than 1000px gets a grid by default - that is exactly the image class where
-  # eyeballing fails twice (the owner measured (3590,50) vs a true (3562,32) on a
-  # --fit 1200/1400 shot). --no-grid turns it off; an explicit --grid always wins.
-  # The grid only ever exists on the saved PNG: hash/assert-hash and OCR read screen
-  # pixels, so no pixel judgement can be polluted by it. imgclick is the one reader that
-  # consumes this bitmap, so the step goes into the sidecar and imgclick warns about it.
-  if ($grid -le 0 -and $null -ne $cf -and $cf.FitUser -and -not $cf.GridUser -and $fit -gt 0 -and $iw -gt (Get-ShotViewerWidePx)) {
-    $grid = 50
-    $autoGrid = $true
-  }
   if ($grid -gt 0 -or @($marks).Count -gt 0) {
     $g3 = [System.Drawing.Graphics]::FromImage($bmp)
     if ($grid -gt 0) {
-      # grid lines sit on round SCREEN coordinates so the labels can be read
-      # directly as screen pixels regardless of the fit scale
-      $font = New-Object System.Drawing.Font('Consolas', 7)
-      $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(140, 255, 0, 0))
-      $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 255, 0, 0))
-      $sx = [int]([math]::Ceiling($x / $grid) * $grid)
-      while ($sx -le ($x + $w)) {
-        $ix = [int][math]::Round(($sx - $x) * $scale)
-        if ($ix -ge 0 -and $ix -lt $iw) {
-          $g3.DrawLine($pen, $ix, 0, $ix, $ih)
-          $g3.DrawString("$sx", $font, $brush, [single]($ix + 1), [single]1)
-        }
-        $sx += $grid
-      }
-      $sy = [int]([math]::Ceiling($y / $grid) * $grid)
-      while ($sy -le ($y + $h)) {
-        $iy = [int][math]::Round(($sy - $y) * $scale)
-        if ($iy -ge 0 -and $iy -lt $ih) {
-          $g3.DrawLine($pen, 0, $iy, $iw, $iy)
-          $g3.DrawString("$sy", $font, $brush, [single]1, [single]($iy + 1))
-        }
-        $sy += $grid
-      }
-      $font.Dispose(); $pen.Dispose(); $brush.Dispose()
+      # D-4 (v4.6.13): geometry, style, gaps and label suppression all come from the plan; this
+      # block only hands it to the one renderer. Grid lines still sit on round SCREEN
+      # coordinates so the labels can be read directly as screen pixels at any --fit scale.
+      $plan = New-GridOverlayPlan $iw $ih @{ X = $x; Y = $y; W = $w; H = $h } $scale $grid $gridStyle $avoidRects
+      Draw-GridOverlay $g3 $plan
     }
     $penM = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(255, 0, 120, 255), 1)
     foreach ($m in @($marks)) {
@@ -3904,10 +4842,9 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
   # a NEW PNG beside the OLD .map.txt; once the window returned, a strict imgclick read 'ok' for
   # a pair that no longer described the same frame. Refusing first means a failed re-capture
   # leaves the previous valid pair byte-identical (and a brand-new path gets neither file).
-  $mapSnap = $null
-  if ($mapKind -and $mapKind -ne 'win' -and $null -ne $mapWin) {
-    if ($null -eq $mapRect) { throw "$mapKind : the host rect resolved BEFORE the capture did not reach Save-RectEx - internal call site lost the snapshot; re-run the capture" }
-    $mapSnap = @{ Pid = [int]$mapWin.Pid; Handle = [IntPtr]$mapWin.Handle; Title = [string]$mapWin.Title; X = [int]$mapRect.X; Y = [int]$mapRect.Y; W = [int]$mapRect.W; H = [int]$mapRect.H; Sel = '' }
+  # The snapshot itself is frozen BEFORE the capture loop now (C); this is the same object
+  # re-asserted at publish time - a host that moved during the loop is refused here too.
+  if ($null -ne $mapSnap) {
     [void](Assert-CaptureHostStable $mapSnap $mapKind)
   }
   # v4.6.10 (CU-CLOSEOUT-REVIEW-20261029-01 P2): the sidecar is published BEFORE the PNG it describes.
@@ -3924,7 +4861,7 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     try { $bmp.Save($msP, [System.Drawing.Imaging.ImageFormat]::Png); $pngBytes = $msP.ToArray() } finally { $msP.Dispose(); $bmp.Dispose() }
     $shaW = [System.Security.Cryptography.SHA256]::Create()
     try { $pendingSha = ([BitConverter]::ToString($shaW.ComputeHash($pngBytes)) -replace '-','').ToLower() } finally { $shaW.Dispose() }
-    Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha
+    Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha $null $gridStyle
     [System.IO.File]::WriteAllBytes($path, $pngBytes)
   } else {
     # v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A2): a capture that publishes NO sidecar (shot, script
@@ -3940,7 +4877,7 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
   }
   $size = (Get-Item -LiteralPath $path).Length
   $lines = New-Object System.Collections.ArrayList
-  $gridTxt = $(if ($grid -gt 0) { "  grid=$grid$(if ($autoGrid) { ' (auto: --fit and wider than 1000px; --no-grid turns it off)' } else { '' })" } else { '' })
+  $gridTxt = $(if ($grid -gt 0) { "  grid=$grid style=$gridStyle$(if ($avoidNote) { " avoid=off ($avoidNote)" } else { " avoid=$(@($avoidRects).Count) text line(s) kept clear" })$(if ($autoGrid) { ' (auto: --fit and wider than 1000px; --no-grid turns it off)' } else { '' })" } else { '' })
   if ($scale -eq 1.0) {
     [void]$lines.Add("saved $path  rect=($x,$y) size=${w}x${h}  bytes=$size  coords: screen = image + ($x,$y)  (image ${iw}x${ih} px, 1:1)$gridTxt")
     if ($w -gt 1400) {
@@ -3976,7 +4913,7 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
 # v1.5.1 WP-B: kind=win sidecars additionally record pid/handle/title_b64
 # (the staleness anchor). Title is base64 because window titles may contain
 # newlines, '=' or non-ASCII bytes.
-function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '') {
+function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '', $tileInfo = $null, [string]$gridStyle = '') {
   $inv = [System.Globalization.CultureInfo]::InvariantCulture
   $s = [math]::Round($scale, 6).ToString($inv)
   $text = "origin_x=$ox`r`norigin_y=$oy`r`nscale=$s`r`nout_w=$ow`r`nout_h=$oh`r`nkind=$kind`r`n"
@@ -3984,6 +4921,16 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
   # reads exactly this bitmap - so the fact has to travel with the file instead of being
   # discoverable only by looking at the PNG.
   if ($gridStep -gt 0) { $text += "grid=$gridStep`r`n" }
+  # B-3 (v4.8.0): the STEP alone cannot say how WIDE the line is, and the width is what decides
+  # whether a point read off the image sits on ink or beside it. D-4 put the width in one table
+  # (Get-GridStyleSpec) for the renderer; it now travels with the file. A grid with no style named
+  # writes grid-style=unknown rather than inheriting 'thin' by default - the reader must be able to
+  # tell "this map says the stroke is 1px" from "this map never said, and the tool is not guessing".
+  if ($gridStep -gt 0) {
+    $styleOut = 'unknown'
+    if ($gridStyle -ne '' -and @('thin', 'bold', 'contrast') -contains [string]$gridStyle) { $styleOut = [string]$gridStyle }
+    $text += "grid-style=$styleOut`r`n"
+  }
   if ($kind -eq 'win' -and $null -ne $hostWin) {
     $hp = [int]$hostWin.Pid
     $hh = ([IntPtr]$hostWin.Handle).ToInt64()
@@ -4005,6 +4952,15 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
     $hh2 = ([IntPtr]$hostWin.Handle).ToInt64()
     $tb2 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$hostWin.Title))
     $text += "pid=$hp2`r`nhandle=$hh2`r`ntitle_b64=$tb2`r`nhost_x=$([int]$hostRect.X)`r`nhost_y=$([int]$hostRect.Y)`r`nhost_w=$([int]$hostRect.W)`r`nhost_h=$([int]$hostRect.H)`r`n"
+  }
+  # D-2 (v4.6.13): a tile is one cell of a plan, and the plan is what makes a set of
+  # images one image again. Every tile map therefore records the WHOLE grid it came
+  # from (its own cell, the counts, the stride, the overlap and the REGION) instead of
+  # leaving the stitcher to re-derive a geometry nobody wrote down. The region origin is
+  # the tile's own origin only for r0c0; all the rest is arithmetic the reader can check.
+  if ($kind -eq 'tile') {
+    if ($null -eq $tileInfo) { throw 'map sidecar: a tile map must carry its grid - write tiles through tile <x> <y> <w> <h> --out-dir <dir>, never by hand' }
+    $text += "tile_c=$([int]$tileInfo.C)`r`ntile_r=$([int]$tileInfo.R)`r`ntile_cols=$([int]$tileInfo.Cols)`r`ntile_rows=$([int]$tileInfo.Rows)`r`ntile_overlap=$([int]$tileInfo.Overlap)`r`ntile_step_x=$([int]$tileInfo.StepX)`r`ntile_step_y=$([int]$tileInfo.StepY)`r`nregion_x=$([int]$tileInfo.RegionX)`r`nregion_y=$([int]$tileInfo.RegionY)`r`nregion_w=$([int]$tileInfo.RegionW)`r`nregion_h=$([int]$tileInfo.RegionH)`r`n"
   }
   # v4.6.8 (CU-467-REVIEW-20261028-01 A1-b): a sidecar must say WHICH BYTES it describes. The
   # capture now refuses before saving, so a normal failure never lands; this hash is the second
@@ -4080,8 +5036,31 @@ function Read-MapSidecar([string]$imagePath) {
   if ($raw -match '(?m)^host_y=(-?\d+)\s*$') { $hy = [int]$Matches[1] }
   if ($raw -match '(?m)^host_w=(\d+)\s*$') { $hwd = [int]$Matches[1] }
   if ($raw -match '(?m)^host_h=(\d+)\s*$') { $hht = [int]$Matches[1] }
-  if ($null -eq $ox -or $null -eq $oy -or $null -eq $sc -or $sc -le 0 -or $null -eq $ow -or $null -eq $oh -or $kd -notin @('win', 'rect', 'zoom')) {
+  # D-2 (v4.6.13): the tile grid a kind=tile sidecar carries (see Write-MapSidecar).
+  $tc = $null; $tr = $null; $tcols = $null; $trows = $null; $tov = $null; $tsx = $null; $tsy = $null
+  if ($raw -match '(?m)^tile_c=(\d+)\s*$') { $tc = [int]$Matches[1] }
+  if ($raw -match '(?m)^tile_r=(\d+)\s*$') { $tr = [int]$Matches[1] }
+  if ($raw -match '(?m)^tile_cols=(\d+)\s*$') { $tcols = [int]$Matches[1] }
+  if ($raw -match '(?m)^tile_rows=(\d+)\s*$') { $trows = [int]$Matches[1] }
+  if ($raw -match '(?m)^tile_overlap=(\d+)\s*$') { $tov = [int]$Matches[1] }
+  if ($raw -match '(?m)^tile_step_x=(\d+)\s*$') { $tsx = [int]$Matches[1] }
+  if ($raw -match '(?m)^tile_step_y=(\d+)\s*$') { $tsy = [int]$Matches[1] }
+  $rgx = $null; $rgy = $null; $rgw = $null; $rgh = $null
+  if ($raw -match '(?m)^region_x=(-?\d+)\s*$') { $rgx = [int]$Matches[1] }
+  if ($raw -match '(?m)^region_y=(-?\d+)\s*$') { $rgy = [int]$Matches[1] }
+  if ($raw -match '(?m)^region_w=(\d+)\s*$') { $rgw = [int]$Matches[1] }
+  if ($raw -match '(?m)^region_h=(\d+)\s*$') { $rgh = [int]$Matches[1] }
+  if ($null -eq $ox -or $null -eq $oy -or $null -eq $sc -or $sc -le 0 -or $null -eq $ow -or $null -eq $oh -or $kd -notin @('win', 'rect', 'zoom', 'tile', 'stitch')) {
     throw "map sidecar malformed: $mapPath - re-capture the image"
+  }
+  if ($kd -eq 'tile') {
+    # A tile without its grid is a picture nobody can place again: refuse it here, at the
+    # same chokepoint imgclick/unmap/stitch all pass, instead of guessing a 0,0 origin.
+    if ($null -eq $tc -or $null -eq $tr -or $null -eq $tcols -or $null -eq $trows -or $null -eq $tov -or
+      $null -eq $tsx -or $null -eq $tsy -or $null -eq $rgx -or $null -eq $rgy -or $null -eq $rgw -or $null -eq $rgh -or
+      $tcols -lt 1 -or $trows -lt 1 -or $tsx -lt 1 -or $tsy -lt 1 -or $tc -ge $tcols -or $tr -ge $trows -or $rgw -lt 1 -or $rgh -lt 1) {
+      throw "map sidecar malformed (kind=tile without its grid - tile_c/tile_r/tile_cols/tile_rows/tile_overlap/tile_step_x/tile_step_y/region_x/region_y/region_w/region_h): $mapPath - re-run 'tile' so the tile and its map are written together"
+    }
   }
   $title = ''
   if ($hTb) { try { $title = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($hTb)) } catch { $title = '' } }
@@ -4098,6 +5077,18 @@ function Read-MapSidecar([string]$imagePath) {
   }
   $gStep = 0
   if ($raw -match '(?m)^grid=(\d+)\s*$') { $gStep = [int]$Matches[1] }
+  # B-3 (v4.8.0): the stroke style. ABSENT is not 'thin' - a map written before this version does
+  # not say, and the only honest read of "does not say" is unknown, which costs the caller the
+  # line-width half of the answer and nothing else. A field that is present but holds a name this
+  # tool never draws is damage in the same class as a truncated png_sha256: refused by name, not
+  # quietly demoted to unknown (a map that claims a style the renderer cannot produce means the
+  # file was edited, and every number downstream would inherit that).
+  $gStyle = 'unknown'
+  if ($raw -match '(?m)^grid-style=([^\r\n]*)\s*$') {
+    $gStyle = ([string]$Matches[1]).Trim()
+    if (@('thin', 'bold', 'contrast', 'unknown') -notcontains $gStyle) { throw "map sidecar malformed (grid-style='$gStyle' is not unknown|thin|bold|contrast): $mapPath - a style this tool never draws is not a legacy field; re-capture the image" }
+    if ($gStyle -eq '') { throw "map sidecar malformed (grid-style is present but empty): $mapPath - an unreadable field is not a legacy sidecar; re-capture the image" }
+  }
   # v4.6.8 (CU-467-REVIEW-20261028-01 A1-b): when the sidecar names the PNG bytes it was written
   # for, the pair is checked HERE, at the one chokepoint every reader (imgclick/unmap/help paths)
   # passes. A re-capture that failed after overwriting the PNG used to leave the old sidecar
@@ -4124,7 +5115,9 @@ function Read-MapSidecar([string]$imagePath) {
       throw "map sidecar describes a DIFFERENT image: $mapPath records png_sha256=$($pngSha.Substring(0, 12))... but '$imagePath' hashes to $($pngNow.Substring(0, 12))... - the PNG was replaced after this sidecar was written (a failed re-capture, or a file copied over it); re-capture under a new name and do not use this pair"
     }
   }
-  return @{ OriginX = $ox; OriginY = $oy; Scale = $sc; OutW = $ow; OutH = $oh; Kind = $kd; Grid = $gStep; HostPid = $(if ($null -ne $hPid) { $hPid } else { 0 }); HostHwnd = $hHwnd; HostTitle = $title; HostX = $hx; HostY = $hy; HostW = $hwd; HostH = $hht; PngSha = $pngSha }
+  return @{ OriginX = $ox; OriginY = $oy; Scale = $sc; OutW = $ow; OutH = $oh; Kind = $kd; Grid = $gStep; GridStyle = $gStyle; HostPid = $(if ($null -ne $hPid) { $hPid } else { 0 }); HostHwnd = $hHwnd; HostTitle = $title; HostX = $hx; HostY = $hy; HostW = $hwd; HostH = $hht; PngSha = $pngSha;
+    TileC = $tc; TileR = $tr; TileCols = $tcols; TileRows = $trows; TileOverlap = $tov; TileStepX = $tsx; TileStepY = $tsy;
+    RegionX = $rgx; RegionY = $rgy; RegionW = $rgw; RegionH = $rgh }
 }
 
 # Image px -> screen px using a sidecar (single formula for win/rect/zoom).
@@ -4213,6 +5206,189 @@ function Test-MapSidecarStale($map) {
     return @{ Verdict = 'gone'; Msg = 'window vanished while checking - re-capture the image'; OldX = $rx; OldY = $ry; NewX = $null; NewY = $null; OldW = $rw; OldH = $rh; NewW = $null; NewH = $null }
   }
   return (Get-SidecarRectVerdict ([string]$map.HostTitle) $rx $ry $rw $rh $obs.Rect ([bool]$obs.Iconic))
+}
+
+# --- D-2 (v4.6.13): tile grids and the stitch that rebuilds them ----------
+# A region wider than one capture is cut into a grid of tiles. The geometry is ONE pure
+# planner so the writer, the sidecar and the stitcher cannot disagree about it:
+#   stride = step; non-final tiles are step+overlap wide; the LAST tile per axis absorbs
+#   whatever remains. The union is therefore exactly the region, and every output pixel has
+#   one unambiguous owner in the stitch (the FIRST tile that covers it - a non-final tile
+#   contributes exactly $step columns, the last one contributes the remainder).
+# The writer takes the capture as a scriptblock so the real PNG + sidecar + reader path can
+# be driven by a synthetic bitmap offline, without owning a screen.
+function Get-TilePlan([int]$x, [int]$y, [int]$w, [int]$h, [string]$mode, [int]$tileW, [int]$tileH, [int]$cols, [int]$rows, [int]$overlap) {
+  if ($w -lt 1 -or $h -lt 1) { throw "tile: the region must be at least 1x1 px, got: ${w}x${h}" }
+  if ($overlap -lt 0) { throw "tile: --overlap must be >= 0, got: $overlap" }
+  if ($overlap -ge $w -or $overlap -ge $h) { throw "tile: --overlap $overlap must stay below both region dimensions (${w}x${h}) - a tile cannot overlap more than the region it covers" }
+  $stepX = 0; $stepY = 0
+  if ($mode -eq 'tile') {
+    if ($tileW -lt 1 -or $tileH -lt 1) { throw "tile: --tile needs WxH with both sides >= 1, got: ${tileW}x${tileH}" }
+    if ($overlap -ge $tileW -or $overlap -ge $tileH) { throw "tile: --overlap $overlap must stay below the --tile size (${tileW}x${tileH}) - otherwise a tile would not advance" }
+    $stepX = $tileW - $overlap
+    $stepY = $tileH - $overlap
+    $cols = [int][math]::Ceiling(($w - $overlap) / [double]$stepX)
+    $rows = [int][math]::Ceiling(($h - $overlap) / [double]$stepY)
+  } elseif ($mode -eq 'grid') {
+    if ($cols -lt 1 -or $rows -lt 1) { throw "tile: --grid needs CxR with both counts >= 1, got: ${cols}x${rows}" }
+    $stepX = [int][math]::Floor(($w - $overlap) / [double]$cols)
+    $stepY = [int][math]::Floor(($h - $overlap) / [double]$rows)
+    if ($stepX -lt 1 -or $stepY -lt 1) { throw "tile: --grid ${cols}x${rows} is denser than the ${w}x${h} region allows (stride ${stepX}x${stepY}) - lower the counts or the overlap" }
+  } else {
+    throw "tile: exactly one plan is required: --tile WxH (tile size) or --grid CxR (columns x rows)"
+  }
+  if ($cols -gt 64 -or $rows -gt 64 -or ($cols * $rows) -gt 400) {
+    throw "tile: the plan would write $(($cols * $rows)) tiles (${cols}x${rows}) - the cap is 400 images per set and 64 per axis; enlarge --tile, use fewer --grid cells, or split the region yourself"
+  }
+  $tiles = New-Object System.Collections.ArrayList
+  for ($r = 0; $r -lt $rows; $r++) {
+    for ($c = 0; $c -lt $cols; $c++) {
+      $tw = $stepX + $overlap
+      if ($c -eq ($cols - 1)) { $tw = $w - $c * $stepX }
+      $th = $stepY + $overlap
+      if ($r -eq ($rows - 1)) { $th = $h - $r * $stepY }
+      if ($tw -lt 1 -or $th -lt 1) { throw "tile: internal geometry error at c=$c r=$r (${tw}x${th}) - refusing to write a zero-size tile" }
+      [void]$tiles.Add(@{ C = $c; R = $r; X = ($x + $c * $stepX); Y = ($y + $r * $stepY); W = $tw; H = $th })
+    }
+  }
+  return @{ X = $x; Y = $y; W = $w; H = $h; Cols = $cols; Rows = $rows; StepX = $stepX; StepY = $stepY; Overlap = $overlap; Mode = $mode; Tiles = @($tiles) }
+}
+
+# Writes the set: one PNG plus one kind=tile map per cell, map BEFORE image (the same
+# publication order every capture in this file uses). Returns one record per tile.
+function Export-TileSet($plan, [string]$dir, [string]$stamp, $grab) {
+  $out = New-Object System.Collections.ArrayList
+  foreach ($t in @($plan.Tiles)) {
+    $path = Join-Path $dir ('tile_' + $stamp + '_r' + [int]$t.R + '_c' + [int]$t.C + '.png')
+    $bmp = & $grab ([int]$t.X) ([int]$t.Y) ([int]$t.W) ([int]$t.H)
+    if ($null -eq $bmp) { throw "tile: the capture returned no bitmap for c=$($t.C) r=$($t.R)" }
+    try {
+      $ms = New-Object System.IO.MemoryStream
+      try { $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $bytes = $ms.ToArray() } finally { $ms.Dispose() }
+    } finally { $bmp.Dispose() }
+    $shaH = [System.Security.Cryptography.SHA256]::Create()
+    try { $sha = ([BitConverter]::ToString($shaH.ComputeHash($bytes)) -replace '-', '').ToLower() } finally { $shaH.Dispose() }
+    $info = @{ C = [int]$t.C; R = [int]$t.R; Cols = [int]$plan.Cols; Rows = [int]$plan.Rows; Overlap = [int]$plan.Overlap;
+      StepX = [int]$plan.StepX; StepY = [int]$plan.StepY; RegionX = [int]$plan.X; RegionY = [int]$plan.Y; RegionW = [int]$plan.W; RegionH = [int]$plan.H }
+    Write-MapSidecar $path ([int]$t.X) ([int]$t.Y) 1.0 ([int]$t.W) ([int]$t.H) 'tile' $null 0 $null $sha $info
+    [System.IO.File]::WriteAllBytes($path, $bytes)
+    [void]$out.Add(@{ Path = $path; C = [int]$t.C; R = [int]$t.R; X = [int]$t.X; Y = [int]$t.Y; W = [int]$t.W; H = [int]$t.H; Bytes = $bytes.Length; Sha = $sha })
+  }
+  return @($out)
+}
+
+# Reads a directory back into the plan it was written from, through the SAME sidecar reader
+# every other command uses (so a tile is hash-verified before a single pixel is trusted).
+# Refuses: a foreign kind, a mixed set, a duplicate cell, a tile that is not where its grid
+# says, and an incomplete set. Non-tile maps in the directory are IGNORED AND NAMED - a
+# shared capture folder must stay usable, but silence is not.
+function Get-StitchPlan([string]$dir) {
+  if (-not (Test-Path -LiteralPath $dir -PathType Container)) { throw "stitch: not a directory: $dir" }
+  $maps = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.map.txt' | Sort-Object Name)
+  if (@($maps).Count -eq 0) { throw "stitch: no *.map.txt in $dir - point it at the --out-dir of a 'tile' run (each tile writes <name>.png plus <name>.png.map.txt)" }
+  $grid = $null
+  $cells = @{}
+  $ignored = New-Object System.Collections.ArrayList
+  $seen = 0
+  foreach ($m in @($maps)) {
+    $img = [string]$m.FullName
+    $img = $img.Substring(0, $img.Length - 8)
+    $mp = Read-MapSidecar $img
+    if ([string]$mp.Kind -ne 'tile') { [void]$ignored.Add($m.Name + ' (kind=' + [string]$mp.Kind + ')'); continue }
+    $seen = $seen + 1
+    if ([double]$mp.Scale -ne 1.0) { throw "stitch: $($m.Name) is not 1:1 (scale=$($mp.Scale)) - a tile set is written unscaled; re-run 'tile'" }
+    if ($null -eq $grid) {
+      $grid = @{ Cols = [int]$mp.TileCols; Rows = [int]$mp.TileRows; Overlap = [int]$mp.TileOverlap; StepX = [int]$mp.TileStepX; StepY = [int]$mp.TileStepY;
+        X = [int]$mp.RegionX; Y = [int]$mp.RegionY; W = [int]$mp.RegionW; H = [int]$mp.RegionH }
+    } elseif ([int]$mp.TileCols -ne [int]$grid.Cols -or [int]$mp.TileRows -ne [int]$grid.Rows -or [int]$mp.TileOverlap -ne [int]$grid.Overlap -or
+      [int]$mp.TileStepX -ne [int]$grid.StepX -or [int]$mp.TileStepY -ne [int]$grid.StepY -or
+      [int]$mp.RegionX -ne [int]$grid.X -or [int]$mp.RegionY -ne [int]$grid.Y -or [int]$mp.RegionW -ne [int]$grid.W -or [int]$mp.RegionH -ne [int]$grid.H) {
+      throw "stitch: $($m.Name) belongs to a DIFFERENT tile set than the first tile map - its grid is $($mp.TileCols)x$($mp.TileRows) over region ($($mp.RegionX),$($mp.RegionY)) $($mp.RegionW)x$($mp.RegionH), the set in hand is $($grid.Cols)x$($grid.Rows) over ($($grid.X),$($grid.Y)) $($grid.W)x$($grid.H). One directory, one set"
+    }
+    $c = [int]$mp.TileC; $r = [int]$mp.TileR
+    $ex = [int]$grid.X + $c * [int]$grid.StepX
+    $ey = [int]$grid.Y + $r * [int]$grid.StepY
+    $ew = [int]$grid.StepX + [int]$grid.Overlap
+    if ($c -eq ([int]$grid.Cols - 1)) { $ew = [int]$grid.W - $c * [int]$grid.StepX }
+    $eh = [int]$grid.StepY + [int]$grid.Overlap
+    if ($r -eq ([int]$grid.Rows - 1)) { $eh = [int]$grid.H - $r * [int]$grid.StepY }
+    if ([int]$mp.OriginX -ne $ex -or [int]$mp.OriginY -ne $ey -or [int]$mp.OutW -ne $ew -or [int]$mp.OutH -ne $eh) {
+      throw "stitch: $($m.Name) does not sit where its own grid says - it records origin ($($mp.OriginX),$($mp.OriginY)) $($mp.OutW)x$($mp.OutH), the plan puts c=$c r=$r at ($ex,$ey) ${ew}x${eh}. The sidecar and the grid disagree"
+    }
+    $key = "$c,$r"
+    if ($cells.ContainsKey($key)) { throw "stitch: two tiles claim c=$c r=$r ($($cells[$key].Name) and $($m.Name)) - a set has exactly one tile per cell; stitch a directory that holds one run" }
+    $cells[$key] = @{ Path = $img; Name = $m.Name; C = $c; R = $r; X = $ex; Y = $ey; W = $ew; H = $eh; Sha = [string]$mp.PngSha }
+  }
+  if ($seen -eq 0) { throw "stitch: $dir holds $(@($ignored).Count) map file(s) but none is a tile ($(@($ignored) -join '; ')) - a stitch reads a set written by 'tile'" }
+  $missing = New-Object System.Collections.ArrayList
+  for ($r2 = 0; $r2 -lt [int]$grid.Rows; $r2++) {
+    for ($c2 = 0; $c2 -lt [int]$grid.Cols; $c2++) { if (-not $cells.ContainsKey("$c2,$r2")) { [void]$missing.Add("c=$c2 r=$r2") } }
+  }
+  if (@($missing).Count -gt 0) {
+    throw "stitch: the tile set is INCOMPLETE - $(@($missing).Count) of $(([int]$grid.Cols) * ([int]$grid.Rows)) cell(s) are missing: $(@($missing) -join ', '). A partial set cannot be rebuilt honestly; re-run 'tile' into a directory of its own"
+  }
+  $ordered = New-Object System.Collections.ArrayList
+  for ($r3 = 0; $r3 -lt [int]$grid.Rows; $r3++) {
+    for ($c3 = 0; $c3 -lt [int]$grid.Cols; $c3++) { [void]$ordered.Add($cells["$c3,$r3"]) }
+  }
+  return @{ Cols = [int]$grid.Cols; Rows = [int]$grid.Rows; Overlap = [int]$grid.Overlap; StepX = [int]$grid.StepX; StepY = [int]$grid.StepY;
+    X = [int]$grid.X; Y = [int]$grid.Y; W = [int]$grid.W; H = [int]$grid.H; Tiles = @($ordered); Ignored = @($ignored) }
+}
+
+# The stitch itself: byte-exact row copies, no resampling. Each non-final tile gives up
+# exactly $StepX/$StepY pixels; the last one per axis gives the remainder.
+# 32 bpp ARGB, because that is what every capture in this tool writes: the default Bitmap
+# constructor is Format32bppArgb and CopyFromScreen fills alpha=255 (measured), so the tile
+# grab and Save-RectEx both produce it. A rebuilt region then encodes to the SAME PNG bytes
+# a direct rect of that region produces, which is the round-trip claim this feature makes.
+function Convert-TileSetToBitmap($stitch) {
+  $dst = New-Object System.Drawing.Bitmap([int]$stitch.W, [int]$stitch.H, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $dstData = $null
+  try {
+    # the rectangle is built from parenthesised values on purpose: in the positional
+    # `New-Object Type a, b, c` form PowerShell passes `[int]$x.W` through as LITERAL TEXT
+    # instead of evaluating the cast (measured: the LockBits call failed with
+    # "cannot convert [int]System.Collections.Hashtable.W to Int32").
+    $dstRect = New-Object System.Drawing.Rectangle -ArgumentList 0, 0, ([int]$stitch.W), ([int]$stitch.H)
+    $dstData = $dst.LockBits($dstRect, [System.Drawing.Imaging.ImageLockMode]::WriteOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    foreach ($t in @($stitch.Tiles)) {
+      $copyW = [int]$stitch.StepX
+      if ([int]$t.C -eq ([int]$stitch.Cols - 1)) { $copyW = [int]$stitch.W - [int]$t.C * [int]$stitch.StepX }
+      $copyH = [int]$stitch.StepY
+      if ([int]$t.R -eq ([int]$stitch.Rows - 1)) { $copyH = [int]$stitch.H - [int]$t.R * [int]$stitch.StepY }
+      $bytes = [System.IO.File]::ReadAllBytes([string]$t.Path)
+      $ms = New-Object System.IO.MemoryStream
+      try {
+        $ms.Write($bytes, 0, $bytes.Length)
+        $ms.Position = 0
+        $src = New-Object System.Drawing.Bitmap($ms)
+        try {
+          if ($src.PixelFormat -ne [System.Drawing.Imaging.PixelFormat]::Format32bppArgb) {
+            throw "stitch: '$($t.Path)' decoded as $($src.PixelFormat), not Format32bppArgb - it was not written by 'tile' (or it was re-encoded); re-capture the set"
+          }
+          $srcRect = New-Object System.Drawing.Rectangle -ArgumentList 0, 0, $src.Width, $src.Height
+          $srcData = $src.LockBits($srcRect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+          try {
+            $row = New-Object byte[] ($copyW * 4)
+            $dstX = [int]$t.C * [int]$stitch.StepX
+            $dstY = [int]$t.R * [int]$stitch.StepY
+            for ($yy = 0; $yy -lt $copyH; $yy++) {
+              [System.Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($srcData.Scan0, $yy * $srcData.Stride), $row, 0, $copyW * 4)
+              [System.Runtime.InteropServices.Marshal]::Copy($row, 0, [IntPtr]::Add($dstData.Scan0, ($dstY + $yy) * $dstData.Stride + $dstX * 4), $copyW * 4)
+            }
+          } finally { $src.UnlockBits($srcData) }
+        } finally { $src.Dispose() }
+      } finally { $ms.Dispose() }
+    }
+  } catch {
+    if ($null -ne $dstData) { try { $dst.UnlockBits($dstData) } catch { } }
+    $dstData = $null
+    $dst.Dispose()
+    throw
+  } finally {
+    if ($null -ne $dstData) { try { $dst.UnlockBits($dstData) } catch { } }
+  }
+  return $dst
 }
 
 # --- OCR (Windows.Media.Ocr via WinRT, zero third-party deps) -------------
@@ -4950,6 +6126,337 @@ function Format-MultiOccurrenceHint([string]$needle, $hits) {
   }
   if ($occ -le $hs.Count) { return '' }
   return "hint: the needle occurs $occ time(s) inside $($hs.Count) hit line(s) - a hit is ONE LINE: the same text twice on one line is still one hit, and --index selects lines, not occurrences (line granularity is the J-05 ruling, not a limit of this scan)"
+}
+
+# D-1 (PT profile / anchor calibration): a profile is the persisted picture of ONE surface -
+# window identity plus the OCR text lines that were on it, in WINDOW-RELATIVE coordinates. The
+# anchor table is the point: a later session finds the same text and reads how far it moved
+# without re-deriving any coordinate by hand. Two keys per anchor on purpose - 'text' is what
+# was read, 'fold' is Normalize-OcrText(text). Matching only the fold silently equates lines
+# that really differ; matching only the original misses the same line after an OCR wobble.
+# Windows.Media.Ocr exposes no per-line confidence, so ocrConf stays null by contract: a made-up
+# 0.9 would be exactly the kind of number this tool refuses to print.
+function New-PtAnchorRecord([string]$Text, [int]$Ix, [int]$Iy, [int]$W, [int]$H) {
+  return [pscustomobject]@{
+    text = $Text
+    fold = (Normalize-OcrText $Text)
+    ix = $Ix
+    iy = $Iy
+    w = $W
+    h = $H
+    ocrConf = $null
+  }
+}
+
+# One sample is one OCR pass over the same surface. Keeping only keys present in EVERY pass is
+# what --samples buys: a line the recognizer drops on one pass must not become an anchor the
+# next session cannot find. Each kept anchor sits at the MEDIAN of its sample positions (an even
+# count takes the lower median - stated here so the number is a rule, not a coin flip).
+function Merge-PtAnchorSamples([object[]]$Samples) {
+  $n = @($Samples).Count
+  if ($n -lt 1) { return @() }
+  $map = @{}
+  foreach ($s in @($Samples)) {
+    foreach ($ln in @($s)) {
+      $k = Normalize-OcrText ([string](Get-OptValue $ln 'text'))
+      if (-not $k) { continue }
+      if (-not $map.ContainsKey($k)) { $map[$k] = New-Object System.Collections.ArrayList }
+      [void]$map[$k].Add($ln)
+    }
+  }
+  $out = New-Object System.Collections.ArrayList
+  foreach ($k in @(Get-HashKeys $map)) {
+    $rows = @($map[$k])
+    if ($rows.Count -ne $n) { continue }
+    $mid = [int][math]::Floor(($n - 1) / 2)
+    $xs = @(@($rows | ForEach-Object { [int](Get-OptValue $_ 'ix') }) | Sort-Object)
+    $ys = @(@($rows | ForEach-Object { [int](Get-OptValue $_ 'iy') }) | Sort-Object)
+    $ws = @(@($rows | ForEach-Object { [int](Get-OptValue $_ 'w') }) | Sort-Object)
+    $hs = @(@($rows | ForEach-Object { [int](Get-OptValue $_ 'h') }) | Sort-Object)
+    [void]$out.Add((New-PtAnchorRecord ([string](Get-OptValue $rows[0] 'text')) $xs[$mid] $ys[$mid] $ws[$mid] $hs[$mid]))
+  }
+  return @($out)
+}
+
+# Loading is where a profile stops being trusted: every field the relocation relies on is named
+# when it is wrong, because a bare 'invalid profile' is how a caller re-profiles the wrong thing.
+# Pure: returns '' for a usable profile, the reason otherwise.
+function Get-PtProfileReason($Prof) {
+  if ($null -eq $Prof) { return 'profile is null' }
+  $ver = Get-OptValue $Prof 'version'
+  if ($null -eq $ver) { return 'version is missing' }
+  if (("$ver" -notmatch '^[0-9]+$') -or ([int]$ver -ne 1)) { return "version must be 1, got '$ver'" }
+  $win = Get-OptValue $Prof 'window'
+  if ($null -eq $win) { return 'window object is missing' }
+  $rect = Get-OptValue $win 'rect'
+  if (($null -eq $rect) -or (@($rect).Count -ne 4)) { return 'window.rect must be [x,y,w,h]' }
+  foreach ($rv in @($rect)) { if ("$rv" -notmatch '^-?[0-9]+$') { return "window.rect holds a non-integer ('$rv')" } }
+  $anchors = Get-OptValue $Prof 'anchors'
+  # A pipeline return turns an empty array into $null, so 'missing' and 'empty' are told
+  # apart on the property itself: a profile that carries "anchors": [] IS a profile, just
+  # one with nothing to relocate; a profile without the key never had the table at all.
+  $hasAnchors = $false
+  if ($Prof -is [System.Collections.IDictionary]) { $hasAnchors = $Prof.Contains('anchors') }
+  elseif ($null -ne $Prof.PSObject.Properties['anchors']) { $hasAnchors = $true }
+  if (-not $hasAnchors) { return 'anchors array is missing' }
+  if ($null -eq $anchors -or @($anchors).Count -lt 1) { return 'anchors array is empty - nothing to relocate' }
+  foreach ($a in @($anchors)) {
+    $t = [string](Get-OptValue $a 'text')
+    if ($t -eq '') { return 'an anchor carries no text' }
+    foreach ($f in @('ix', 'iy')) {
+      $v = Get-OptValue $a $f
+      if ($null -eq $v) { return "anchor '$t' has no $f" }
+      if ("$v" -notmatch '^-?[0-9]+$') { return "anchor '$t' field $f is not an integer ('$v')" }
+    }
+  }
+  return ''
+}
+
+function Import-PtProfile([string]$Path, [string]$Prefix) {
+  # v4.7.0 (B-1): the loader is shared by pt-anchor and pt-calibrate, and an error naming a
+  # command the caller never typed sends them to the wrong help page. The prefix therefore
+  # travels as an argument with NO default: a new caller that forgets it fails at bind time
+  # instead of quietly inheriting 'pt-anchor'.
+  if ($Prefix -eq '') { throw 'the profile loader needs the command name to print in its refusals - refusing to borrow another command name' }
+  if (-not (Test-Path -LiteralPath $Path)) { throw ($Prefix + ': profile not found: ' + $Path) }
+  $item = Get-Item -LiteralPath $Path
+  if ($item.PSIsContainer) { throw ($Prefix + ': profile is a folder, not a file: ' + $Path) }
+  # R5: Get-Content -Raw turns an empty file into $null and [string]$null stays null under
+  # StrictMode - ReadAllText answers '' like every other file reader in this tree.
+  $raw = [IO.File]::ReadAllText($item.FullName)
+  if ("$raw".Trim() -eq '') { throw ($Prefix + ': profile file is empty: ' + $Path) }
+  $obj = $null
+  try { $obj = $raw | ConvertFrom-Json } catch { throw ($Prefix + ': profile file is not valid JSON: ' + $Path + ' (' + $_.Exception.Message + ')') }
+  $why = Get-PtProfileReason $obj
+  if ($why -ne '') { throw ($Prefix + ': refusing an unusable profile (' + $Path + '): ' + $why) }
+  return $obj
+}
+
+# Matching tiers, in the order the answer gets weaker: 'exact' (fold equality), 'fold'
+# (confusable-fold equality), 'substring' (ONE anchor contains the needle), 'ambiguous'
+# (several anchors contain it - a row is reported, but --strict refuses it as a relocation),
+# 'none'. Reporting the TIER is the contract: a folded or substring hit is not an exact read
+# and must never print as one.
+function Find-PtAnchorMatch($Anchors, [string]$Needle) {
+  $want = Normalize-OcrText $Needle
+  if (-not $want) { return @{ Kind = 'none'; Rows = @() } }
+  # -eq, not -ceq: the tool's whole needle grammar is case-insensitive, and a
+  # case-only difference reported as a weaker tier would misname the match.
+  $exact = @(@($Anchors) | Where-Object { ([string](Get-OptValue $_ 'fold')) -eq $want })
+  if (@($exact).Count -gt 0) { return @{ Kind = 'exact'; Rows = @($exact) } }
+  $wantF = Convert-ConfusableFold $Needle
+  $fold = @(@($Anchors) | Where-Object { (Convert-ConfusableFold ([string](Get-OptValue $_ 'text'))) -eq $wantF })
+  if (@($fold).Count -gt 0) { return @{ Kind = 'fold'; Rows = @($fold) } }
+  $sub = @(@($Anchors) | Where-Object { ([string](Get-OptValue $_ 'fold')).IndexOf($want, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 })
+  if (@($sub).Count -eq 1) { return @{ Kind = 'substring'; Rows = @($sub) } }
+  if (@($sub).Count -gt 1) { return @{ Kind = 'ambiguous'; Rows = @($sub) } }
+  return @{ Kind = 'none'; Rows = @() }
+}
+
+function Get-PtAnchorDrift($Anchor, $Line) {
+  $dx = [int](Get-OptValue $Line 'ix') - [int](Get-OptValue $Anchor 'ix')
+  $dy = [int](Get-OptValue $Line 'iy') - [int](Get-OptValue $Anchor 'iy')
+  $dist = [math]::Round([math]::Sqrt([double]($dx * $dx) + [double]($dy * $dy)), 1)
+  return @{ Dx = $dx; Dy = $dy; Dist = $dist }
+}
+
+# ---------------------------------------------------------------------------
+# v4.7.0 (B-1): the calibration layer a single anchor cannot answer.
+# pt-anchor measures how far ONE named line moved. A translation carries no scale, so that
+# command can never say what the canvas was zoomed to - and the external feedback that
+# opened this item was exactly a zoom question (a 600px gap read as 275px on screen). Two
+# anchors can answer it: the ratio of their separation now to their separation in the
+# profile is ONE scalar, and the same pair fixes the translation. A THIRD anchor the
+# estimate never saw is what turns the claim into a measurement, because a rotation or a
+# non-uniform stretch hides comfortably inside a two-point fit and usually cannot hide from
+# a point that fit was never shown.
+# The model is uniform-scale + translation and there is NO rotation and NO shear term. The
+# per-axis ratios are computed even though the reported scale is Euclidean: their
+# disagreement is the only observable in a two-point reading that says "wrong model" rather
+# than "noisy numbers", so it is a refusal, never an average.
+# ---------------------------------------------------------------------------
+function Get-PtCalibration {
+  param(
+    [object[]]$Estimates,
+    [object[]]$Verifies,
+    [double]$MinSpacing = 20,
+    [double]$ResidualLimit = 3,
+    [double]$AxisTolerance = 0.02
+  )
+  $out = @{
+    Ok = $false; Code = ''; Note = ''; Verdict = 'refused'
+    Scale = 0.0; Dx = 0.0; Dy = 0.0; Sx = 0.0; Sy = 0.0
+    BasisSpacing = 0.0; ObservedSpacing = 0.0
+    Residuals = @(); ResidualMax = 0.0; ResidualMean = 0.0
+    MinSpacing = $MinSpacing; ResidualLimit = $ResidualLimit; AxisTolerance = $AxisTolerance
+  }
+  $est = @($Estimates)
+  $ver = @($Verifies)
+  # Refusal ORDER is part of the contract: the cheapest structural check fires first, so a
+  # caller who got two things wrong hears about the one that costs nothing to fix.
+  if (@($est).Count -ne 2) {
+    $out.Code = 'estimate-count'
+    $out.Note = "the model needs exactly 2 estimate anchors, got $(@($est).Count)"
+    return $out
+  }
+  if (@($ver).Count -lt 1) {
+    $out.Code = 'verify-count'
+    $out.Note = 'at least 1 verify anchor the estimate never saw is required, got 0 - a two-point fit that nothing independent is checked against is a guess, not a measurement'
+    return $out
+  }
+  $labels = @(@(@($est) + @($ver)) | ForEach-Object { [string]$_.Label })
+  if (@(@($labels) | Where-Object { $_ -eq '' }).Count -gt 0) {
+    $out.Code = 'empty-label'
+    $out.Note = 'an anchor reached the estimator with no text - the answer would carry a row nobody can point at'
+    return $out
+  }
+  # The overlap check runs BEFORE the duplicate check, and not by accident: an anchor shared by
+  # the two sets is also a repeated label, so a duplicate-first order made the more specific
+  # refusal unreachable and told the caller "your labels repeat" when the real mistake was
+  # "you tested the model on a point that built it". The caller hears the reason that names his
+  # mistake; a repeat INSIDE one set still falls through to duplicate-label below.
+  $estLabels = @(@($est) | ForEach-Object { [string]$_.Label })
+  $overlaps = @(@($ver) | ForEach-Object { [string]$_.Label } | Where-Object { $estLabels -contains $_ })
+  if (@($overlaps).Count -gt 0) {
+    $out.Code = 'verify-overlaps-estimate'
+    $out.Note = "anchor(s) $(@($overlaps) -join ', ') are in BOTH sets - a point used to fit the model cannot also test it (its residual is zero by construction)"
+    return $out
+  }
+  $dupes = @(@($labels) | Group-Object | Where-Object { [int]$_.Count -gt 1 } | ForEach-Object { "'" + [string]$_.Name + "'" })
+  if (@($dupes).Count -gt 0) {
+    $out.Code = 'duplicate-label'
+    $out.Note = "anchor labels repeat ($(@($dupes) -join ', ')) - which row a name refers to is not decidable here, so nothing is picked for you"
+    return $out
+  }
+  $b1x = [double]$est[0].Bx; $b1y = [double]$est[0].By
+  $b2x = [double]$est[1].Bx; $b2y = [double]$est[1].By
+  $o1x = [double]$est[0].Ox; $o1y = [double]$est[0].Oy
+  $o2x = [double]$est[1].Ox; $o2y = [double]$est[1].Oy
+  $bdx = $b2x - $b1x; $bdy = $b2y - $b1y
+  $odx = $o2x - $o1x; $ody = $o2y - $o1y
+  $basisRaw = [math]::Sqrt($bdx * $bdx + $bdy * $bdy)
+  $obsRaw = [math]::Sqrt($odx * $odx + $ody * $ody)
+  $out.BasisSpacing = [math]::Round($basisRaw, 3)
+  $out.ObservedSpacing = [math]::Round($obsRaw, 3)
+  if ($basisRaw -lt $MinSpacing) {
+    $out.Code = 'basis-degenerate'
+    $out.Note = "the two estimate anchors are $($out.BasisSpacing)px apart in the profile (floor --min-spacing $MinSpacing) - across a baseline that short, one pixel of OCR noise is a percent-scale error, so the ratio is not measurable"
+    return $out
+  }
+  if ($obsRaw -lt 1) {
+    $out.Code = 'observed-degenerate'
+    $out.Note = "the two anchors read at the SAME place now (observed spacing $($out.ObservedSpacing)px) - the surface collapsed and no scale can be recovered from it"
+    return $out
+  }
+  if ([math]::Abs($bdx) -lt 1 -or [math]::Abs($bdy) -lt 1) {
+    $out.Code = 'axis-degenerate'
+    $out.Note = "the basis pair has no extent on one axis (dx=$bdx dy=$bdy) - the per-axis comparison that detects a non-uniform scale or a rotation cannot run, so this model cannot be tested with these two points"
+    return $out
+  }
+  $sx = $odx / $bdx
+  $sy = $ody / $bdy
+  $scale = $obsRaw / $basisRaw
+  $out.Sx = [math]::Round($sx, 4)
+  $out.Sy = [math]::Round($sy, 4)
+  $out.Scale = [math]::Round($scale, 4)
+  if ([math]::Abs($sx - $sy) -gt $AxisTolerance) {
+    $out.Code = 'axis-divergence'
+    $out.Note = "the x ratio ($($out.Sx)) and the y ratio ($($out.Sy)) differ by more than $AxisTolerance - that is a non-uniform scale or a rotation, and neither is in this model; averaging them would report a number the surface does not obey"
+    return $out
+  }
+  $dx = ((($o1x - $scale * $b1x) + ($o2x - $scale * $b2x)) / 2.0)
+  $dy = ((($o1y - $scale * $b1y) + ($o2y - $scale * $b2y)) / 2.0)
+  $out.Dx = [math]::Round($dx, 3)
+  $out.Dy = [math]::Round($dy, 3)
+  $rows = New-Object System.Collections.ArrayList
+  $sum = 0.0
+  $max = 0.0
+  foreach ($v in @($ver)) {
+    $px = $scale * [double]$v.Bx + $dx
+    $py = $scale * [double]$v.By + $dy
+    $rx = [double]$v.Ox - $px
+    $ry = [double]$v.Oy - $py
+    $d = [math]::Sqrt($rx * $rx + $ry * $ry)
+    $sum = $sum + $d
+    if ($d -gt $max) { $max = $d }
+    [void]$rows.Add([pscustomobject]@{
+      Index = [int]$v.Index
+      Label = [string]$v.Label
+      Bx = [double]$v.Bx; By = [double]$v.By
+      Ox = [double]$v.Ox; Oy = [double]$v.Oy
+      Px = [math]::Round($px, 2); Py = [math]::Round($py, 2)
+      Rx = [math]::Round($rx, 2); Ry = [math]::Round($ry, 2)
+      Residual = [math]::Round($d, 2)
+    })
+  }
+  $out.Residuals = @($rows)
+  $out.ResidualMax = [math]::Round($max, 2)
+  $out.ResidualMean = [math]::Round(($sum / @($ver).Count), 2)
+  $out.Ok = $true
+  $out.Verdict = 'fit'
+  if ($out.ResidualMax -gt $ResidualLimit) {
+    $out.Verdict = 'exceeded'
+    $out.Note = "the independent anchor(s) sit up to $($out.ResidualMax)px from where this model puts them (limit --max-residual $ResidualLimit) - the surface did not follow uniform-scale+translation as a whole"
+  }
+  return $out
+}
+
+# Applying the model to ONE point, on explicit request. There is no "rewrite the profile"
+# path on purpose: the external feedback that opened this item refused bulk coordinate
+# rewrites, so a conversion happens only for a point the caller names, and every answer
+# carries the model, the scale and the residual it was computed under.
+function Get-PtMappedPoint($Cal, [double]$X, [double]$Y) {
+  $fx = [double]$Cal.Scale * $X + [double]$Cal.Dx
+  $fy = [double]$Cal.Scale * $Y + [double]$Cal.Dy
+  return @{ Xf = [math]::Round($fx, 2); Yf = [math]::Round($fy, 2); Xi = [int][math]::Round($fx, 0); Yi = [int][math]::Round($fy, 0) }
+}
+
+# --estimate / --verify take 1-based indexes into the profile's anchors array, not text.
+# Why indexes: the matching text is what the OCR produced, it can contain a comma, and a
+# separator that may also appear inside a value is how a list silently loses an item.
+function Parse-PtAnchorIndexes([string]$Text, [string]$Flag) {
+  if ($Text -eq '') { throw "$Flag needs one or more 1-based anchor indexes separated by commas (for example --estimate 1,3) - nothing is guessed from the profile" }
+  $parts = @("$Text" -split ',')
+  $bad = @($parts | Where-Object { $_ -notmatch '^[0-9]+$' })
+  if (@($bad).Count -gt 0) { throw "$Flag takes 1-based integer indexes, got: '$Text' (not an index: $(@($bad) -join ' '))" }
+  $nums = @($parts | ForEach-Object { [int]$_ })
+  if (@(@($nums) | Where-Object { $_ -lt 1 }).Count -gt 0) { throw "$Flag indexes are 1-based and must be >= 1, got: '$Text'" }
+  $dupe = @($nums | Group-Object | Where-Object { [int]$_.Count -gt 1 } | ForEach-Object { [string]$_.Name })
+  if (@($dupe).Count -gt 0) { throw "$Flag lists anchor $(@($dupe) -join ', ') twice - one row cannot estimate and verify at the same time" }
+  return @($nums)
+}
+
+# v4.7.0 (B-1/C): the one x,y,w,h grammar the new flags share. find and open-and-pick keep
+# their own historical wording (their error strings are pinned by live rounds); this is the
+# producer for flags introduced now, so a new flag does not invent its own rectangle rules.
+# The refusal is built by CONCATENATION, not interpolation: "$Owner : ..." would print a
+# space before the colon, and "$Owner: ..." is a parser trap this tool has been bitten by -
+# a variable immediately followed by a colon is read as a scope qualifier, so the name you
+# meant to print disappears from the message that tells the operator which command refused.
+function Parse-QuadSpec([string]$Spec, [string]$Owner, [string]$Flag) {
+  $p = @("$Spec" -split ',')
+  $bad = @($p | Where-Object { $_ -notmatch '^-?[0-9]+$' })
+  if (@($p).Count -ne 4 -or @($bad).Count -ne 0) { throw ($Owner + ': ' + $Flag + " needs x,y,w,h in image pixels, got: '$Spec'") }
+  $q = @{ X = [int]$p[0]; Y = [int]$p[1]; W = [int]$p[2]; H = [int]$p[3] }
+  if ($q.W -le 0 -or $q.H -le 0) { throw ($Owner + ': ' + $Flag + " width/height must be > 0, got: '$Spec'") }
+  return $q
+}
+
+# Which row of the CURRENT surface is this profile anchor? Exact text first, then the
+# confusable fold. A substring hit is deliberately NOT enough for a calibration: the whole
+# claim is that the SAME line is being measured on both sides. Two rows reading the same
+# text is a refusal, not a pick - pt-anchor can ask for a longer needle, a calibration
+# cannot ask for a third of a line.
+function Resolve-PtAnchorObservation($Anchor, [object[]]$Rows) {
+  $want = [string](Get-OptValue $Anchor 'text')
+  $exact = @(@($Rows) | Where-Object { ([string](Get-OptValue $_ 'text')) -ceq $want })
+  if (@($exact).Count -gt 1) { return @{ Tier = 'duplicate'; Row = $null; Count = @($exact).Count } }
+  if (@($exact).Count -eq 1) { return @{ Tier = 'exact'; Row = @($exact)[0]; Count = 1 } }
+  $foldWant = [string](Get-OptValue $Anchor 'fold')
+  $fold = @(@($Rows) | Where-Object { (Normalize-OcrText ([string](Get-OptValue $_ 'text'))) -ceq $foldWant })
+  if (@($fold).Count -gt 1) { return @{ Tier = 'duplicate'; Row = $null; Count = @($fold).Count } }
+  if (@($fold).Count -eq 1) { return @{ Tier = 'fold'; Row = @($fold)[0]; Count = 1 } }
+  return @{ Tier = 'none'; Row = $null; Count = 0 }
 }
 
 # v1.5.2 (audit R-08): ONE flag grammar for every command that takes a needle.
@@ -7186,7 +8693,20 @@ function Resolve-ClipboardKind([bool]$hasText, [bool]$hasFiles, [bool]$hasImage 
 # any private/app format) is content this tool cannot put back. A clipboard carrying text
 # AND one of those must NOT be written over on the strength of the text coming back:
 # "the text hash matches" is not "every format is preserved".
-$script:ClipboardPureFormats = @('UnicodeText', 'Text', 'Locale', 'OEMText', 'FileDrop', 'Bitmap', 'DIB')
+# 'System.String' joined the pure set on 2026-10-29 (first-ever live paste ladder run):
+# WinForms Clipboard::SetText ALWAYS carries it alongside UnicodeText/Text (measured: plain
+# GetFormats() = System.String, UnicodeText, Text on this box), so every text clipboard this
+# suite synthesizes was judged kind='other' - unrestorable, deliberately unread - and the
+# text/FileDrop restore round trips could not even start. Its content IS the text: reading
+# via GetText and restoring via Set-Clipboard round-trip it byte-exactly, so admitting it
+# corrects an over-strict refusal rather than widening what the guard accepts.
+# 'FileNameW'/'FileName' joined for the same reason the same day: Clipboard::SetFileDropList
+# ALWAYS carries them alongside FileDrop (measured: plain GetFormats() = FileDrop, FileNameW,
+# FileName), so a FileDrop-only clipboard was judged 'other' and its round trip refused.
+# They are the string aliases of the very file list FileDrop already carries - GetFileDropList
+# reads the list unchanged, SetFileDropList regenerates them - so admitting them is again an
+# over-strict-refusal fix, not a widened guard.
+$script:ClipboardPureFormats = @('UnicodeText', 'Text', 'Locale', 'OEMText', 'FileDrop', 'Bitmap', 'DIB', 'System.String', 'FileNameW', 'FileName')
 function Get-ClipboardFormatPlan([string[]]$formats) {
   $list = @($formats | Where-Object { $_ -ne '' } | Sort-Object -Unique)
   $extras = @($list | Where-Object { $script:ClipboardPureFormats -notcontains $_ })
@@ -7196,6 +8716,54 @@ function Get-ClipboardFormatPlan([string[]]$formats) {
   $kind = if ($list.Count -eq 0) { 'none' } else { Resolve-ClipboardKind $hasText $hasFiles $hasImage }
   if (@($extras).Count -gt 0) { $kind = 'other' }
   return [pscustomobject]@{ Kind = $kind; Formats = $list; Extras = $extras; HasText = $hasText; HasFiles = $hasFiles; HasImage = $hasImage }
+}
+
+# CU-REMAINDER-FINAL-20261029-01 INC-01 (v4.7.0): format NAMES do not prove content equality.
+# 'System.String' joined $script:ClipboardPureFormats because Clipboard::SetText always writes it
+# alongside UnicodeText/Text carrying the SAME characters, so the text restore branch regenerates
+# it from that one value (the note above). An IDataObject can instead hand the two formats
+# DIFFERENT payloads - measured 2026-10-30 against the real Save/Restore functions with only the
+# Clipboard I/O replaced by an in-memory DataObject: UnicodeText='VISIBLE-FIXTURE' while
+# System.String='DISTINCT-FIXTURE'. The snapshot stored GetText, the restore wrote that text and
+# the read-back compared that text, so the companion content was destroyed while the note still
+# said 'clipboard restored'. Membership of a name list was doing the work of content equality.
+# So a companion is admitted only when its OWN content is proven equal to the text this restore
+# writes back. Proven different, or content that could not be read as text, names itself and drops
+# the snapshot to kind=other: the write gate then refuses the default overwrite and
+# --replace-clipboard stays the explicit, informed override. 'could not read' is neither 'nothing
+# there' nor 'equal' - the same refusal G-1 established for the format-list read itself.
+# DELIBERATELY NARROW to 'System.String'. CF_TEXT / CF_OEMTEXT are ANSI/OEM re-encodings of the
+# same characters and CF_FILENAME is the short-path alias of CF_FILEDROPW; WinForms and Explorer
+# write those companions with different bytes BY DESIGN, so demanding equality there would refuse
+# the ordinary clipboard this guard exists to let through. They are carried as an open item
+# (registered, not silently trusted and not silently widened).
+# The caller hands in what it read off the SAME DataObject that produced the format list, so this
+# decision is pure: the offline gate below runs every leg, including the refusal, without a
+# clipboard in sight.
+function Resolve-ClipboardCompanionState([string]$canonical, $companions, $plan) {
+  $conflicts = @()
+  foreach ($c in @($companions)) {
+    if ($null -eq $c) { continue }
+    $name = [string]$c.Format
+    if ($name -cne 'System.String') { continue }
+    # v4.8.0 live finding: a raw read that comes back NULL is NOT an unprovable companion - on
+    # every real text clipboard this machine produced, 'System.String' in the format list is the
+    # MANAGED VIEW of the same text payload (GetData with autoConvert=false answers null because
+    # no raw payload exists behind the name), while the canonical text was read and is what the
+    # restore writes back. Treating that null as 'content-unproven' refused EVERY paste on this
+    # machine (live v48-live-r1/r2, 5 red). A read that THREW stays 'content-unproven' (an object
+    # that promised the format and would not yield it is exactly the divergence class), and a read
+    # that returned a DIFFERENT string stays 'different-content' - those two are the negatives
+    # this card owes.
+    if ([bool]$c.ReadFailed) { $conflicts += ($name + '=content-unproven'); continue }
+    if ($null -eq $c.Value) { continue }
+    if (-not ($c.Value -is [string])) { $conflicts += ($name + '=content-unproven'); continue }
+    if ([string]$c.Value -cne $canonical) { $conflicts += ($name + '=different-content') }
+  }
+  $kind = [string]$plan.Kind
+  $extras = @($plan.Extras)
+  if (@($conflicts).Count -gt 0) { $kind = 'other'; $extras = @($extras + $conflicts) }
+  return @{ Kind = $kind; Extras = @($extras); Conflicts = @($conflicts) }
 }
 
 # Snapshot of the current clipboard so commands that overwrite it can put the
@@ -7251,6 +8819,31 @@ function Save-ClipboardState {
     $hasImage = [bool]$plan.HasImage
     $txt = ''
     if ($hasText) { $txt = [System.Windows.Forms.Clipboard]::GetText() }
+    # INC-01: a companion format in the pure list is admitted only while its own content is
+    # proven equal to $txt, which is the single value the text restore writes back. The read goes
+    # through the SAME DataObject that produced the format list - asking the Clipboard again would
+    # re-open it and could hand back a different object than the one that was inventoried.
+    # autoConvert is off on purpose: with conversion on, a request for System.String would be
+    # answered by the UnicodeText payload and the check could never see a divergence.
+    $companions = @()
+    if ($hasText -and (@($plan.Formats) -ccontains 'System.String')) {
+      $compVal = $null
+      $compFail = $false
+      try { $compVal = $do.GetData('System.String', $false) } catch { $compFail = $true }
+      $companions = @([pscustomobject]@{ Format = 'System.String'; Value = $compVal; ReadFailed = $compFail })
+    }
+    $comp = Resolve-ClipboardCompanionState $txt $companions $plan
+    if (@($comp.Conflicts).Count -gt 0) {
+      # Refused BEFORE the content reads below: this is now an 'other' clipboard, and the rule the
+      # plan already applies to 'other' is that content this tool cannot put back is not opened.
+      # The text stays out of the snapshot so no later branch can write it back and call the
+      # companion loss 'clipboard restored'; the conflict names itself in Extras, which is what
+      # Assert-ClipboardReplaceable prints next to --replace-clipboard.
+      $st.Kind = 'other'
+      $st.Extras = @($comp.Extras)
+      $st.Text = ''
+      return $st
+    }
     $files = @()
     if ($hasFiles) { $files = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
     $imgPath = ''
@@ -10302,7 +11895,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -10313,18 +11906,22 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
 
   read
     shot [outPath] [--fit px] [--grid [step] | --no-grid] [--occlude off|warn|strict]
+              [--grid-style thin|bold|contrast] [--min-ink pc] [--retry 0..5]
                                     capture whole virtual screen; one output path
                                     only. For a local image use rect 0 2010 400
                                     80 <outPath> --fit 0, then imgclick or unmap
-                                    with the capture's .map.txt sidecar.
+                                    with the capture's .map.txt sidecar. Takes the
+                                    capture-quality flags (see rect); no window
+                                    gate runs on this path and the echo says so.
     win <sel> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y]
-              [--occlude off|warn|strict]
+              [--occlude off|warn|strict] [--grid-style thin|bold|contrast]
+              [--min-ink pc] [--retry 0..5]
                                     capture a window; echoes the image->screen
                                     mapping (screen = image + (L,T), or
                                     (L + ix/scale, T + iy/scale) when fitted)
                                     and the labelled occluded=N% verdict if covered
     rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y]
-              [--occlude off|warn|strict] [--to <sel>]
+              [--occlude off|warn|strict] [--to <sel>] [--grid-style thin|bold|contrast]
                                     capture a region. Default fit=900: wider
                                     crops are saved downscaled with an explicit
                                     scale in the echo, so eyeballed coordinates
@@ -10332,6 +11929,24 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
                                     full resolution; --grid overlays a grid
                                     labelled in SCREEN pixels; --mark draws a
                                     crosshair at a candidate click point
+                                    --grid-style says how LOUD that grid draws:
+                                    thin (1px, alpha 140) is the pre-v4.6.13 stroke
+                                    - same width, colour, label position and draw
+                                    order - bold (3px, alpha 200) is the wide
+                                    stroke, contrast (2px, alpha 255) is the opaque
+                                    one for a light background where alpha 140 all
+                                    but disappears. Every style, thin included,
+                                    first reads the text on the screen it just
+                                    grabbed and cuts the segments that would cross
+                                    a word, so the grid cannot swallow what it is
+                                    there to measure; that is why a default call is
+                                    not promised the old image on a text-heavy
+                                    crop. The echo prints style= plus
+                                    avoid=N text line(s) kept clear, or avoid=off
+                                    (and why) when OCR cannot run. Asking for a
+                                    style on a capture that draws no grid (--no-grid,
+                                    or a crop that already fits) is refused BEFORE
+                                    the screen is read and no image is written.
                                     --to BINDS the crop to a window: the region
                                     must lie inside its visible rect, and the
                                     sidecar records that window's identity and
@@ -10346,11 +11961,56 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
                                     the saved PNG (hash/OCR read screen pixels, so
                                     no judgement is polluted), and imgclick warns
                                     when a sidecar says the image carries one.
-    zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>]
+                                    C (v4.8.0): the capture-quality flags are shared
+                                    by shot/win/rect/zoom with ONE grammar. --min-ink
+                                    pc (0..100) turns the gate ON: after each grab
+                                    the 1:1 frame (pre-fit, pre-grid, pre-overlay) is
+                                    measured for INK - the share of sampled pixels
+                                    whose any channel differs from the reference by
+                                    more than --ink-tol (default 24, per channel).
+                                    The reference is --ink-vs: 'auto' (default) =
+                                    the frame's own mode colour, echoed as #RRGGBB.
+                                    --ink-area x,y,w,h scopes the measure to part of
+                                    the frame; --ink-stride 1..64 samples every Nth
+                                    pixel on both axes (the echo prints the sampled
+                                    count so the denominator is never implied). A
+                                    frame below --min-ink is a REFUSAL: it publishes
+                                    nothing, a same-name previous pair stays
+                                    byte-identical, and with --retry n (0..5, default
+                                    0) the loop re-captures - each attempt re-runs the
+                                    window identity/rect/occlusion checks first and
+                                    never resends any input; --retry-budget ms caps
+                                    the loop's total time. Exhaustion (attempts or
+                                    budget) exits non-zero naming the knob that
+                                    fired. The echo prints one attempt=k ink=..%
+                                    line per try and a quality: verdict= line; a
+                                    path with no window gate says occlusion=not
+                                    re-checked instead of pretending one ran.
+    zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] [--min-ink pc] [--retry 0..5]
                                     small region enlarged (default 2x) + echo
                                     mapping screen = (x + ix/scale, y + iy/scale);
                                     --to binds the crop to a window exactly like
-                                    rect --to (region must lie inside it)
+                                    rect --to (region must lie inside it); takes the
+                                    capture-quality flags measured on the 1:1 source
+                                    frame before the enlarge (see rect)
+    tile <x> <y> <w> <h> [--tile WxH] [--grid CxR] [--out-dir <dir>] [--overlap px]
+                                    cut a region too wide for one capture into a
+                                    GRID of 1:1 PNGs, one .map.txt per tile. Pass
+                                    exactly one plan: --tile WxH (tile size) or
+                                    --grid CxR (columns x rows); --overlap px keeps
+                                    neighbours sharing a strip so a cut through
+                                    glyphs is still readable in one of them. Every
+                                    tile map records the whole grid plus the REGION
+                                    origin, so unmap on ANY tile prints GLOBAL
+                                    screen coords (screen = tile origin + pixel).
+                                    Writes into --out-dir, which must hold one set.
+    stitch <dir> <out.png>          rebuild the region from a tile set: each tile
+                                    contributes its own stride, the last one per
+                                    axis absorbs the remainder, so every output
+                                    pixel has exactly one owner and nothing is
+                                    resampled. The rebuilt image gets a kind=stitch
+                                    map at the REGION origin (unmap/imgclick work
+                                    on it like on any single capture).
     wins                            list visible windows: pid proc class popup
                                     owner main rect size title (popup=yes marks
                                     context menus - they are their OWN top-level
@@ -10371,6 +12031,29 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
     color-at <x> <y>                pixel colour as #RRGGBB (link-up LEDs etc.)
     find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]
                                     first match in region (cap 500) or ERROR
+    cluster-color <image> [--min-cluster N] [--tolerance d]
+                                    v4.6.13 (D-5): which colours an image FILE holds, in
+                                    one pass over its pixels. A pixel joins the OLDEST
+                                    cluster whose seed colour differs by at most
+                                    --tolerance on EVERY channel (per channel, the same
+                                    unit find-color uses), otherwise it seeds a new one.
+                                    Each cluster prints the pixel-weighted mean (floored,
+                                    so a printed brightness never overstates the pixels
+                                    that made it), its share of the OPAQUE pixels, its
+                                    bbox and the largest member-to-seed deviation per
+                                    channel - the deviation is shown because the
+                                    tolerance is a bound, not a description. Biggest
+                                    cluster first, ties by the cluster's own numbers.
+                                    alpha-0 pixels are counted and skipped, never averaged
+                                    into a colour a caller can see. --min-cluster trims
+                                    small clusters and reports how many it trimmed; the
+                                    text report lists the top 10 and says so, --json prints
+                                    every cluster. Tolerance too small for the file, or the
+                                    file too big for the time budget, is a REFUSAL that
+                                    names both ceilings and returns no partial palette -
+                                    a truncated cluster set would read as a palette. bbox
+                                    is in IMAGE pixels, not screen; a capture's .map.txt is
+                                    what converts them ('unmap <image> <ix> <iy>').
     find <text...> [--target <sel>] [--region x,y,w,h] [--depth n] [--needle <text>]
                                     v2.1.0 (plan doc 1.1) COMPOSITE LOCATOR: tries UIA
                                     first (Name/rect/enabled/offscreen, with the
@@ -10590,6 +12273,56 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
                                     and the environment. It recomputes the registry's
                                     total, so a command registered but unreachable is
                                     visible rather than silently missing.
+    pt-profile <sel> [--samples 1..16] [--save <path>] [--file <png>]
+                                    write ONE surface down as a profile JSON: window
+                                    identity (pid/proc/class/title/rect), a UIA tree
+                                    summary and the OCR text lines in WINDOW-RELATIVE
+                                    coordinates. --samples N reads the same surface N
+                                    times and keeps only lines every pass saw (median
+                                    position). ocrConf is null by contract - the OCR
+                                    engine exposes no per-line confidence. --save is
+                                    spelled --save because `powershell -File` binds
+                                    any -out prefix to its own parameter layer before
+                                    this tool runs; without --save the profile lands
+                                    in shots/pt-profile-<stamp>.json. --file <png>
+                                    profiles a stored screenshot instead of a live
+                                    window (coordinates are then image pixels).
+    pt-anchor <profile> --needle <text> [--strict] [--max-drift px]
+             [--file <png>]
+                                    read the profile's surface again (the window it
+                                    names, or a fresh --file image) and report where
+                                    the named line really is: match tier (exact /
+                                    fold / substring), drift=(dx,dy), distance and
+                                    verdict within|exceeded. A miss or an ambiguous
+                                    needle is a refusal, never a guess. --strict
+                                    turns drift above --max-drift (default 4px)
+                                    into exit 1.
+    pt-calibrate <profile> --estimate <i,j> --verify <k[,...]> [--file <png>]
+             [--canvas x,y,w,h] [--relocate x,y] [--max-residual px]
+             [--min-spacing px] [--list] [--json]
+                                    answer "what was this canvas zoomed to", which a
+                                    single anchor cannot. TWO profile anchors, named by
+                                    their --list index, fix a uniform-scale+translation
+                                    model; at least ONE further anchor that the fit was
+                                    never shown is the independent residual. Prints the
+                                    scale, the per-axis ratios, the delta, the basis and
+                                    observed spacing, every residual, the units, both
+                                    timestamps and the region the model applies to. Each
+                                    refusal names itself AND the number behind it: a
+                                    duplicate label in the profile, a baseline shorter
+                                    than --min-spacing (default 20px), a pair with no
+                                    extent on one axis, sx and sy disagreeing by more
+                                    than 0.02 (a non-uniform scale or a rotation is NOT
+                                    in this model and is never averaged into it), an
+                                    index past the end or in both sets, an anchor the
+                                    re-read does not carry, a residual above
+                                    --max-residual (default 3px). The model covers ONLY
+                                    the --canvas region: menus, toolbars and child
+                                    windows are not covered by it and nothing is moved
+                                    by it. --relocate x,y converts ONE point the caller
+                                    names (float plus half-to-even int); a profile is
+                                    never rewritten in bulk. --list prints the anchor
+                                    numbering and reads no surface at all.
   act (absolute coords)
     move <x> <y>                    move cursor
     hover <x> <y> [--dwell ms]      move and STAY - tooltips need the dwell to
@@ -10731,7 +12464,7 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
                                     index default 0; hits are OCR LINES in
                                     reading order (top to bottom), so two
                                     occurrences on one line count as one hit
-    imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok] [--require-verified]
+    imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok] [--require-verified] [--on-grid-alert <px>]
                                     reverse-map an image pixel through the
                                     <outPath>.map.txt sidecar (written by win/
                                     rect/zoom) and click the screen point;
@@ -10747,7 +12480,18 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
                                     unless verification returns ok, so a strict
                                     caller never clicks through an unverified,
                                     stale or minimized mapping; it cannot be
-                                    combined with --stale-ok
+                                    combined with --stale-ok. When the image
+                                    carries a grid, the echo MEASURES this point
+                                    against it (B-3): nearest vertical/horizontal
+                                    line in BOTH units, the alert radius and a
+                                    near/clear verdict, instead of warning about
+                                    every point on a gridded image. A map written
+                                    before grid-style existed reports the
+                                    distances and refuses to guess the stroke
+                                    width; --on-grid-alert <px> (image px,
+                                    0..5000) is then the only thing that can
+                                    raise the near verdict, and for a KNOWN
+                                    style it is added to half the line width.
     unmap <outPath> <ix> <iy> [--stale-ok]
                                     same mapping, print only (no click, no log)
     --expect-change [x,y,w,h]       (v1.5.6, opt-in; click/rclick/dblclick/drag/
@@ -11171,6 +12915,33 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
                                     A log slice carrying a popup-guard abort
                                     marker is refused outright (half-executed
                                     state must not be replayed).
+    log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]
+                                    v4.6.13 (D-3): read-only index over actions.log
+                                    (default: the one this tool writes). One row per
+                                    matching audit line: #n date origin=tag cmd | target.
+                                    --date filters the UTC day in the first column,
+                                    --origin filters the fifth column. Lines written
+                                    before v4.6.13 carry four columns and are reported
+                                    as origin=unknown legacy=yes instead of crashing
+                                    (they are history, not corruption); any OTHER
+                                    shape is counted and reported as skipped, never
+                                    dropped silently. B-2 (v4.8.0) --scope says HOW
+                                    MANY FILES that index walks: current (the default,
+                                    and the pre-B-2 output verbatim) reads only --log;
+                                    day and all add every actions_*.log the rotator
+                                    left beside it, and day requires --date because a
+                                    day with no day named is not a question. Those two
+                                    print files-scanned=, one path=/lines=/matched= row
+                                    per file, which clock the date filter used, and
+                                    what the retention policy deleted - a day missing
+                                    from the index is NOT reported as a day nothing
+                                    happened. This command never acts, never
+                                    writes an audit line and never touches the desktop.
+                                    Global --origin labels the lines THIS run writes;
+                                    here the same spelling is a FILTER, which is why
+                                    the entry leaves it to this command's parser.
+                                    From v4.8.0 that label is also DERIVED when nobody
+                                    types it (see --origin under global flags).
     shots-cleanup [--keep n] [--go] [--quarantine <dir>]
                                     bound the runtime screenshot folder (it grows
                                     without limit - 100MB/213 files in 3 days was
@@ -11234,6 +13005,23 @@ desktop.ps1 v4.6.11 - Windows desktop automation (DPI-aware, absolute screen pix
     --ocr-lang <tag>                pin the OCR recognizer language; validated
                                     against the installed packs (an unavailable
                                     tag errors with the available list)
+    --origin <tag>                  v4.6.13 (D-3): label EVERY audit line this run
+                                    writes with the tag. One token
+                                    only - letters, digits, '.', '-' and '_' (1..32
+                                    chars); a value carrying a space or '|' is refused
+                                    before the command runs, because actions.log is
+                                    pipe-delimited. B-2 (v4.8.0): when nobody types it
+                                    the tag is DERIVED, in this order - the explicit
+                                    value, then the dispatcher's own mode (a run whose
+                                    top command is selftest writes origin=selftest, so
+                                    a gate line and a human line are no longer the same
+                                    shape), then the label the caller declared on the
+                                    DTX_CALLER_LABEL channel (folded into the same
+                                    token shape; a Codex-thread fallback is an
+                                    environment fact, not a declaration, so it is not
+                                    copied), then unknown. Read side: 'log-index --origin'
+                                    filters by the same tag (that command is read-only,
+                                    so the entry leaves the flag to its own parser).
     --dump <path>                   v3.0.0 (B-4): write the command's stdout to a file
                                     and print a pointer instead (line count, bytes,
                                     the first 5 lines and the hidden-line count).
@@ -11393,6 +13181,10 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       Invoke-Handler-find-color 'find-color' $Rest
     }
 
+    'cluster-color' {
+      Invoke-Handler-cluster-color 'cluster-color' $Rest
+    }
+
     'hash' {
       Invoke-Handler-hash 'hash' $Rest
     }
@@ -11539,6 +13331,14 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
       Invoke-Handler-unmap 'unmap' $Rest
     }
 
+    'tile' {
+      Invoke-Handler-tile 'tile' $Rest
+    }
+
+    'stitch' {
+      Invoke-Handler-stitch 'stitch' $Rest
+    }
+
     'chrome-tabs' {
       Invoke-Handler-chrome-tabs 'chrome-tabs' $Rest
     }
@@ -11625,6 +13425,31 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 
     'capabilities' {
       Invoke-Handler-capabilities 'capabilities' $Rest
+    }
+
+    # D-1 (v4.6.13): the anchor calibration pair. pt-profile writes one surface
+    # down (window identity + OCR lines in window-relative coordinates);
+    # pt-anchor reads it again and reports the real drift of a named line.
+    'pt-profile' {
+      Invoke-Handler-pt-profile 'pt-profile' $Rest
+    }
+
+    'pt-anchor' {
+      Invoke-Handler-pt-anchor 'pt-anchor' $Rest
+    }
+
+    # v4.7.0 (B-1): the third reader of the same profile. Two anchors estimate a
+    # uniform-scale+translation model, a third one nobody showed the fit tests it, and an
+    # over-limit residual is a refusal. Read-only: it locates and converts, it never acts.
+    'pt-calibrate' {
+      Invoke-Handler-pt-calibrate 'pt-calibrate' $Rest
+    }
+
+    # v4.6.13 (D-3): read-only index over actions.log by UTC date / origin tag. It never
+    # writes an audit line, which is why the entry-level --origin (a LABEL) skips this
+    # command and leaves the flag to the handler (a FILTER).
+    'log-index' {
+      Invoke-Handler-log-index 'log-index' $Rest
     }
 
     'paste' {
@@ -12377,6 +14202,40 @@ try {
     }
     if ($skipNext) { throw '--ocr-lang needs a language tag (e.g. zh-Hans-CN / en-US)' }
     $Rest = @($tmp)
+  }
+
+  # v4.6.13 (D-3): --origin <tag>. Consumed at this boundary like the other cross-command
+  # flags, because its meaning is "label every audit line THIS RUN writes", not "change one
+  # command". The tag is a single token: letters, digits, '.', '-' and '_' (1..32 chars).
+  # actions.log is pipe-delimited, so a value carrying ' | ' or whitespace would split one
+  # line into two columns - refused here, before anything runs. Default 'unknown' is written
+  # on every line, so a reader never has to infer whether an old line predates the column or
+  # the caller simply did not set a tag.
+  # EXCEPTION: log-index is read-only (it writes no audit lines) and owns --origin as its
+  # FILTER, so the flag is left in $Rest for that command's own parser. Without this the
+  # filter would be consumed here and --origin would silently label nothing.
+  # B-2 (v4.8.0): the default is the EMPTY string, not 'unknown'. 'unknown' is what the writer
+  # puts in the column when nothing above it holds, and the two are no longer the same fact:
+  # Resolve-AuditOrigin has to be able to tell "the caller typed --origin unknown" from "the
+  # caller typed nothing", because the next thing in its precedence is the dispatcher's own mode
+  # and the caller's declared label. Typing no tag is what lets the gate be recognised; typing
+  # one is what the caller asked for and wins.
+  $script:LogOrigin = ''
+  $script:LogOriginMode = ''
+  if ($Cmd -eq 'selftest') { $script:LogOriginMode = 'selftest' }
+  if ($Cmd -ne 'log-index' -and (@($Rest) -contains '--origin')) {
+    $tmpO = New-Object System.Collections.ArrayList
+    $skipO = $false
+    foreach ($t in $Rest) {
+      if ($skipO) { $script:LogOrigin = "$t"; $skipO = $false; continue }
+      if ($t -eq '--origin') { $skipO = $true; continue }
+      [void]$tmpO.Add($t)
+    }
+    if ($skipO) { throw '--origin needs a tag after it (e.g. --origin build-42)' }
+    $Rest = @($tmpO)
+    if ($script:LogOrigin -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$') {
+      throw "--origin: '$($script:LogOrigin)' is not a usable tag - letters, digits, '.', '-' and '_' only, 1..32 chars (the audit line is pipe-delimited, so a value carrying ' | ' or a space cannot be stored)"
+    }
   }
 
   # v4.2.2 (F2, entry normalization; machine owner authorized 2026-10-10, option "normalize at

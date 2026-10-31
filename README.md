@@ -1,10 +1,10 @@
-﻿# Agent Computer Use (Open Source Edition) v4.6.11
+﻿# Agent Computer Use (Open Source Edition) v4.8.0
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1121%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1252%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -49,7 +49,7 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. The foreground is re-checked *after* sending, so a mid-flight focus steal is a loud failure too. (`--force` opts out, legacy behavior.)
 - **It says how it knows what it knows.** This is the design rule the whole feature set grew around: a number or a "not found" is worthless unless the command also prints the measurement it came from. So `find` reports `source=uia|ocr`; a miss names what *both* roads measured; `hit-window:` prints the window your click actually landed on; capture echoes print the image→screen mapping they used; `--expect` verdicts name the patience and polling interval that were really applied; `paste` names which receipt leg accepted a folded payload. **Zero is never evidence of absence**, and a check that can only pass is not a check.
 - **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives, and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
-- **Self-testing.** `selftest` runs the offline gate (currently 1121 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
+- **Self-testing.** `selftest` runs the offline gate (currently 1252 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
 - **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
@@ -175,6 +175,14 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 - `status-summary` — read-only checkpoint of a working copy
 - `shots-cleanup` — bound the screenshot folder (dry run; `--go` moves to quarantine)
 - `help` — this page, one command's entry, or one flag
+- `capabilities` — derive the command surface (groups, flags, JSON support) from the dispatcher's own registry
+- `pt-profile` — write one surface down as a profile JSON: window identity plus OCR lines in window-relative coordinates
+- `pt-anchor` — re-read the profile's surface and report how far the named line really moved
+- `pt-calibrate` — answer "what was this canvas zoomed to": two anchors fit a uniform-scale+translation model, a third tests it
+- `log-index` — read-only index over the audit log by UTC date and origin tag (`--scope current|day|all` walks the rotated archives)
+- `tile` — cut a region too wide for one capture into a grid of 1:1 PNGs with per-tile sidecars
+- `stitch` — rebuild the region from a tile set (every output pixel has exactly one owner)
+- `cluster-color` — what colours an image file actually holds: clusters with shares and bboxes
 
 **Chrome via CDP**
 
@@ -360,6 +368,12 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `copy-file <path>` | put a file on the clipboard as `FileDrop`, self-verified; deliberately leaves it there |
 | `paste-file [--to <sel>] <path> [--guard-text <s>] [--force]` | copy-file + foreground guard + content guard + Ctrl+V + clipboard restore; default-on readback looks for the **file name** |
 | `clip-info` | clipboard **metadata only**: kind, format count and names, character count, file count, image availability, and whether this tool can restore it. No text is printed, no image is decoded, nothing is written |
+
+### capture quality flags (shot / win / rect / zoom share one grammar)
+
+`--min-ink <0..100>` turns on a quality gate: after each grab the 1:1 frame (before `--fit`, before the grid overlay) is measured for **ink** — the share of sampled pixels whose any channel differs from the reference by more than `--ink-tol` (default 24, per channel). The reference is `--ink-vs auto` (the frame's own mode colour, echoed) or an explicit `#RRGGBB`; `--ink-area x,y,w,h` scopes the measure; `--ink-stride 1..64` samples every Nth pixel (the echo prints the denominator). A frame below the threshold is a **refusal that publishes nothing** — a same-name previous pair stays byte-identical; `--retry <0..5>` re-captures (each attempt re-runs the window identity/rect/occlusion checks first, never resends input); `--retry-budget <ms>` caps the loop's total time; exhaustion exits non-zero naming the knob that fired. No `--min-ink` means the gate never runs — a legal white canvas is a legal frame.
+
+`--grid-style thin|bold|contrast` says how loud an overlaid grid draws, and every style first reads the text on the frame and cuts the line segments that would cross a word.
 
 ### occlusion switches (every pixel-reading command)
 

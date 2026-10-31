@@ -31,6 +31,48 @@ function Invoke-SelftestFamily-LiveSuite($Ctx) {
   $w0 = $Ctx['w0']
   $wins = $Ctx['wins']
 
+  # INC-02 (CU-REMAINDER-FINAL-20261029-01): a live block that writes the SHARED clipboard has to be
+  # able to put it back, and has to not write when it cannot. Both normalization writes below pipe a
+  # fixed string into clip.exe, which replaces whatever the machine owner (or another app) left
+  # there: no snapshot before the write, no restore on any exit path, and the family's one existing
+  # clipboard guard (the round-trip block) opens ~380 lines AFTER the first of them - its finally
+  # cannot put back a value that was already replaced.
+  # The guard is a pair because the write and the end of a block are far apart:
+  #   Start- snapshots the shared clipboard and asks the tool's OWN verdict whether it can be put
+  #   back. 'no ...' and 'unknown ...' refuse the write; the caller then skips the legs it owns under
+  #   an environment gate carrying the verdict as the reason, which is the G-20 shape - a desktop that
+  #   could not be made clean is neither a build failure nor a pass.
+  #   Stop- runs in the finally, so success, exception and cancellation all restore. The note goes
+  #   through Get-ClipboardRestoreOutcome and 'partial'/'failed' make the guard's own check RED:
+  #   "the clipboard was lost anyway" is not a clean exit, and only the process kill below is
+  #   outside what any of this can cover.
+  # $seam is the isolated interface the lifecycle is proven through OFFLINE (three scriptblocks
+  # replacing save/verdict/restore). No offline leg touches the shared clipboard; the on-site leg
+  # stays unrun until a live round is authorized.
+  function Start-LiveClipboardGuard([string]$who, $seam) {
+    $q2Save = { Save-ClipboardState }
+    $q2Verdict = { param($st) Get-ClipboardRestorableVerdict $st }
+    $q2Restore = { param($st) Restore-ClipboardState $st }
+    if ($seam) {
+      if ($seam.Save) { $q2Save = $seam.Save }
+      if ($seam.Verdict) { $q2Verdict = $seam.Verdict }
+      if ($seam.Restore) { $q2Restore = $seam.Restore }
+    }
+    $q2St = & $q2Save
+    $q2V = '' + (& $q2Verdict $q2St)
+    # 'yes - if the writing command can save the image carrier' starts: it is a yes, and the image
+    # leg that cannot be carried is refused later by the tool's own write guard, in the clear.
+    $q2Ok = (($q2V -notlike 'no*') -and ($q2V -notlike 'unknown*'))
+    return @{ Who = $who; Started = $q2Ok; Verdict = $q2V; Snapshot = $q2St; RestoreFn = $q2Restore; Written = $false }
+  }
+
+  function Stop-LiveClipboardGuard($g) {
+    if (-not $g) { return 'skipped clipboard restore (no guard was started for this block)' }
+    if (-not $g.Started) { return ('skipped clipboard restore (the guard refused the write: ' + [string]$g.Verdict + ')') }
+    if (-not $g.Written) { return 'skipped clipboard restore (the guard started but this block never wrote)' }
+    return '' + (& $g.RestoreFn $g.Snapshot)
+  }
+
   # ---------- live: real OCR against a real window ----------
   if ($live) {
     # ---------- live: workshop self-report (printed first, every round) ----------
@@ -59,6 +101,127 @@ function Invoke-SelftestFamily-LiveSuite($Ctx) {
       if ($codeLines[$wsi].Contains($wsNeed)) { $wsMarker++ }
     }
     ST-Check 'lint: the live ladder opens with the workshop self-report (deleting the disclosure must be loud)' ($wsMarker -eq 1)
+
+    # ---------- live: child caller identity (the stderr-silence contract) ----------
+    # Every native child of this ladder (the first one is the imgclick --dry below) reads
+    # its caller identity from the caller-label / caller-session env vars. Without them
+    # the child prints the caller-identity WARNING to stderr, and under
+    # ErrorActionPreference=Stop a native-stderr line through 2>&1 becomes a terminating
+    # NativeCommandError: on 2026-10-29 the ladder died exactly there, at the first child,
+    # and the whole paste ladder behind it never ran. Declaring the identity here is what
+    # keeps the bare 2>&1 capture sites of this file alive; the label also lands in each
+    # child's own call record, so a live round's children are auditable as selftest-live.
+    function Set-StLiveCallerIdentity([string]$label) {
+      # the env names are spelled split so this source never carries them unsplit
+      # (the lint below counts the call sites, and its own marker must not self-match)
+      [Environment]::SetEnvironmentVariable('DTX_CALLER_L' + 'ABEL', $label, 'Process')
+      [Environment]::SetEnvironmentVariable('DTX_CALLER_S' + 'ESSION_ID', $(if ($label) { [guid]::NewGuid().ToString('N') } else { $null }), 'Process')
+    }
+    # INC-03 (CU-REMAINDER-FINAL-20261029-01): the unlabeled control below cleared the TWO DTX names,
+    # but Get-DtxCallIdentity (lib/caller-runtime.ps1) reads FOUR sources - the two DTX names, then
+    # CODEX_THREAD_ID, then CODEX_SESSION_ID. Measured 2026-10-30 on the real resolver: both DTX names
+    # empty with a Codex thread id present answers CallerLabel='Codex' /
+    # IdentitySource='codex-thread-environment' and prints NO 'caller identity=unknown' line at all.
+    # So in a Codex-launched round the negative control asserted a warning the tool was RIGHT not to
+    # print - the ruler was measuring the environment, not the code. The control now isolates every
+    # source the resolver reads, and the fallback gets its own positive leg instead of being stepped
+    # on by a control that cannot see it.
+    function Get-StLiveIdentitySources {
+      return @{
+        Label = [Environment]::GetEnvironmentVariable('DTX_CALLER_L' + 'ABEL', 'Process')
+        Session = [Environment]::GetEnvironmentVariable('DTX_CALLER_S' + 'ESSION_ID', 'Process')
+        CodexThread = [Environment]::GetEnvironmentVariable('CODEX_THREAD_' + 'ID', 'Process')
+        CodexSession = [Environment]::GetEnvironmentVariable('CODEX_SESSION_' + 'ID', 'Process')
+      }
+    }
+    function Set-StLiveCodexIdentity([string]$thread, [string]$session) {
+      [Environment]::SetEnvironmentVariable('CODEX_THREAD_' + 'ID', $thread, 'Process')
+      [Environment]::SetEnvironmentVariable('CODEX_SESSION_' + 'ID', $session, 'Process')
+    }
+    # what this round INHERITED, taken before anything is cleared: the fallback leg below runs on that
+    # value only. Injecting a synthetic id would answer the question with a fixture and would also put
+    # a made-up session into the shared per-session call history.
+    $stIdBase = Get-StLiveIdentitySources
+    $stIdCodexLeg = 'CODEX_THREAD_ID'
+    if (-not [string]$stIdBase.CodexThread) { $stIdCodexLeg = 'CODEX_SESSION_ID' }
+    if ((-not [string]$stIdBase.CodexThread) -and (-not [string]$stIdBase.CodexSession)) { $stIdCodexLeg = '' }
+    # two-sided control first: clear any inherited label AND both Codex fallbacks, then pin that an
+    # unlabeled child still warns - a future silent removal of the warning cannot let the labeled-side
+    # check below pass vacuously.
+    # the child command line is built OUTSIDE the try: the labeled leg below reads this same variable
+    # after the finally, and a throw between the clears and this assignment would leave it undefined.
+    $stIdArgs = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" help'
+    try {
+      Set-StLiveCallerIdentity $null
+      Set-StLiveCodexIdentity $null $null
+      $stIdErrB = Join-Path $OutDir ('st-id-unlabeled-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.stderr.txt')
+      $stIdOutB = $stIdErrB -replace '\.stderr\.txt$', '.stdout.txt'
+      $stIdCpB = Start-Process -FilePath 'powershell.exe' -ArgumentList $stIdArgs -RedirectStandardOutput $stIdOutB -RedirectStandardError $stIdErrB -Wait -PassThru -NoNewWindow
+      $stIdErrTxtB = ''
+      if (Test-Path -LiteralPath $stIdErrB) { $stIdErrTxtB = [IO.File]::ReadAllText($stIdErrB) }
+      ST-Check 'live: the same child without the caller label still warns (the two-sided identity contract is pinned, with every identity source isolated)' (
+        ($stIdCpB.ExitCode -eq 0) -and $stIdErrTxtB.Contains('caller identity=unknown'))
+      Write-Output ('      child identity probe (unlabeled): exit=' + $stIdCpB.ExitCode + ' stderr-bytes=' + $stIdErrTxtB.Length +
+        ' codex-sources-inherited=' + $(if ([string]$stIdBase.CodexThread) { 'thread' } elseif ([string]$stIdBase.CodexSession) { 'session' } else { 'none' }))
+      # the Codex fallback, as a POSITIVE leg: the label stays empty, the identity this session really
+      # carries comes back, and the unknown warning must not appear. This is the leg that used to be
+      # indistinguishable from the negative one - the negative control could only be green when the
+      # machine happened to have no Codex id, and there it proved nothing about the fallback.
+      if ($stIdCodexLeg -ne '') {
+        Set-StLiveCodexIdentity $stIdBase.CodexThread $stIdBase.CodexSession
+        $stIdErrC = Join-Path $OutDir ('st-id-codex-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.stderr.txt')
+        $stIdOutC = $stIdErrC -replace '\.stderr\.txt$', '.stdout.txt'
+        $stIdCpC = Start-Process -FilePath 'powershell.exe' -ArgumentList $stIdArgs -RedirectStandardOutput $stIdOutC -RedirectStandardError $stIdErrC -Wait -PassThru -NoNewWindow
+        $stIdErrTxtC = ''
+        if (Test-Path -LiteralPath $stIdErrC) { $stIdErrTxtC = [IO.File]::ReadAllText($stIdErrC) }
+        ST-Check 'live: a child with no caller label but the Codex identity this session carries resolves through the fallback and prints no unknown warning (the source the negative control isolates)' (
+          ($stIdCpC.ExitCode -eq 0) -and (-not $stIdErrTxtC.Contains('caller identity=unknown')) -and
+          ($stIdErrTxtC -notmatch 'identity=unknown'))
+        Write-Output ('      child identity probe (codex fallback via ' + $stIdCodexLeg + '): exit=' + $stIdCpC.ExitCode + ' stderr-bytes=' + $stIdErrTxtC.Length)
+      } else {
+        ST-Skip 'live: a child with no caller label but the Codex identity this session carries resolves through the fallback and prints no unknown warning (the source the negative control isolates)' 'this process carries neither CODEX_THREAD_ID nor CODEX_SESSION_ID - the fallback leg has no premise, and a synthetic id would answer the question with a fixture and land in the shared call history'
+      }
+    } finally {
+      # every source the round inherited comes back before anything else in the ladder runs, and the
+      # label is declared from here on - both on the success path and on the path that throws.
+      Set-StLiveCodexIdentity $stIdBase.CodexThread $stIdBase.CodexSession
+      Set-StLiveCallerIdentity 'selftest-live'
+    }
+    $stIdAfter = Get-StLiveIdentitySources
+    # Only the two CODEX names are RESTORED to what the round inherited. The DTX pair is deliberately
+    # NOT restored: line-level, the finally above re-declares 'selftest-live' because every child below
+    # needs it (that is the v4.6.12 stderr-resilience contract), so asserting the label byte-for-byte
+    # against the inherited value would compare a value this file intentionally changed - a ruler that
+    # can only be red. The honest shape is: fallback sources back exactly, declared label present and
+    # named, session id non-empty and regenerated.
+    ST-Check 'live: the identity legs put the two Codex fallback sources back byte-for-byte and leave the DTX pair in the declared state the ladder needs (not the inherited one)' (
+      ([string]$stIdAfter.CodexThread -ceq [string]$stIdBase.CodexThread) -and
+      ([string]$stIdAfter.CodexSession -ceq [string]$stIdBase.CodexSession) -and
+      ([string]$stIdAfter.Label -ceq 'selftest-live') -and
+      ([string]$stIdAfter.Session).Length -gt 0)
+    Write-Output ('      identity restore: base=[' + $(if ([string]$stIdBase.CodexThread) { 'thread' } else { '-' }) + $(if ([string]$stIdBase.CodexSession) { '/session' } else { '-' }) +
+      '] after=[' + $(if ([string]$stIdAfter.CodexThread) { 'thread' } else { '-' }) + $(if ([string]$stIdAfter.CodexSession) { '/session' } else { '-' }) + '] label-declared=' + [bool][string]$stIdAfter.Label)
+    $stIdErrA = Join-Path $OutDir ('st-id-labeled-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.stderr.txt')
+    $stIdOutA = $stIdErrA -replace '\.stderr\.txt$', '.stdout.txt'
+    $stIdCpA = Start-Process -FilePath 'powershell.exe' -ArgumentList $stIdArgs -RedirectStandardOutput $stIdOutA -RedirectStandardError $stIdErrA -Wait -PassThru -NoNewWindow
+    # ReadAllText, not [string](Get-Content -Raw): an EMPTY stderr file is exactly the shape
+    # this labeled check is guarding for (silence IS the pass), and PS 5.1's Get-Content -Raw
+    # returns $null for an empty file while [string]$null stays $null (null passthrough) -
+    # which died on .Contains in the check below on the first labeled run (2026-10-29).
+    # ReadAllText returns '' for an empty file, always a real string.
+    $stIdErrTxtA = ''
+    if (Test-Path -LiteralPath $stIdErrA) { $stIdErrTxtA = [IO.File]::ReadAllText($stIdErrA) }
+    ST-Check 'live: a child tool call with the ladder-declared caller label writes no caller-identity warning to stderr (the 2>&1 capture sites stay alive)' (
+      ($stIdCpA.ExitCode -eq 0) -and (-not $stIdErrTxtA.Contains('caller identity=unknown')))
+    Write-Output ('      child identity probe (labeled): exit=' + $stIdCpA.ExitCode + ' stderr-bytes=' + $stIdErrTxtA.Length)
+    $stIdSites = 0
+    $stIdNeed = 'Set-StLiveCaller' + 'Identity'
+    for ($wsi = $j5ProdStart; $wsi -lt $j5ProdEnd; $wsi++) {
+      if ($codeLines[$wsi].Contains($stIdNeed)) { $stIdSites++ }
+    }
+    ST-Check 'lint: the caller-identity helper is defined once and called exactly twice (unlabeled control first, then the label for every child below)' ($stIdSites -eq 3)
+    Write-Output ('      caller-label helper sites: ' + $stIdSites)
+
     # Skip full-screen phantom windows (the IME host window, Program Manager,
     # the NVIDIA overlay): they are the biggest by area but hold no text of
     # their own, so OCR'ing them proves nothing about a real target.
@@ -1100,7 +1263,26 @@ $form.Add_MouseClick({
       # (task order section 10). Own window only: spawned here, killed in finally.
       $stepProc = $null
       $stepTmpFiles = New-Object System.Collections.ArrayList
+      # INC-02: both names are declared AHEAD of the try because the guard is the first thing this
+      # block does and the catch has to be able to tell a refused write from a real failure.
+      $stepGate = ''
+      $stepGuard = $null
       try {
+        # Clipboard hygiene (2026-10-29, live-r4): the script's paste step goes through the
+        # clipboard, and a PNG/Bitmap restored back by an earlier check's snapshot-restore
+        # chain makes the CU-OPS write guard refuse the paste BEFORE the payload lands -
+        # the step then reads as FAILED while type and keys both still land (measured:
+        # want=30chars got=[payType+payKeys], 1 FAILED, and the missing member was exactly
+        # the paste one). Normalizing to a plain text format gives the paste a clipboard
+        # this tool can snapshot, overwrite, and restore.
+        # INC-02: normalizing is a write to the SHARED clipboard, so it now happens only over a
+        # snapshot the tool can put back. Refused => the five names this block owns skip under the
+        # verdict as their reason (the G-20 branch of the catch), which is neither a silent pass
+        # nor a build failure; the finally restores on every path that reaches it.
+        $stepGuard = Start-LiveClipboardGuard 'step-probe normalization write' $null
+        if (-not $stepGuard.Started) { $stepGate = 'clipboard guard refused the normalization write: ' + $stepGuard.Verdict; throw $stepGate }
+        'DTX-CLIP-NORMALIZED' | & "$env:SystemRoot\System32\clip.exe"
+        $stepGuard.Written = $true
         $swOld = Resolve-Window 'DTX-StepProbe'
         if ($swOld) { try { Stop-Process -Id $swOld.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 500 }
         $sAlpha = 'ACDEFHJKLMNPRTUVWXY'
@@ -1120,7 +1302,9 @@ $form.Add_MouseClick({
         [void]$stepTmpFiles.Add($sScript); [void]$stepTmpFiles.Add($sJson); [void]$stepTmpFiles.Add($sFile); [void]$stepTmpFiles.Add($sReport)
         # G-20: '' means "nothing blocked this leg". Non-empty is an ENVIRONMENT reason, carried to
         # the catch so a disturbed desktop reports as NOT VERIFIED instead of as a build failure.
-        $stepGate = ''
+        # INC-02: the declaration moved above the try (the guard needs it before any of this runs);
+        # it is deliberately NOT reset here, because a cleared gate would turn a refused write back
+        # into a red build.
         # G-21 (owner ruling 2026-10-20 14:4x, item 3; scope explicitly = the WHOLE step-probe
         # dependency block, not only the five sites my G-20 pen diff touched): this block raises its
         # fixture with `Start-Process powershell` (App Paths) and then drives the tool with
@@ -1311,7 +1495,7 @@ $fxTimer.Start()
         ST-Check 'live: script type/paste/keys + expect land EXACTLY the payloads (no flags in the control)' ($tbName -ceq $wantSeq)
         ST-Check 'live: no expect-flag text leaked into the target window' (-not ($tbName -match '--'))
         Write-Output ("      step probe: want=" + $wantSeq.Length + "chars got=[" + $tbName + "]")
-        Write-Output ("      step probe run: " + (($sOut.Trim() -split "`r?`n" | Select-Object -Last 2) -join ' | '))
+        Write-Output ("      step probe run (last 6): " + (($sOut.Trim() -split "`r?`n" | Select-Object -Last 6) -join ' | '))
         # anti-drift nail (v1.5.2 R-08, teeth added v1.5.3): --needle must survive
         # the REAL 'powershell -File' binding AND must be what carries a needle that
         # itself starts with -- - the only reason the flag exists.
@@ -1370,6 +1554,17 @@ $fxTimer.Start()
           Write-Output ("      step probe error (environment gate was clean, so this is a real failure): " + $_.Exception.Message)
         }
       } finally {
+        # INC-02: the restore is the FIRST thing this finally does, on every path that reaches it
+        # (success, exception, cancellation), and its outcome is asserted instead of assumed:
+        # ok/skipped is a clean exit, partial/failed is RED, because "the clipboard was lost
+        # anyway" is exactly the loss this guard exists to prevent. A process killed from outside
+        # runs no finally at all - that path is disclosed, not covered.
+        $stepGuardNote = Stop-LiveClipboardGuard $stepGuard
+        $stepGuardOutcome = Get-ClipboardRestoreOutcome $stepGuardNote
+        ST-Check 'live: the step-probe clipboard guard restores the pre-write clipboard on every exit path (partial or failed restore is red, refused write never wrote anything to restore)' (
+          (@('ok', 'skipped') -ccontains $stepGuardOutcome))
+        Write-Output ('      step probe clipboard guard: verdict=[' + $(if ($stepGuard) { [string]$stepGuard.Verdict } else { '(no guard object)' }) + '] written=' +
+          $(if ($stepGuard) { [string]$stepGuard.Written } else { '-' }) + '] outcome=' + $stepGuardOutcome + ' restore=[' + $stepGuardNote + ']')
         if ($stepProc -and -not $stepProc.HasExited) { try { Stop-Process -Id $stepProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
         foreach ($tf in $stepTmpFiles) { if (Test-Path -LiteralPath $tf) { Remove-Item -LiteralPath $tf -Force -ErrorAction SilentlyContinue } }
       }
@@ -1492,6 +1687,7 @@ $f.Location = New-Object System.Drawing.Point(120, 1150)
         $noteT = Restore-ClipboardState $stT
         ST-Check 'live: text-only clipboard restores the exact text' (
           $stT.Kind -ceq 'text' -and ([System.Windows.Forms.Clipboard]::GetText()) -ceq 'QXCLIPTEXT-0421' -and $noteT -like 'clipboard restored (previous content was text, 15 chars)*')
+        Write-Output ("      clip text probe: kind=[" + $stT.Kind + "] text-back=[" + ([System.Windows.Forms.Clipboard]::GetText()) + "] note=[" + $noteT + "]")
         # (2) FileDrop-only round trip through the tool's own setter, exact path
         [System.Windows.Forms.Clipboard]::Clear()
         $setOk = Set-ClipboardFileDrop $qxF
@@ -1502,6 +1698,7 @@ $f.Location = New-Object System.Drawing.Point(120, 1150)
         if ([System.Windows.Forms.Clipboard]::ContainsFileDropList()) { $backF = @([System.Windows.Forms.Clipboard]::GetFileDropList()) }
         ST-Check 'live: FileDrop-only clipboard restores the exact path' (
           $setOk -and $stF.Kind -ceq 'files' -and @($backF).Count -eq 1 -and $backF[0] -ceq $qxF -and $noteF -like 'clipboard restored (previous content was FileDrop, 1 file(s))*')
+        Write-Output ("      clip file probe: setOk=$setOk kind=[" + $stF.Kind + "] back=[" + (@($backF) -join '; ') + "] note=[" + $noteF + "]")
         # (3) empty clipboard gets its own honest echo (not "non-text")
         [System.Windows.Forms.Clipboard]::Clear()
         Start-Sleep -Milliseconds 200
@@ -1764,15 +1961,31 @@ $lbl.ForeColor = [System.Drawing.Color]::Black
           # case die on its first run (ParameterBindingArgumentTransformation on 'ok').
           $jWantRead = Get-JsonContractKeySet 'read'
           $jWantFind = Get-JsonContractKeySet 'find'
-          $jArgsRead = @('read-text', [string]$jRect.X, [string]$jRect.Y, [string]$jRect.W, [string]$jRect.H, '--json')
+          # The FULL CLI head must ride along: the first live run of the split-stream capture
+          # shipped the bare arguments, so powershell.exe read 'find-text ...' as ITS OWN
+          # command line (CommandNotFoundException, exit 1, empty stdout). One string, quotes
+          # around the entry path - the same shape the child identity probe below uses.
+          $jArgRead = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" read-text ' + ([string]$jRect.X) + ' ' + ([string]$jRect.Y) + ' ' + ([string]$jRect.W) + ' ' + ([string]$jRect.H) + ' --json'
           # v3.0.1 (audit #20): the sibling cases below (assert-*, imgclick) already go
-          # through cmd /c and even name this trap in a comment - these two were left on a
-          # bare `powershell ... 2>&1`, where ANY stderr line from the child (a WARNING:
-          # OCCLUDED is enough) is turned into a terminating NativeCommandError while
-          # $ErrorActionPreference is Stop. The capture then holds no JSON, ConvertFrom-Json
-          # is swallowed by the try, and the case reports an empty key set - a red that
-          # points at the schema instead of at the pipe. cmd merges before PowerShell sees.
-          $jTxt = ((& cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File `"$script:ToolEntryPath`" $($jArgsRead -join ' ') 2>&1") | Out-String).Trim()
+          # through cmd /c and even name this trap - these two were left on a bare
+          # `powershell ... 2>&1`, where ANY stderr line from the child is turned into a
+          # terminating NativeCommandError while $ErrorActionPreference is Stop. cmd /c
+          # fixed THAT, but 2026-10-29's first-ever live paste ladder exposed the second
+          # layer: cmd /c makes cmd.exe the child's REAL parent, so the internal-parent
+          # verification (marker PID vs real parent PID, caller-runtime) fails, the child
+          # is treated as its own root, the legitimate father-and-child coexistence of a
+          # live ladder is reported as `desktop tool overlap` on stderr - and cmd merges
+          # that WARNING straight into the JSON stream, so ConvertFrom-Json gets nothing.
+          # Start-Process with SEPARATE redirect files keeps stdout JSON-pure (any warning
+          # lands in the stderr file, read but never parsed), and restores the direct
+          # parentage the root-id chain expects, so the overlap report does not fire at
+          # all. ReadAllText, not [string](Get-Content -Raw): an empty stdout must parse
+          # as failure, not as a null that dies on .Trim (2026-10-29, live-r2).
+          $jErr = Join-Path $OutDir ('st-json-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.stderr.txt')
+          $jOut = $jErr -replace '\.stderr\.txt$', '.stdout.txt'
+          $jCp = Start-Process -FilePath 'powershell.exe' -ArgumentList $jArgRead -RedirectStandardOutput $jOut -RedirectStandardError $jErr -Wait -PassThru -NoNewWindow
+          $jTxt = ''
+          if (Test-Path -LiteralPath $jOut) { $jTxt = [IO.File]::ReadAllText($jOut).Trim() }
           $jObj = $null
           try { $jObj = $jTxt | ConvertFrom-Json } catch { }
           $jKeys = ''
@@ -1780,7 +1993,12 @@ $lbl.ForeColor = [System.Drawing.Color]::Black
           ST-Check 'live: read-text --json top-level key set matches the pinned contract end to end' (
             $jKeys -ceq $jWantRead)
           $jArgsFind = @('find-text', [string]$jRect.X, [string]$jRect.Y, [string]$jRect.W, [string]$jRect.H, '--needle', 'QXSHAPETXT', '--json')
-          $jTxt2 = ((& cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File `"$script:ToolEntryPath`" $($jArgsFind -join ' ') 2>&1") | Out-String).Trim()
+          $jArgFind = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" find-text ' + ([string]$jRect.X) + ' ' + ([string]$jRect.Y) + ' ' + ([string]$jRect.W) + ' ' + ([string]$jRect.H) + ' --needle QXSHAPETXT --json'
+          $jErr2 = Join-Path $OutDir ('st-json-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.stderr.txt')
+          $jOut2 = $jErr2 -replace '\.stderr\.txt$', '.stdout.txt'
+          $jCp2 = Start-Process -FilePath 'powershell.exe' -ArgumentList $jArgFind -RedirectStandardOutput $jOut2 -RedirectStandardError $jErr2 -Wait -PassThru -NoNewWindow
+          $jTxt2 = ''
+          if (Test-Path -LiteralPath $jOut2) { $jTxt2 = [IO.File]::ReadAllText($jOut2).Trim() }
           $jObj2 = $null
           try { $jObj2 = $jTxt2 | ConvertFrom-Json } catch { }
           $jKeys2 = ''
@@ -1790,10 +2008,77 @@ $lbl.ForeColor = [System.Drawing.Color]::Black
           ST-Check 'live: find-text --json top-level key set matches the pinned contract end to end' (
             $jKeys2 -ceq $jWantFind)
           Write-Output "      --json contract (real output): read-text=[$jKeys] find-text=[$jKeys2]"
-          if (-not $jKeys2) { Write-Output "      find-text --json produced no object: $((($jTxt2 -split "`r?`n") | Select-Object -First 1))" }
+          if (-not $jKeys) { Write-Output "      read-text --json produced no object (exit=$($jCp.ExitCode)): $((($jTxt -split "`r?`n") | Select-Object -First 1))" }
+          if (-not $jKeys2) { Write-Output "      find-text --json produced no object (exit=$($jCp2.ExitCode)): $((($jTxt2 -split "`r?`n") | Select-Object -First 1))" }
         } catch {
           ST-Check 'live: --json contract cases ran' $false
           Write-Output "      --json contract error: $($_.Exception.Message)"
+        }
+
+        # D-1 (v4.6.13) live: one real window, one real move, two real reads (a sub-block of the probe case, no banner of its own)
+        # Anchors are WINDOW-RELATIVE by contract, so moving the window must NOT look like drift:
+        # the relocation re-resolves the window it profiles (pid + proc, title as tiebreak), reads
+        # the surface again and subtracts the CURRENT rect origin. The profile's own rect= line
+        # must therefore show the moved origin while drift stays ~0. That is the whole point of
+        # calibrating anchors instead of remembering screen coordinates.
+        if (-not $ocrOk) {
+          ST-Skip 'live (D-1): pt-profile on a real window names the rendered label as an anchor' 'no OCR language pack / recognizer unreachable - the anchor road cannot be measured'
+          ST-Skip 'live (D-1): pt-anchor re-reads the moved window with window-relative drift and the new rect' 'no OCR language pack / recognizer unreachable - the anchor road cannot be measured'
+        } else {
+          try {
+            $ptLvTag = [guid]::NewGuid().ToString('N').Substring(0, 8)
+            $ptLvProf = Join-Path $OutDir ('st-pt-' + $ptLvTag + '.json')
+            $ptLvErr = Join-Path $OutDir ('st-pt-' + $ptLvTag + '.stderr.txt')
+            $ptLvOut = $ptLvErr -replace '\.stderr\.txt$', '.stdout.txt'
+            $ptLvArg = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" pt-profile "DTX-MaskProbe" --samples 2 --save "' + $ptLvProf + '"'
+            $ptLvCp = Start-Process -FilePath 'powershell.exe' -ArgumentList $ptLvArg -RedirectStandardOutput $ptLvOut -RedirectStandardError $ptLvErr -Wait -PassThru -NoNewWindow
+            $ptLvTxt = ''
+            if (Test-Path -LiteralPath $ptLvOut) { $ptLvTxt = [IO.File]::ReadAllText($ptLvOut) }
+            $ptLvObj = $null
+            try { $ptLvObj = Import-PtProfile $ptLvProf 'pt-anchor' } catch { }
+            $ptLvPid = -1
+            $ptLvAnch = @()
+            $ptLvHit = $null
+            if ($null -ne $ptLvObj) {
+              $ptLvPid = [int](Get-OptValue (Get-OptValue $ptLvObj 'window') 'pid')
+              $ptLvAnch = @(Get-OptValue $ptLvObj 'anchors')
+              $ptLvHit = Find-PtAnchorMatch $ptLvAnch 'QXSHAPETXT'
+            }
+            ST-Check 'live (D-1): pt-profile on a real window names the rendered label as an anchor' (
+              ($ptLvCp.ExitCode -eq 0) -and ($null -ne $ptLvObj) -and
+              (([string](Get-OptValue $ptLvObj 'basis')) -ceq 'window') -and
+              ($ptLvPid -eq [int]$mwin.Pid) -and ($null -ne $ptLvHit) -and ($ptLvHit.Kind -ceq 'exact') -and
+              ($ptLvTxt -match 'saved: '))
+            if (($ptLvCp.ExitCode -ne 0) -or ($null -eq $ptLvObj) -or ($ptLvPid -ne [int]$mwin.Pid)) {
+              Write-Output "      D-1 live profile: exit=$($ptLvCp.ExitCode) pid=$ptLvPid want=$([int]$mwin.Pid) anchors=$(@($ptLvAnch).Count) out=[$ptLvTxt]"
+            }
+            $ptLvRect = Get-TargetRect $mwin
+            $ptLvNx = [int]$ptLvRect.X + 60
+            $ptLvNy = [int]$ptLvRect.Y - 40
+            Invoke-DesktopCommand 'win-move' @('DTX-MaskProbe', [string]$ptLvNx, [string]$ptLvNy) | Out-Null
+            Start-Sleep -Milliseconds 600
+            $ptLvErr2 = Join-Path $OutDir ('st-pt-' + $ptLvTag + '-a.stderr.txt')
+            $ptLvOut2 = $ptLvErr2 -replace '\.stderr\.txt$', '.stdout.txt'
+            $ptLvArg2 = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" pt-anchor "' + $ptLvProf + '" --needle QXSHAPETXT --max-drift 8'
+            $ptLvCp2 = Start-Process -FilePath 'powershell.exe' -ArgumentList $ptLvArg2 -RedirectStandardOutput $ptLvOut2 -RedirectStandardError $ptLvErr2 -Wait -PassThru -NoNewWindow
+            $ptLvTxt2 = ''
+            if (Test-Path -LiteralPath $ptLvOut2) { $ptLvTxt2 = [IO.File]::ReadAllText($ptLvOut2) }
+            $ptLvDx = 999
+            $ptLvDy = 999
+            if ($ptLvTxt2 -match 'drift=\(([-0-9]+),([-0-9]+)\)') { $ptLvDx = [int]$Matches[1]; $ptLvDy = [int]$Matches[2] }
+            $ptLvRx = -99999
+            if ($ptLvTxt2 -match 'rect=\(([0-9]+),([0-9]+),([0-9]+),([0-9]+)\)') { $ptLvRx = [int]$Matches[1] }
+            ST-Check 'live (D-1): pt-anchor re-reads the moved window with window-relative drift and the new rect' (
+              ($ptLvCp2.ExitCode -eq 0) -and ($ptLvTxt2 -match 'match=exact') -and ($ptLvTxt2 -match 'verdict=within') -and
+              ([math]::Abs($ptLvDx) -le 3) -and ([math]::Abs($ptLvDy) -le 3) -and
+              ([math]::Abs($ptLvRx - $ptLvNx) -le 2))
+            if (($ptLvCp2.ExitCode -ne 0) -or ([math]::Abs($ptLvDx) -gt 3) -or ([math]::Abs($ptLvDy) -gt 3) -or ([math]::Abs($ptLvRx - $ptLvNx) -gt 2)) {
+              Write-Output "      D-1 live anchor: exit=$($ptLvCp2.ExitCode) drift=($ptLvDx,$ptLvDy) rect-x=$ptLvRx want-x=$ptLvNx out=[$ptLvTxt2]"
+            }
+          } catch {
+            ST-Check 'live (D-1): the pt-profile / pt-anchor anchor road ran' $false
+            Write-Output "      D-1 live error: $($_.Exception.Message)"
+          }
         }
       } catch {
         ST-Check 'live: mask probe setup+run' $false
@@ -2544,13 +2829,59 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
         while ($swT.Elapsed.TotalSeconds -lt 15) { $tW = Resolve-Window $tgtTitle; if ($tW) { break }; Start-Sleep -Milliseconds 300 }
         if (-not $tW) { throw 'DTX-OccTarget window did not appear within 15s' }
         Start-Sleep -Milliseconds 300
-        [void][DT]::SetForegroundWindow($tW.Handle)
+        $occFg = [bool][DT]::SetForegroundWindow($tW.Handle)
         Start-Sleep -Milliseconds 300
+
+        # Item 6 premise, established rather than assumed. Measured 2026-10-30 (live-r1/r2 plus
+        # standalone probes outside the ladder): when a foreign process owns the foreground, this
+        # fixture cannot be put above it. Inside the fixture's own process, TopMost=$true together
+        # with SetWindowPos(HWND_TOPMOST) still left 4 of these 25 points owned by that window; a
+        # SetWindowPos(HWND_TOPMOST) issued from outside answers True with the WS_EX_TOPMOST bit
+        # still clear and the same 4 points unchanged. So "this hardcoded rect is empty" is not a
+        # premise I get for free - it depends on what the owner happens to have open.
+        # The lever that does work is geometry: move OUR OWN window (a user window is never
+        # touched) to a rect whose sample points all hit-test back to the fixture. Candidate 1 is
+        # the rect the fixture already sits in, so an uncluttered desktop takes the old path and
+        # spends nothing. Verification uses Get-HitWindow, the primitive item 7 already leans on,
+        # not the verdict function under test.
+        $vsO = [System.Windows.Forms.SystemInformation]::VirtualScreen
+        $occCands = @( ,@($tW.Left, $tW.Top) )
+        for ($occCy = [int]($vsO.Y + 60); ($occCy + $tW.H) -le ($vsO.Y + $vsO.Height); $occCy += ($tW.H + 60)) {
+          for ($occCx = [int]($vsO.X + 60); ($occCx + $tW.W) -le ($vsO.X + $vsO.Width); $occCx += ($tW.W + 60)) { $occCands += , @($occCx, $occCy) }
+        }
+        $occOwn = $false
+        $occTries = 0
+        foreach ($occCd in $occCands) {
+          $occTries++
+          if (-not ($occCd[0] -eq $tW.Left -and $occCd[1] -eq $tW.Top)) {
+            Invoke-DesktopCommand 'win-move' @($tgtTitle, [string]$occCd[0], [string]$occCd[1]) | Out-Null
+            Start-Sleep -Milliseconds 250
+            $tW = Resolve-Window $tgtTitle
+          }
+          $occOwn = $true
+          foreach ($occQ in @((Get-OcclusionPoints $tW.Left $tW.Top $tW.W $tW.H 5).Points)) {
+            $occH = Get-HitWindow $occQ.X $occQ.Y
+            if (-not $occH -or $occH.Hwnd -ne $tW.Handle) { $occOwn = $false; break }
+          }
+          if ($occOwn -or $occTries -ge 12) { break }
+        }
 
         # item 6 (true negative): an uncovered target reads 0%
         $occN = Get-OcclusionVerdict $tW.Left $tW.Top $tW.W $tW.H $tW.Handle 5
-        ST-Check 'live: occlusion true negative - clean target reads 0%' ($occN.Checked -gt 0 -and $occN.Mismatch -eq 0 -and $occN.Pct -eq 0)
-        Write-Output "      occlusion negative: checked=$($occN.Checked) pct=$($occN.Pct)% ms=$($occN.Ms)"
+        if ($occOwn) {
+          ST-Check 'live: occlusion true negative - clean target reads 0%' ($occN.Checked -gt 0 -and $occN.Mismatch -eq 0 -and $occN.Pct -eq 0)
+        } else {
+          ST-Skip 'live: occlusion true negative - clean target reads 0%' "premise not established: no rect owned all 25 sample points in $occTries tries (the desktop is covered; this is not a verdict failure)"
+        }
+        # This line is the ONLY way this leg can be attributed from the transcript, and a bare
+        # percentage cannot attribute anything: it says "16%", not "who". It therefore goes
+        # through the same renderer pair the product uses (R-25), and reports the two facts that
+        # decide whether the leg was ever runnable - whether the fixture ended up owning its own
+        # pixels, how many rects it took to get there, and whether the foreground change Windows
+        # refuses was granted.
+        $occNCov = Format-OcclusionCovering @($occN.Covering) $occN.Checked
+        Write-Output ("      occlusion negative: " + (Format-OcclusionVerdict 'read' @{ X = $tW.Left; Y = $tW.Top; W = $tW.W; H = $tW.H } ([int]$occN.Pct) (Get-OptValue $occNCov 'Summary') ([string]$occN.Err)) + " checked=$($occN.Checked) ms=$($occN.Ms) foreground-set=$occFg premise-free=$occOwn rect-tries=$occTries")
+        foreach ($occNCovLine in @((Get-OptValue $occNCov 'Lines'))) { Write-Output "        covering: $occNCovLine" }
 
         # item 7 (false-positive guard): fullscreen click-through overlays must
         # never be counted as covering. Uses the REAL system hit test, so the
@@ -2923,7 +3254,29 @@ $b2.SetBounds(20, 100, 150, 60)
     #                   proving the threshold does not bypass the primary read.
     $frProc = $null; $nfProc = $null; $shProc = $null
     $rcpTmp = New-Object System.Collections.ArrayList
+    # INC-02: same pair as the step-probe block - declared ahead of the try so the catch can tell a
+    # refused write from a real failure, and the gate names the four legs this block owns.
+    $rcpGate = ''
+    $rcpGuard = $null
     try {
+      # Clipboard hygiene (2026-10-29, live-r4): every paste here snapshots and restores the
+      # clipboard, and a PNG/Bitmap left anywhere upstream (a capture or copy-file --image
+      # check restored its own snapshot back) makes the CU-OPS write guard refuse the paste
+      # BEFORE the receipt chain even runs - the refusal text carries no none-of-three, so
+      # the control case reads as a wording failure when it is really leftover state. Fold
+      # ran first and passed only because it met a still-clean clipboard; every scenario
+      # after it inherits whatever the previous restore left. Normalizing to a plain text
+      # format here makes all four scenarios start from a state this tool can snapshot,
+      # restore, and - when the control case needs it - refuse for the RIGHT reason.
+      # INC-02: that normalization is a write to the SHARED clipboard. It now runs only over a
+      # snapshot the tool can put back; refused => the four names this block owns skip with the
+      # verdict as the reason. The alternative - writing anyway because the fixtures are this
+      # round's own windows - is the loss this item was raised for: clip.exe replaces the machine
+      # owner's content, not a fixture's.
+      $rcpGuard = Start-LiveClipboardGuard 'paste-receipt normalization write' $null
+      if (-not $rcpGuard.Started) { $rcpGate = 'clipboard guard refused the normalization write: ' + $rcpGuard.Verdict; throw $rcpGate }
+      'DTX-CLIP-NORMALIZED' | & "$env:SystemRoot\System32\clip.exe"
+      $rcpGuard.Written = $true
       $frScript = Join-Path $env:TEMP ('dtx-fold-probe-' + (Get-Random) + '.ps1')
       $nfScript = Join-Path $env:TEMP ('dtx-nofold-probe-' + (Get-Random) + '.ps1')
       $shScript = Join-Path $env:TEMP ('dtx-show-probe-' + (Get-Random) + '.ps1')
@@ -3057,14 +3410,37 @@ $f.Add_Shown({ [void]$tb.Focus() })
       Start-Sleep -Milliseconds 900
       $frH0 = [int](Resolve-Window 'DTX-FoldProbe').H
       $nfH0 = [int](Resolve-Window 'DTX-NoFold').H
-      $frOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath paste $frPayload --to DTX-FoldProbe 2>&1 | Out-String
-      $frCode = $LASTEXITCODE
+      # Split-stream capture for all three (2026-10-29, live-r5): any stderr line the child
+      # emits turns a bare 2>&1 into a terminating NativeCommandError under EAP=Stop and the
+      # refusal text on stdout is swallowed with it (measured: all three verdicts read
+      # no-readback-line while exit and heights were readable). Files keep the verdict text
+      # parseable and the warnings on record; ReadAllText keeps an empty stream ''.
+      $frErrF = Join-Path $OutDir ('st-paste-fold-' + [guid]::NewGuid().ToString('N') + '.stderr.txt')
+      $frOutF = $frErrF -replace '\.stderr\.txt$', '.stdout.txt'
+      [void]$rcpTmp.Add($frErrF); [void]$rcpTmp.Add($frOutF)
+      $frArgStr = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" paste "' + $frPayload + '" --to DTX-FoldProbe'
+      $frCp = Start-Process -FilePath 'powershell.exe' -ArgumentList $frArgStr -RedirectStandardOutput $frOutF -RedirectStandardError $frErrF -Wait -PassThru -NoNewWindow
+      $frCode = $frCp.ExitCode
+      $frOut = ''
+      if (Test-Path -LiteralPath $frOutF) { $frOut = [IO.File]::ReadAllText($frOutF) }
       $frH1 = [int](Resolve-Window 'DTX-FoldProbe').H
-      $nfOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath paste $frPayload --to DTX-NoFold 2>&1 | Out-String
-      $nfCode = $LASTEXITCODE
+      $nfErrF = Join-Path $OutDir ('st-paste-nofold-' + [guid]::NewGuid().ToString('N') + '.stderr.txt')
+      $nfOutF = $nfErrF -replace '\.stderr\.txt$', '.stdout.txt'
+      [void]$rcpTmp.Add($nfErrF); [void]$rcpTmp.Add($nfOutF)
+      $nfArgStr = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" paste "' + $frPayload + '" --to DTX-NoFold'
+      $nfCp = Start-Process -FilePath 'powershell.exe' -ArgumentList $nfArgStr -RedirectStandardOutput $nfOutF -RedirectStandardError $nfErrF -Wait -PassThru -NoNewWindow
+      $nfCode = $nfCp.ExitCode
+      $nfOut = ''
+      if (Test-Path -LiteralPath $nfOutF) { $nfOut = [IO.File]::ReadAllText($nfOutF) }
       $nfH1 = [int](Resolve-Window 'DTX-NoFold').H
-      $shOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath paste $frPayload --to DTX-ShowProbe 2>&1 | Out-String
-      $shCode = $LASTEXITCODE
+      $shErrF = Join-Path $OutDir ('st-paste-show-' + [guid]::NewGuid().ToString('N') + '.stderr.txt')
+      $shOutF = $shErrF -replace '\.stderr\.txt$', '.stdout.txt'
+      [void]$rcpTmp.Add($shErrF); [void]$rcpTmp.Add($shOutF)
+      $shArgStr = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" paste "' + $frPayload + '" --to DTX-ShowProbe'
+      $shCp = Start-Process -FilePath 'powershell.exe' -ArgumentList $shArgStr -RedirectStandardOutput $shOutF -RedirectStandardError $shErrF -Wait -PassThru -NoNewWindow
+      $shCode = $shCp.ExitCode
+      $shOut = ''
+      if (Test-Path -LiteralPath $shOutF) { $shOut = [IO.File]::ReadAllText($shOutF) }
       # 1) the folded send: accepted ONLY through the receipt, and the height really grew
       ST-Check 'live: paste of a folded long payload is accepted on a named receipt while the window genuinely grew (the v1.5.9 verbatim ask was a guaranteed false negative here)' (
         ($frCode -eq 0) -and ($frOut -match 'accepted on receipt=') -and ($frOut -match 'fold-threshold=') -and
@@ -3080,15 +3456,40 @@ $f.Add_Shown({ [void]$tb.Focus() })
       # case with exit 0 and the round could not say whether the body was read verbatim or
       # accepted on a weak receipt under the owner's occluding window. A red that cannot
       # classify itself is the shape this repo keeps paying for.
-      foreach ($shPair in @(@('fold', $frOut), @('nofold', $nfOut), @('show', $shOut))) {
+      foreach ($shPair in @(@('fold', $frOut, $frErrF), @('nofold', $nfOut, $nfErrF), @('show', $shOut, $shErrF))) {
         $shLine = (($shPair[1].Trim() -split "`r?`n" | Where-Object { $_ -match 'readback=|accepted on receipt|none-of-three' }) -join ' ;; ')
         Write-Output ('      verdict[' + $shPair[0] + ']: ' + $(if ($shLine) { $shLine } else { 'no-readback-line' }))
+        if (-not $shLine) {
+          Write-Output ('      ' + $shPair[0] + ' stdout tail: ' + (($shPair[1].Trim() -split "`r?`n" | Select-Object -Last 3) -join ' | '))
+          $shErrHead = ''
+          try { $shErrHead = (@([IO.File]::ReadAllLines($shPair[2])) | Select-Object -First 1) -join '' } catch { $shErrHead = '(no stderr file)' }
+          Write-Output ('      ' + $shPair[0] + ' stderr head: ' + $shErrHead)
+        }
       }
       Write-Output ("      fold echo tail: " + (($frOut.Trim() -split "`r?`n" | Where-Object { $_ -match 'receipt|verified|pasted' }) -join ' | '))
     } catch {
-      ST-Check 'live: paste receipt fixture block setup+run' $false
-      Write-Output "      paste receipt error: $($_.Exception.Message)"
+      # INC-02: a refused normalization is an environment state, not a build result - the four names
+      # this block owns skip under the verdict, each carrying it, so a machine whose clipboard could
+      # not be preserved is never read as "the receipt chain is broken" and never as a pass.
+      if ($rcpGate) {
+        Write-Output ('      paste receipt block NOT VERIFIED (clipboard guard refused the write, never a pass): ' + $rcpGate)
+        ST-Skip 'live: paste receipt fixture block setup+run' ('environment blocked - ' + $rcpGate)
+        ST-Skip 'live: paste of a folded long payload is accepted on a named receipt while the window genuinely grew (the v1.5.9 verbatim ask was a guaranteed false negative here)' ('environment blocked - ' + $rcpGate)
+        ST-Skip 'live: paste into a target that received nothing is STILL refused with receipt-tried=none-of-three and the measured numbers (a receipt that fires on any paste is worse than the false negative it fixes)' ('environment blocked - ' + $rcpGate)
+        ST-Skip 'live: a long payload the target DOES render is still accepted on readback=verbatim-tail and never on a receipt (threshold must not downgrade the primary read)' ('environment blocked - ' + $rcpGate)
+      } else {
+        ST-Check 'live: paste receipt fixture block setup+run' $false
+        Write-Output "      paste receipt error: $($_.Exception.Message)"
+      }
     } finally {
+      # INC-02: restore first, on every path that reaches the finally, and assert the outcome rather
+      # than assume it - partial/failed is red. An outside kill runs no finally: disclosed, not covered.
+      $rcpGuardNote = Stop-LiveClipboardGuard $rcpGuard
+      $rcpGuardOutcome = Get-ClipboardRestoreOutcome $rcpGuardNote
+      ST-Check 'live: the paste-receipt clipboard guard restores the pre-write clipboard on every exit path (partial or failed restore is red, a refused write had nothing to write)' (
+        (@('ok', 'skipped') -ccontains $rcpGuardOutcome))
+      Write-Output ('      paste receipt clipboard guard: verdict=[' + $(if ($rcpGuard) { [string]$rcpGuard.Verdict } else { '(no guard object)' }) + '] written=' +
+        $(if ($rcpGuard) { [string]$rcpGuard.Written } else { '-' }) + '] outcome=' + $rcpGuardOutcome + ' restore=[' + $rcpGuardNote + ']')
       if ($frProc -and -not $frProc.HasExited) { try { Stop-Process -Id $frProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
       if ($nfProc -and -not $nfProc.HasExited) { try { Stop-Process -Id $nfProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
       if ($shProc -and -not $shProc.HasExited) { try { Stop-Process -Id $shProc.Id -Force -ErrorAction SilentlyContinue } catch { } }
@@ -3195,8 +3596,21 @@ $gaTimer.Start()
       if (-not ($gnWin -and $gaWin)) { throw 'the two occlusion-gate fixtures did not both appear within 15s' }
       Start-Sleep -Milliseconds 1500
       $gnH0 = [int](Resolve-Window 'DTX-GateNoFold').H
-      $gateOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath paste $gatePayload --to DTX-GateNoFold 2>&1 | Out-String
-      $gateCode = $LASTEXITCODE
+      # Split-stream capture (2026-10-29, live-r4): a paste this occlusion gate is supposed
+      # to refuse can also emit a [scan=guard] WARNING on stderr, and under
+      # ErrorActionPreference=Stop the bare 2>&1 turns that into a terminating
+      # NativeCommandError that swallows the whole capture (verdict[gate] read
+      # no-readback-line while exit and heights were fine). Separate files keep the
+      # refusal text on stdout parseable; ReadAllText, not [string](Get-Content -Raw),
+      # so an empty stream is '' and never a null (the live-r2 lesson).
+      $gateErrF = Join-Path $env:TEMP ('dtx-gate-paste-' + [guid]::NewGuid().ToString('N') + '.stderr.txt')
+      $gateOutF = $gateErrF -replace '\.stderr\.txt$', '.stdout.txt'
+      [void]$gateTmp.Add($gateErrF); [void]$gateTmp.Add($gateOutF)
+      $gateArgStr = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" paste "' + $gatePayload + '" --to DTX-GateNoFold'
+      $gateCp = Start-Process -FilePath 'powershell.exe' -ArgumentList $gateArgStr -RedirectStandardOutput $gateOutF -RedirectStandardError $gateErrF -Wait -PassThru -NoNewWindow
+      $gateCode = $gateCp.ExitCode
+      $gateOut = ''
+      if (Test-Path -LiteralPath $gateOutF) { $gateOut = [IO.File]::ReadAllText($gateOutF) }
       $gnH1 = [int](Resolve-Window 'DTX-GateNoFold').H
       ST-Check 'live: paste into a COVERED target that receives nothing is refused by the occlusion gate with the measured pct and the coverer named (the real-machine red-1/red-2 shape: the desktop could not rise above its coverers either)' (
         # v3.1.0 (P-04) wording branch, strength unchanged: the verbatim expectation leg now has
@@ -3210,6 +3624,7 @@ $gaTimer.Start()
       Write-Output ("      paste occlusion gate live: exit$gateCode h$gnH0->$gnH1 occlusion-gate=" + (Get-PasteReceiptOcclusionMax))
       $gateLine = (($gateOut.Trim() -split "`r?`n" | Where-Object { $_ -match 'readback=|occluded-refused|none-of-three|accepted on receipt|expect refused' }) -join ' ;; ')
       Write-Output ('      verdict[gate]: ' + $(if ($gateLine) { $gateLine } else { 'no-readback-line' }))
+      if (-not $gateLine) { Write-Output ('      gate stdout tail: ' + (($gateOut.Trim() -split "`r?`n" | Select-Object -Last 3) -join ' | ')); Write-Output ('      gate stderr head: ' + ((@([IO.File]::ReadAllLines($gateErrF)) | Select-Object -First 1) -join '')) }
     } catch {
       ST-Check 'live: paste occlusion gate fixture block setup+run' $false
       Write-Output "      paste occlusion gate error: $($_.Exception.Message)"
@@ -3229,6 +3644,322 @@ $gaTimer.Start()
     # SKIP row. It IS a "could not run here" outcome, so it is one now.
     ST-Skip 'live OCR checks (pass --live to run them)' 'offline run - the live ladder was not requested'
   }
+
+  # INC-02 (offline): the guard lifecycle measured through the isolated interface. Every leg below
+  # runs in BOTH modes and none of them touches the shared clipboard - the seam stands in for save,
+  # verdict and restore over an in-memory snapshot, so "success, exception and cancellation all
+  # restore" is a measurement here rather than a promise about a --live round nobody authorized.
+  # $q2Box.seq records what actually ran, in order; the comparison against the expected order is the
+  # ruler, and the planted out-of-order witness below says that ruler can see a swap.
+  $q2Snap = @{ Kind = 'text'; Text = 'DTX-SEAM-SNAPSHOT'; Files = @(); ImagePath = ''; ImageSaveError = $false; Formats = @('UnicodeText'); Extras = @(); ReadError = '' }
+  $q2Box = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'yes'; restoreText = 'clipboard restored (previous content was text, 16 chars)' }
+  $q2Seam = @{
+    Save = { $q2Box.save = [int]$q2Box.save + 1; $q2Box.seq = @($q2Box.seq) + 'save'; return $q2Box.snapshot }
+    Verdict = { param($st) $q2Box.verdict = [int]$q2Box.verdict + 1; $q2Box.seq = @($q2Box.seq) + 'verdict'; return [string]$q2Box.verdictText }
+    Restore = { param($st) $q2Box.restore = [int]$q2Box.restore + 1; $q2Box.seq = @($q2Box.seq) + 'restore'; $q2Box.restored = $st; return [string]$q2Box.restoreText }
+  }
+  # (1) the success path, including that the snapshot was taken BEFORE the write
+  $q2G1 = Start-LiveClipboardGuard 'seam-success' $q2Seam
+  $q2N1 = 'not-run'
+  try {
+    if (-not $q2G1.Started) { throw 'the guard refused a clipboard its own verdict called restorable' }
+    $q2Box.seq = @($q2Box.seq) + 'write'; $q2G1.Written = $true
+  } finally { $q2N1 = Stop-LiveClipboardGuard $q2G1 }
+  $q2Order1 = (@($q2Box.seq) -join ',')
+  $q2OrderWant = 'save,verdict,write,restore'
+  # Mutation witness, EXECUTED THROUGH A SECOND COPY OF THE SAME SEAM, not compared against a literal:
+  # the write is planted before the guard starts, which is exactly what a normalization site that saves
+  # only after it writes does. The same ruler is then pointed at the order that actually got recorded -
+  # a comparison that accepts 'write before save' measures nothing, and a teeth value computed from a
+  # string literal never exercises the ruler at all.
+  $q2BoxM = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'yes'; restoreText = 'clipboard restored (previous content was text, 16 chars)' }
+  $q2SeamM = @{
+    Save = { $q2BoxM.save = [int]$q2BoxM.save + 1; $q2BoxM.seq = @($q2BoxM.seq) + 'save'; return $q2BoxM.snapshot }
+    Verdict = { param($st) $q2BoxM.verdict = [int]$q2BoxM.verdict + 1; $q2BoxM.seq = @($q2BoxM.seq) + 'verdict'; return [string]$q2BoxM.verdictText }
+    Restore = { param($st) $q2BoxM.restore = [int]$q2BoxM.restore + 1; $q2BoxM.seq = @($q2BoxM.seq) + 'restore'; $q2BoxM.restored = $st; return [string]$q2BoxM.restoreText }
+  }
+  $q2BoxM.seq = @($q2BoxM.seq) + 'write'
+  $q2G1m = Start-LiveClipboardGuard 'seam-write-before-save' $q2SeamM
+  $q2N1m = 'not-run'
+  try { $q2G1m.Written = $true } finally { $q2N1m = Stop-LiveClipboardGuard $q2G1m }
+  $q2Order1m = (@($q2BoxM.seq) -join ',')
+  $q2RulerTeeth1 = (($q2Order1m -cne $q2OrderWant) -and ($q2Order1 -ceq $q2OrderWant))
+  ST-Check 'unit (INC-02): through the isolated interface a restorable clipboard saves before the write, allows it and restores exactly that snapshot on the success path (order measured, and a swapped order is refused by the same ruler)' (
+    ($q2G1.Started -eq $true) -and ($q2Order1 -ceq $q2OrderWant) -and $q2RulerTeeth1 -and
+    ([int]$q2Box.save -eq 1) -and ([int]$q2Box.verdict -eq 1) -and ([int]$q2Box.restore -eq 1) -and
+    ([string]$q2Box.restored.Text -ceq 'DTX-SEAM-SNAPSHOT') -and ((Get-ClipboardRestoreOutcome $q2N1) -ceq 'ok'))
+  Write-Output ('      INC-02 seam order ruler: want=' + $q2OrderWant + ' measured=' + $q2Order1 +
+    ' planted-inversion=' + $q2Order1m + ' refused=' + ($q2Order1m -cne $q2OrderWant) +
+    ' counts=' + [string]$q2Box.save + '/' + [string]$q2Box.verdict + '/' + [string]$q2Box.restore +
+    ' mutated-counts=' + [string]$q2BoxM.save + '/' + [string]$q2BoxM.verdict + '/' + [string]$q2BoxM.restore +
+    ' mutated-note-outcome=' + (Get-ClipboardRestoreOutcome $q2N1m))
+  # (2) the exception path: the block throws AFTER the write, the finally still restores
+  $q2Box = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'yes'; restoreText = 'clipboard restored (previous content was text, 16 chars)' }
+  $q2G2 = Start-LiveClipboardGuard 'seam-exception' $q2Seam
+  $q2N2 = 'not-run'
+  $q2Caught2 = ''
+  try {
+    $q2Box.seq = @($q2Box.seq) + 'write'; $q2G2.Written = $true
+    throw 'injected: the fixture never came up'
+  } catch { $q2Caught2 = $_.Exception.Message } finally { $q2N2 = Stop-LiveClipboardGuard $q2G2 }
+  ST-Check 'unit (INC-02): the exception exit path is covered too - a throw after the write still restores the snapshot, and the guard does not swallow the original reason' (
+    ($q2Caught2 -ceq 'injected: the fixture never came up') -and ((@($q2Box.seq) -join ',') -ceq 'save,verdict,write,restore') -and
+    ([int]$q2Box.restore -eq 1) -and ((Get-ClipboardRestoreOutcome $q2N2) -ceq 'ok'))
+  # (3) the cancellation path: an early break out of the block, no exception at all
+  $q2Box = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'yes'; restoreText = 'clipboard restored (previous content was text, 16 chars)' }
+  $q2G3 = Start-LiveClipboardGuard 'seam-cancel' $q2Seam
+  $q2N3 = 'not-run'
+  $q2LeftLoop = -1
+  try {
+    while ($true) {
+      $q2Box.seq = @($q2Box.seq) + 'write'; $q2G3.Written = $true
+      $q2LeftLoop = 1
+      break
+    }
+  } finally { $q2N3 = Stop-LiveClipboardGuard $q2G3 }
+  ST-Check 'unit (INC-02): an exit that is neither success nor an exception (a break out of the block) still restores, and the restore note is the answer of the guard itself' (
+    ($q2LeftLoop -eq 1) -and ((@($q2Box.seq) -join ',') -ceq 'save,verdict,write,restore') -and
+    ([int]$q2Box.restore -eq 1) -and ((Get-ClipboardRestoreOutcome $q2N3) -ceq 'ok') -and ($q2N3 -like 'clipboard restored (*'))
+  # (4) and (5): the two refusals. Started=false, the write is never reached, restore never runs, and
+  # the reason the live catch prints is the measured verdict itself.
+  $q2Box = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'no - unknown formats (HTML Format); a write would need --replace-clipboard'; restoreText = 'MUST-NOT-RUN' }
+  $q2G4 = Start-LiveClipboardGuard 'seam-refuse-formats' $q2Seam
+  $q2Gate4 = ''
+  $q2N4 = 'not-run'
+  try {
+    if (-not $q2G4.Started) { $q2Gate4 = 'clipboard guard refused the normalization write: ' + [string]$q2G4.Verdict; throw $q2Gate4 }
+    $q2Box.seq = @($q2Box.seq) + 'write'; $q2G4.Written = $true
+  } catch { } finally { $q2N4 = Stop-LiveClipboardGuard $q2G4 }
+  $q2Seq4 = (@($q2Box.seq) -join ',')
+  $q2Restore4 = [int]$q2Box.restore
+  $q2Box = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'unknown - the clipboard could not be read (injected: access denied); a write would need --replace-clipboard'; restoreText = 'MUST-NOT-RUN' }
+  $q2G5 = Start-LiveClipboardGuard 'seam-refuse-unknown' $q2Seam
+  $q2N5 = 'not-run'
+  try {
+    if (-not $q2G5.Started) { throw 'refused' }
+    $q2Box.seq = @($q2Box.seq) + 'write'; $q2G5.Written = $true
+  } catch { } finally { $q2N5 = Stop-LiveClipboardGuard $q2G5 }
+  $q2Seq5 = (@($q2Box.seq) -join ',')
+  $q2Restore5 = [int]$q2Box.restore
+  ST-Check 'unit (INC-02): a clipboard the tool cannot put back - unknown formats, or a clipboard it could not read - refuses the write, never writes, never restores and hands the verdict to the gate as the reason' (
+    ($q2G4.Started -eq $false) -and ($q2G5.Started -eq $false) -and
+    ($q2Gate4 -ceq 'clipboard guard refused the normalization write: no - unknown formats (HTML Format); a write would need --replace-clipboard') -and
+    ($q2Seq4 -ceq 'save,verdict') -and ($q2Restore4 -eq 0) -and ($q2Seq5 -ceq 'save,verdict') -and ($q2Restore5 -eq 0) -and
+    ((Get-ClipboardRestoreOutcome $q2N5) -ceq 'skipped') -and ($q2N5 -like 'skipped clipboard restore (the guard refused the write: unknown - the clipboard could not be read*)') -and
+    ($q2N4 -like 'skipped clipboard restore (the guard refused the write: no - unknown formats (HTML Format)*') -and
+    ((Get-ClipboardRestoreOutcome $q2N4) -ceq 'skipped'))
+  # (6) the two no-op shapes: a block that never got a guard, and one whose guard started but whose
+  # write line never ran. Both must say so and must NOT touch the clipboard on the way out - a guard
+  # that re-writes an unchanged clipboard is a second writer nobody asked for.
+  $q2Box = @{ save = 0; verdict = 0; restore = 0; restored = $null; seq = @(); snapshot = $q2Snap; verdictText = 'yes'; restoreText = 'MUST-NOT-RUN' }
+  $q2N6a = Stop-LiveClipboardGuard $null
+  $q2G6 = Start-LiveClipboardGuard 'seam-no-write' $q2Seam
+  $q2N6b = Stop-LiveClipboardGuard $q2G6
+  ST-Check 'unit (INC-02): a guard that was never started, and one that started but never wrote, both report skipped without touching the clipboard on the way out' (
+    ($q2G6.Started -eq $true) -and ([int]$q2Box.restore -eq 0) -and
+    ($q2N6a -ceq 'skipped clipboard restore (no guard was started for this block)') -and
+    ($q2N6b -ceq 'skipped clipboard restore (the guard started but this block never wrote)') -and
+    ((Get-ClipboardRestoreOutcome $q2N6a) -ceq 'skipped') -and ((Get-ClipboardRestoreOutcome $q2N6b) -ceq 'skipped'))
+  # (7) the ruler the two live finally-blocks assert with, pointed at every shape of note: a lost
+  # clipboard (partial/failed) must be RED, so the live rows cannot go green over one.
+  $q2Clean = @('clipboard restored (previous content was text, 3 chars)', 'skipped clipboard restore (empty)',
+    'skipped clipboard restore (the guard refused the write: no - unknown formats (HTML Format))',
+    'skipped clipboard restore (no guard was started for this block)', 'skipped clipboard restore (the guard started but this block never wrote)')
+  $q2Dirty = @('clipboard PARTIALLY restored (wanted text 3 chars; read back 0)', 'clipboard restore failed (text)', 'something else entirely')
+  $q2RulerTable = @()
+  foreach ($q2 in @($q2Clean)) { if ((Get-ClipboardRestoreOutcome $q2) -notin @('ok', 'skipped')) { $q2RulerTable += ('clean-reads-as-' + (Get-ClipboardRestoreOutcome $q2) + ': ' + $q2) } }
+  foreach ($q2 in @($q2Dirty)) { if ((Get-ClipboardRestoreOutcome $q2) -in @('ok', 'skipped')) { $q2RulerTable += ('dirty-reads-as-' + (Get-ClipboardRestoreOutcome $q2) + ': ' + $q2) } }
+  ST-Check 'unit (INC-02): the clean-exit ruler the live guards assert with accepts ok and every skipped shape and rejects partial, failed and an unrecognized note' (
+    (@($q2RulerTable).Count -eq 0) -and (@($q2Clean).Count -eq 5) -and (@($q2Dirty).Count -eq 3))
+  Write-Output ('      INC-02 ruler: clean=' + (@($q2Clean) -join ' | ') + ' dirty=' + (@($q2Dirty) -join ' | ') + ' breaches=[' + ($q2RulerTable -join '; ') + ']')
+  # (8) the wiring itself, over the live-suite body: every shared-clipboard write in this family sits
+  # behind a guard start and ahead of a Stop inside a finally. Comment lines are out of the scan (the
+  # rationale above names clip.exe in prose) and every needle is built by CONCATENATION, because a
+  # scan line holding its own search string counts itself as a site.
+  $q2Agg = @($codeLines).Count
+  $q2FnFrom = -1
+  for ($q2 = 0; $q2 -lt $q2Agg; $q2++) { if ($codeLines[$q2].StartsWith('function Invoke-SelftestFamily-LiveSuite')) { $q2FnFrom = $q2; break } }
+  $q2FnTo = $q2Agg
+  if ($q2FnFrom -ge 0) { for ($q2 = $q2FnFrom + 1; $q2 -lt $q2Agg; $q2++) { if ($codeLines[$q2].StartsWith('function ')) { $q2FnTo = $q2; break } } }
+  $q2Body = @()
+  if ($q2FnFrom -ge 0) {
+    for ($q2 = $q2FnFrom; $q2 -lt $q2FnTo; $q2++) {
+      $q2L = [string]$codeLines[$q2]
+      if ($q2L -match '^\s*#') { continue }
+      $q2Body += $q2L
+    }
+  }
+  $q2WriteNeedle = 'System32\clip' + '.exe'
+  $q2StartNeedle = 'Start-LiveClipboard' + 'Guard'
+  $q2StopNeedle = 'Stop-LiveClipboard' + 'Guard'
+  $q2FinallyNeedle = '} finally {'
+  $q2PairNotes = @()
+  $q2WritesSeen = 0
+  for ($q2 = 0; $q2 -lt $q2Body.Count; $q2++) {
+    # the parentheses are load-bearing: -not [string]$x.Contains($n) casts the BOOLEAN result to the
+    # string 'True'/'False', both of which are truthy, so the negation never fired and every body line
+    # counted as a clip write.
+    if (-not (([string]$q2Body[$q2]).Contains($q2WriteNeedle))) { continue }
+    $q2WritesSeen++
+    $q2StartIdx = -1
+    for ($q2s = $q2 - 1; $q2s -ge 0; $q2s--) {
+      if ($q2s -eq 0 -and [string]$q2Body[$q2s].StartsWith('function ')) { break }
+      if (([string]$q2Body[$q2s]).Contains($q2StartNeedle) -and -not ([string]$q2Body[$q2s]).StartsWith('function ') -and -not ([string]$q2Body[$q2s]).Trim().StartsWith('function ')) { $q2StartIdx = $q2s; break }
+    }
+    $q2StopIdx = -1
+    $q2FinIdx = -1
+    for ($q2t = $q2 + 1; $q2t -lt $q2Body.Count; $q2t++) {
+      if ($q2FinIdx -lt 0 -and ([string]$q2Body[$q2t]).Contains($q2FinallyNeedle)) { $q2FinIdx = $q2t }
+      if (([string]$q2Body[$q2t]).Contains($q2StopNeedle) -and -not ([string]$q2Body[$q2t]).Trim().StartsWith('function ')) { $q2StopIdx = $q2t; break }
+    }
+    if ($q2StartIdx -lt 0) { $q2PairNotes += ('write@' + ($q2 + 1) + '=no-guard-ahead') }
+    if ($q2StopIdx -lt 0) { $q2PairNotes += ('write@' + ($q2 + 1) + '=no-restore-after') }
+    elseif ($q2FinIdx -lt 0 -or $q2FinIdx -gt $q2StopIdx) { $q2PairNotes += ('write@' + ($q2 + 1) + '=restore-not-inside-a-finally') }
+  }
+  # Mutation witness for the same ruler, run on the REAL body: move the guard start of the first
+  # paired write to just after the write itself and require the ruler to name the break. A pairing
+  # check that stays green when the guard is behind the write is not a wiring check at all.
+  $q2Mutated = @($q2Body)
+  $q2W1 = -1
+  $q2S1 = -1
+  for ($q2 = 0; $q2 -lt $q2Mutated.Count; $q2++) { if ($q2W1 -lt 0 -and ([string]$q2Mutated[$q2]).Contains($q2WriteNeedle)) { $q2W1 = $q2 } }
+  for ($q2 = $q2W1 - 1; $q2 -ge 0; $q2--) { if (([string]$q2Mutated[$q2]).Contains($q2StartNeedle) -and -not ([string]$q2Mutated[$q2]).Trim().StartsWith('function ')) { $q2S1 = $q2; break } }
+  $q2MutNotes = @('ruler-not-run')
+  if ($q2W1 -ge 0 -and $q2S1 -ge 0) {
+    $q2Hold = [string]$q2Mutated[$q2S1]
+    $q2Mutated[$q2S1] = [string]$q2Mutated[$q2W1]
+    $q2Mutated[$q2W1] = $q2Hold
+    $q2MutNotes = @()
+    for ($q2 = 0; $q2 -lt $q2Mutated.Count; $q2++) {
+      if (-not ([string]$q2Mutated[$q2]).Contains($q2WriteNeedle)) { continue }
+      $q2BackStart = -1
+      for ($q2s = $q2 - 1; $q2s -ge 0; $q2s--) {
+        if (([string]$q2Mutated[$q2s]).Contains($q2StartNeedle) -and -not ([string]$q2Mutated[$q2s]).Trim().StartsWith('function ')) { $q2BackStart = $q2s; break }
+      }
+      if ($q2BackStart -lt 0 -or $q2BackStart -gt $q2) { $q2MutNotes += ('write@' + ($q2 + 1) + '=guard-moved-behind') }
+    }
+  }
+  ST-Check 'contract (INC-02): every shared-clipboard write in the live suite is behind a started guard and ahead of a restore inside a finally - the two normalization sites are named, and moving a guard behind its write breaks the ruler' (
+    ($q2FnFrom -ge 0) -and ($q2WritesSeen -eq 2) -and (@($q2PairNotes).Count -eq 0) -and
+    (@($q2MutNotes).Count -gt 0) -and ($q2W1 -ge 0) -and ($q2S1 -ge 0))
+  Write-Output ('      INC-02 wiring ruler: body-lines=' + @($q2Body).Count + ' clip-writes=' + $q2WritesSeen +
+    ' pairing-notes=[' + ($q2PairNotes -join '; ') + '] guard@' + $q2S1 + ' write@' + $q2W1 +
+    ' swapped-and-named=[' + ($q2MutNotes -join '; ') + ']')
+
+  # INC-03 (offline): the branch order the identity legs above depend on, measured against the REAL
+  # resolver and the REAL process variables - set, read, restored inside one finally, and the
+  # before/after snapshot of all four sources is part of the assertion, so a fixture cannot leak into
+  # the rest of the round (let alone into a child's call record).
+  # !! each name is parenthesised on purpose. The array comma binds TIGHTER than +, so the un-parenthesised
+  # form @('A' + 'B', 'C' + 'D') collapses to ONE string: the clear-all and restore-all loops below then
+  # touch a single garbage name, every leg reads back as already-clean, and the "all four isolated" claim
+  # is measured against nothing. The shape is pinned by a count and the isolation by a read-back.
+  $q3Names = @(('DTX_CALLER_L' + 'ABEL'), ('DTX_CALLER_S' + 'ESSION_ID'), ('CODEX_THREAD_' + 'ID'), ('CODEX_SESSION_' + 'ID'))
+  $q3Base = @{}
+  foreach ($q3n in $q3Names) { $q3Base[$q3n] = [Environment]::GetEnvironmentVariable($q3n, 'Process') }
+  $q3Cases = @()
+  try {
+    foreach ($q3n in $q3Names) { [Environment]::SetEnvironmentVariable($q3n, $null, 'Process') }
+    # measured, not assumed: every one of the four names has to answer empty here, or the 'all-empty'
+    # leg below is proving nothing about the resolver and is only proving that this machine had unset vars.
+    $q3ClearNotes = @()
+    foreach ($q3n in $q3Names) { if ($null -ne [Environment]::GetEnvironmentVariable($q3n, 'Process')) { $q3ClearNotes += ($q3n + '=still-set') } }
+    $q3All = Get-DtxCallIdentity $null
+    $q3Cases += [pscustomobject]@{ Leg = 'all-empty'; Label = [string]$q3All.CallerLabel; Session = [string]$q3All.CallerSessionId; Source = [string]$q3All.IdentitySource }
+    [Environment]::SetEnvironmentVariable('CODEX_THREAD_' + 'ID', 'q3-thread-fixture', 'Process')
+    $q3T = Get-DtxCallIdentity $null
+    $q3Cases += [pscustomobject]@{ Leg = 'codex-thread'; Label = [string]$q3T.CallerLabel; Session = [string]$q3T.CallerSessionId; Source = [string]$q3T.IdentitySource }
+    [Environment]::SetEnvironmentVariable('CODEX_THREAD_' + 'ID', $null, 'Process')
+    [Environment]::SetEnvironmentVariable('CODEX_SESSION_' + 'ID', 'q3-session-fixture', 'Process')
+    $q3S = Get-DtxCallIdentity $null
+    $q3Cases += [pscustomobject]@{ Leg = 'codex-session'; Label = [string]$q3S.CallerLabel; Session = [string]$q3S.CallerSessionId; Source = [string]$q3S.IdentitySource }
+    [Environment]::SetEnvironmentVariable('DTX_CALLER_L' + 'ABEL', 'q3-label-fixture', 'Process')
+    $q3E = Get-DtxCallIdentity $null
+    $q3Cases += [pscustomobject]@{ Leg = 'label-outranks-codex'; Label = [string]$q3E.CallerLabel; Session = [string]$q3E.CallerSessionId; Source = [string]$q3E.IdentitySource }
+  } finally {
+    foreach ($q3n in $q3Names) { [Environment]::SetEnvironmentVariable($q3n, $q3Base[$q3n], 'Process') }
+  }
+  $q3Leaked = @()
+  foreach ($q3n in $q3Names) { if ([string][Environment]::GetEnvironmentVariable($q3n, 'Process') -cne [string]$q3Base[$q3n]) { $q3Leaked += ($q3n + '=drifted') } }
+  ST-Check 'unit (INC-03): the resolver answers unknown only when ALL FOUR sources are empty - a lone Codex thread or session answers Codex under its own source name, an explicit label outranks the fallback, and the harness leaves what it found (the four names and the measured clear are part of the assertion)' (
+    (@($q3Names).Count -eq 4) -and (@(@($q3Names) | Sort-Object -Unique).Count -eq 4) -and
+    (@($q3ClearNotes).Count -eq 0) -and
+    (@($q3Cases).Count -eq 4) -and
+    ($q3Cases[0].Label -ceq 'unknown') -and ($q3Cases[0].Session -ceq 'unknown') -and ($q3Cases[0].Source -ceq 'unknown') -and
+    ($q3Cases[1].Label -ceq 'Codex') -and ($q3Cases[1].Session -ceq 'q3-thread-fixture') -and ($q3Cases[1].Source -ceq 'codex-thread-environment') -and
+    ($q3Cases[2].Label -ceq 'Codex') -and ($q3Cases[2].Session -ceq 'q3-session-fixture') -and ($q3Cases[2].Source -ceq 'codex-session-environment') -and
+    ($q3Cases[3].Label -ceq 'q3-label-fixture') -and ($q3Cases[3].Source -ceq 'partial-explicit-environment') -and
+    (@($q3Leaked).Count -eq 0))
+  Write-Output ('      INC-03 resolver legs: ' + ((@($q3Cases) | ForEach-Object { $_.Leg + '=>' + $_.Label + '/' + $_.Source }) -join ' ') +
+    ' residue=[' + ($q3Leaked -join ',') + '] names=' + @($q3Names).Count + ' clear-breach=[' + ($q3ClearNotes -join ',') + ']' +
+    ' inherited-codex=' + $(if ((@($q3Names).Count -eq 4) -and [string]$q3Base[$q3Names[2]]) { 'thread' } elseif ((@($q3Names).Count -eq 4) -and [string]$q3Base[$q3Names[3]]) { 'session' } else { 'none' }))
+  # INC-03 wiring: in the live ladder the unlabeled child must run AFTER both DTX names and both Codex
+  # names are cleared, and the labeled child must run after the restore. Positions are measured over
+  # the family body (comment lines out, needles concatenated), each index gated at -1, and the whole
+  # ordering claim is witnessed by swapping the clear with the run and showing the ruler names it -
+  # the exact shape the old control had: an isolated label and an unisolated fallback.
+  $q3Agg = @($codeLines).Count
+  $q3FnFrom = -1
+  for ($q3 = 0; $q3 -lt $q3Agg; $q3++) { if ($codeLines[$q3].StartsWith('function Invoke-SelftestFamily-LiveSuite')) { $q3FnFrom = $q3; break } }
+  $q3FnTo = $q3Agg
+  if ($q3FnFrom -ge 0) { for ($q3 = $q3FnFrom + 1; $q3 -lt $q3Agg; $q3++) { if ($codeLines[$q3].StartsWith('function ')) { $q3FnTo = $q3; break } } }
+  $q3Body = @()
+  if ($q3FnFrom -ge 0) {
+    for ($q3 = $q3FnFrom; $q3 -lt $q3FnTo; $q3++) {
+      $q3L = [string]$codeLines[$q3]
+      if ($q3L -match '^\s*#') { continue }
+      $q3Body += $q3L
+    }
+  }
+  $q3Needles = @{
+    ClearLabel = 'Set-StLiveCaller' + 'Identity $null'
+    ClearCodex = 'Set-StLiveCodex' + 'Identity $null $null'
+    UnlabeledRun = 'st-id-' + 'unlabeled-'
+    FallbackRun = 'st-id-' + 'codex-'
+    RestoreCodex = 'Set-StLiveCodex' + 'Identity $stIdBase'
+    Relabel = 'Set-StLiveCaller' + 'Identity ' + [char]39 + 'selftest-live'
+    LabeledRun = 'st-id-' + 'labeled-'
+  }
+  $q3Idx = @{}
+  foreach ($q3k in @('ClearLabel', 'ClearCodex', 'UnlabeledRun', 'FallbackRun', 'Relabel', 'LabeledRun')) {
+    $q3Idx[$q3k] = -1
+    for ($q3 = 0; $q3 -lt $q3Body.Count; $q3++) {
+      if (([string]$q3Body[$q3]).Contains([string]$q3Needles[$q3k])) { $q3Idx[$q3k] = $q3; break }
+    }
+  }
+  # the restore is looked for AFTER the fallback run, not anywhere in the body: the fallback leg
+  # itself re-arms the inherited Codex id before it spawns, and first-occurrence-anywhere would read
+  # that line as the finally's restore and time the order backwards.
+  $q3Idx.RestoreCodex = -1
+  if ($q3Idx.FallbackRun -ge 0) {
+    for ($q3 = $q3Idx.FallbackRun + 1; $q3 -lt $q3Body.Count; $q3++) {
+      if (([string]$q3Body[$q3]).Contains([string]$q3Needles.RestoreCodex)) { $q3Idx.RestoreCodex = $q3; break }
+    }
+  }
+  $q3OrderOk = (($q3Idx.ClearLabel -ge 0) -and ($q3Idx.ClearLabel -lt $q3Idx.ClearCodex) -and ($q3Idx.ClearCodex -lt $q3Idx.UnlabeledRun) -and
+    ($q3Idx.UnlabeledRun -lt $q3Idx.FallbackRun) -and ($q3Idx.FallbackRun -lt $q3Idx.RestoreCodex) -and
+    ($q3Idx.RestoreCodex -lt $q3Idx.Relabel) -and ($q3Idx.Relabel -lt $q3Idx.LabeledRun))
+  # Mutation witness on a copy of the body: put the fallback clear back AFTER the unlabeled child run
+  # (which is what the shipped control did) and require the ruler to refuse the ordering.
+  $q3Mutated = @($q3Body)
+  $q3MutBroken = $false
+  if (($q3Idx.ClearCodex -ge 0) -and ($q3Idx.UnlabeledRun -ge 0)) {
+    $q3Hold = [string]$q3Mutated[$q3Idx.ClearCodex]
+    $q3Mutated[$q3Idx.ClearCodex] = [string]$q3Mutated[$q3Idx.UnlabeledRun]
+    $q3Mutated[$q3Idx.UnlabeledRun] = $q3Hold
+    $q3MutCodex = -1
+    $q3MutRun = -1
+    for ($q3 = 0; $q3 -lt $q3Mutated.Count; $q3++) {
+      if ($q3MutCodex -lt 0 -and ([string]$q3Mutated[$q3]).Contains([string]$q3Needles.ClearCodex)) { $q3MutCodex = $q3 }
+      if ($q3MutRun -lt 0 -and ([string]$q3Mutated[$q3]).Contains([string]$q3Needles.UnlabeledRun)) { $q3MutRun = $q3 }
+    }
+    $q3MutBroken = (($q3MutCodex -ge 0) -and ($q3MutRun -ge 0) -and ($q3MutCodex -gt $q3MutRun))
+  }
+  ST-Check 'contract (INC-03): the unlabeled child runs only after every identity source is cleared and the labeled child only after the restore - the order is measured over the body and a control that clears the fallback after the run is refused' (
+    ($q3FnFrom -ge 0) -and $q3OrderOk -and $q3MutBroken -and ($q3Idx.ClearLabel -lt $q3Idx.LabeledRun))
+  Write-Output ('      INC-03 order ruler: clearLabel@' + $q3Idx.ClearLabel + ' clearCodex@' + $q3Idx.ClearCodex + ' unlabeled@' + $q3Idx.UnlabeledRun +
+    ' fallback@' + $q3Idx.FallbackRun + ' restore@' + $q3Idx.RestoreCodex + ' relabel@' + $q3Idx.Relabel + ' labeled@' + $q3Idx.LabeledRun +
+    ' swapped=' + $q3MutBroken)
 
   # The outcome prefixes are the gate's wire format: every log parser downstream (including
   # the 'PASS line count equals passed' contract above) reads a line starting with one as a
