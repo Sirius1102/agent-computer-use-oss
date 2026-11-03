@@ -576,6 +576,7 @@ $mode = if ($args.Count -ge 1) { [string]$args[0] } else { 'keep' }
 $mainTitle = if ($args.Count -ge 2) { [string]$args[1] } else { 'DTXP-M' }
 $popupTitle = if ($args.Count -ge 3) { [string]$args[2] } else { 'DTXP-P' }
 $closeFlag = if ($args.Count -ge 4) { [string]$args[3] } else { '' }
+$holdTicks = if ($args.Count -ge 5) { [int]$args[4] } else { 0 }
 $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 $main = New-Object System.Windows.Forms.Form
 $main.Text = $mainTitle
@@ -585,6 +586,7 @@ $main.Location = New-Object System.Drawing.Point(80, [int]($wa.Height - 260))
 $main.TopMost = $true
 $script:popup = $null
 $script:waited = 0
+$script:hold = 0
 $main.Add_MouseClick({
   param($s, $e)
   if ($null -ne $script:popup) { return }
@@ -601,12 +603,22 @@ $main.Add_MouseClick({
     # OPS-7: the popup closes ONLY on the test's marker file, and the wait is
     # bounded (200 ticks x 100ms). No wall-clock self-destruct: the close cannot beat the
     # arming step, so "gone before require-popup" is not a timing accident any more.
+    # U12: the marker is written the moment the ARMED audit line is seen, but the product
+    # re-checks the guard at the START of the next step before that step runs. Closing on
+    # the next 100ms tick raced that re-check: when the step-3 body finished in under one
+    # tick the abort landed "before step 4 of 5" (observed live in rounds 1 and 3, and in
+    # the pre-fix diagnostic 1/6). $holdTicks delays the close by that many ticks so it
+    # happens INSIDE the following sleep step, deterministically after the step-4 check
+    # and before the step-5 one. It does not relax anything: the product's abort and the
+    # expected boundary ("before step 5 of 5", popup GONE) are unchanged.
     $t = New-Object System.Windows.Forms.Timer
     $t.Interval = 100
     $t.Add_Tick({
       param($ts, $te)
       $script:waited++
       if ([System.IO.File]::Exists($closeFlag)) {
+        $script:hold++
+        if ($script:hold -lt $holdTicks) { return }
         $ts.Stop()
         if ($null -ne $script:popup) { $script:popup.Close(); $script:popup = $null }
         return
@@ -625,12 +637,12 @@ $main.Add_MouseClick({
         # the click lands on the desktop instead; measured in the first live run).
         $script:pgProc = $null
         $pgSpawn = {
-          param($mode, $tag)
+          param($mode, $tag, $holdTicks = 0)
           $pgMainTitle = 'DTXP-M-' + $tag
           $pgPopupTitle = 'DTXP-P-' + $tag
           $pgFlag = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.close')
           [void]$pgTmp.Add($pgFlag)
-          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode, $pgMainTitle, $pgPopupTitle, $pgFlag)
+          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode, $pgMainTitle, $pgPopupTitle, $pgFlag, [string]$holdTicks)
           $script:pgProc = Start-Process powershell -ArgumentList $pgArgs -PassThru
           $pgWantPid = $script:pgProc.Id
           $pgMain = $null
@@ -698,10 +710,10 @@ $main.Add_MouseClick({
         # SEEN the arming line in actions.log (bounded poll, 15s). The close is armed->close
         # by evidence, not by a wall clock: a slow arm cannot be outrun, and the marker is
         # never written before the guard exists.
-        $fi1 = & $pgSpawn 'fuse' ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $fi1 = & $pgSpawn 'fuse' ([guid]::NewGuid().ToString('N').Substring(0, 8)) 30
         $cx = [int]($fi1.Main.Left + $fi1.Main.W / 2)
         $cy = [int]($fi1.Main.Top + $fi1.Main.H / 2)
-        $t1Json = '[{"click":[' + $cx + ',' + $cy + ']},{"sleep":150},{"require-popup":"' + $fi1.Popup + '","tolerance":3},{"sleep":1500},{"assert-window":"' + $fi1.Popup + '"}]'
+        $t1Json = '[{"click":[' + $cx + ',' + $cy + ']},{"sleep":150},{"require-popup":"' + $fi1.Popup + '","tolerance":3},{"sleep":6000},{"assert-window":"' + $fi1.Popup + '"}]'
         $t1a = & $pgScriptRunAsync $t1Json
         $t1Armed = $false
         $swArm = [System.Diagnostics.Stopwatch]::StartNew()
@@ -715,12 +727,24 @@ $main.Add_MouseClick({
         if ($t1Armed) { [System.IO.File]::WriteAllText($fi1.Flag, 'close', (New-Object System.Text.UTF8Encoding($false))) }
         $t1 = & $pgAwaitAsync $t1a 20
         & $pgStop
-        $t1Shape = $t1Armed -and ($t1.Out -match 'popup guard: popup GONE') -and ($t1.Out -match 'before step 5 of 5') -and
-          ($t1.Out -match '  baseline: pid=') -and ($t1.Out -match '  now     : ') -and ($t1.Out -match '  delta   : ') -and
-          ($t1.Out -match 'script aborted: popup guard failed \(nothing after this step ran\)') -and
-          ($t1.Out -match 'armed at step 3 ') -and (-not ($t1.Out -match '#5 assert-window FAIL'))
+        # One predicate, three consumers: the real run and two mutations of its own text.
+        # The mutations are the teeth - a shape check that cannot tell "popup GONE before
+        # step 5" from "popup STILL ALIVE before step 4" is not a judgment.
+        $t1ShapeTest = {
+          param([string]$o)
+          ($o -match 'popup guard: popup GONE') -and ($o -match 'before step 5 of 5') -and
+          ($o -match '  baseline: pid=') -and ($o -match '  now     : ') -and ($o -match '  delta   : ') -and
+          ($o -match 'script aborted: popup guard failed \(nothing after this step ran\)') -and
+          ($o -match 'armed at step 3 ') -and (-not ($o -match '#5 assert-window FAIL'))
+        }
+        $t1Shape = $t1Armed -and (& $t1ShapeTest $t1.Out)
         ST-Check 'live: T-1 a self-closing popup aborts the rest of the script with baseline/now/delta echoed, nothing after it runs' (
           ($t1.Code -eq 1) -and $t1Shape)
+        $t1NegGone = $t1.Out -replace 'popup guard: popup GONE', 'popup guard: popup STILL ALIVE (window still alive)'
+        $t1NegStep = $t1.Out -replace 'before step 5 of 5', 'before step 4 of 5'
+        $t1NegMoved = ($t1NegGone -cne $t1.Out) -and ($t1NegStep -cne $t1.Out)
+        ST-Check 'live: CONTROL - the T-1 shape predicate rejects a still-alive popup and a step-4 abort (the shape has teeth)' (
+          $t1Shape -and $t1NegMoved -and (-not (& $t1ShapeTest $t1NegGone)) -and (-not (& $t1ShapeTest $t1NegStep)))
         Write-Output "      T-1 exit=$($t1.Code) shape=$t1Shape armed-observed=$t1Armed timedout=$($t1.TimedOut)"
         Write-Output ("      T-1 output: " + (($t1.Out.Trim() -split "`r?`n" | Where-Object { $_ -match 'popup guard|baseline|now|delta|aborted' } | Select-Object -First 6) -join ' | '))
         # T-4: the aborted run left its marker in actions.log - replay must refuse the
@@ -2565,22 +2589,74 @@ $staged = & $stageLoop
         $zBelowB = @($zBelowRows | Where-Object { $_.Handle -eq $zLiveB.Handle })[0]
         $zHitBelow = Get-HitWindow ([int]($zOverlapX + [int]($zLiveB.W / 2))) ([int]($zOverlapY + [int]($zLiveB.H / 2)))
         $zBelowVerified = $null -ne $zBelowA -and $null -ne $zBelowB -and $zBelowA.ZIndex -lt $zBelowB.ZIndex -and $zHitBelow.State -eq 'hit' -and $zHitBelow.Hwnd -eq $zLiveA.Handle
+        # PT-5 follow-up (U12): `wins -z` and `wins -z --json` are two independent CLI
+        # processes, therefore two OS snapshots. A top-level rank is the window's position
+        # in the live chain AT THAT MOMENT; any unrelated window entering, leaving or being
+        # raised between the two calls shifts every rank below it. Live round 3 measured
+        # exactly that (text and JSON one rank apart while the fixture pair stayed ordered),
+        # so "text z == JSON z" across two calls was never a product contract. The invariant
+        # that IS a contract: ONE snapshot, both renderers, field by field. The snapshot
+        # below is the one the hit test just used ($zBelowRows); Get-WinList and the bounded
+        # modal probe are pinned to it for the two in-process renders and restored after.
         $zLiveText = & $apCmd 'wins -z'
         $zLiveJsonText = & $apCmd 'wins -z --json'
         $zLiveJsonClean = (@($zLiveJsonText.Out -split "`r?`n" | Where-Object { $_ -notmatch '^(WARNING|ERROR): ' }) -join "`n"); $zLiveJsonParsed = $zLiveJsonClean | ConvertFrom-Json; $zLiveJsonRows = @($zLiveJsonParsed)
         $zLiveJsonA = @($zLiveJsonRows | Where-Object { [int64]$_.hwnd -eq ([IntPtr]$zLiveA.Handle).ToInt64() })[0]
         $zLiveJsonB = @($zLiveJsonRows | Where-Object { [int64]$_.hwnd -eq ([IntPtr]$zLiveB.Handle).ToInt64() })[0]
-        $zLiveTextA = @($zLiveText.Out -split "`r?`n" | Where-Object { $_ -match ('hwnd=0x' + ([IntPtr]$zLiveA.Handle).ToInt64().ToString('X') + ' ') })[0]
-        $zLiveTextB = @($zLiveText.Out -split "`r?`n" | Where-Object { $_ -match ('hwnd=0x' + ([IntPtr]$zLiveB.Handle).ToInt64().ToString('X') + ' ') })[0]
+        $zLiveTextA = @($zLiveText.Out -split "`r?`n" | Where-Object { $_ -match ('^z=\S+ hwnd=0x' + ([IntPtr]$zLiveA.Handle).ToInt64().ToString('X') + ' ') })[0]
+        $zLiveTextB = @($zLiveText.Out -split "`r?`n" | Where-Object { $_ -match ('^z=\S+ hwnd=0x' + ([IntPtr]$zLiveB.Handle).ToInt64().ToString('X') + ' ') })[0]
+        $zCliOk = $zLiveText.Code -eq 0 -and $zLiveJsonText.Code -eq 0 -and $null -ne $zLiveJsonA -and $null -ne $zLiveJsonB -and $null -ne $zLiveTextA -and $null -ne $zLiveTextB
+        $zSnapRows = @($zBelowRows)
+        $zSnapA = @($zSnapRows | Where-Object { $_.Handle -eq $zLiveA.Handle })[0]
+        $zSnapB = @($zSnapRows | Where-Object { $_.Handle -eq $zLiveB.Handle })[0]
+        $zSnapOk = $null -ne $zSnapA -and $null -ne $zSnapB -and $zSnapA.ZIndex -lt $zSnapB.ZIndex
+        $zFnNames = @('Get-WinList', 'Get-BoundedWindowModalStates')
+        $zFnOrig = @{}
+        foreach ($zfn in $zFnNames) { $zFnOrig[$zfn] = (Get-Item ('function:' + $zfn)).ScriptBlock }
+        $zOldJson = [bool]$script:Json
+        try {
+          $script:zSnapRows = $zSnapRows
+          $script:zSnapModal = @{}
+          foreach ($zr in $zSnapRows) { $script:zSnapModal[[string]([IntPtr]$zr.Handle).ToInt64()] = @{ State = 'unknown'; Source = 'snapshot-fixed' } }
+          Set-Item -Path 'function:Get-WinList' -Value { return $script:zSnapRows }
+          Set-Item -Path 'function:Get-BoundedWindowModalStates' -Value { param($rows, $budget, $cap) return $script:zSnapModal }
+          $script:Json = $false
+          $zSnapText = @((Invoke-Handler-wins 'wins' @('-z')))
+          $script:Json = $true
+          $zSnapJsonText = @((Invoke-Handler-wins 'wins' @('-z'))) -join "`n"
+          $zSnapJsonParsed = $zSnapJsonText | ConvertFrom-Json
+          $zSnapJsonRows = @($zSnapJsonParsed)
+        } finally {
+          $script:Json = $zOldJson
+          foreach ($zfn in $zFnNames) { Set-Item -Path ('function:' + $zfn) -Value $zFnOrig[$zfn] }
+        }
+        $zSnapTextA = @($zSnapText | Where-Object { $_ -match ('^z=\S+ hwnd=0x' + ([IntPtr]$zLiveA.Handle).ToInt64().ToString('X') + ' ') })[0]
+        $zSnapTextB = @($zSnapText | Where-Object { $_ -match ('^z=\S+ hwnd=0x' + ([IntPtr]$zLiveB.Handle).ToInt64().ToString('X') + ' ') })[0]
+        $zSnapJsonA = @($zSnapJsonRows | Where-Object { [int64]$_.hwnd -eq ([IntPtr]$zLiveA.Handle).ToInt64() })[0]
+        $zSnapJsonB = @($zSnapJsonRows | Where-Object { [int64]$_.hwnd -eq ([IntPtr]$zLiveB.Handle).ToInt64() })[0]
+        $zRowAgree = {
+          param([string]$line, $row)
+          if ($null -eq $row -or [string]::IsNullOrEmpty($line)) { return $false }
+          if ($line -notmatch '^z=(\S+) hwnd=0x([0-9A-Fa-f]+) .*?enabled=(true|false) modal=(\S+) modal_source=(\S+) ') { return $false }
+          if ([int64]('0x' + $Matches[2]) -ne [int64]$row.hwnd) { return $false }
+          if ([string]$row.z -cne $Matches[1]) { return $false }
+          if ([bool]$row.enabled -ne ($Matches[3] -eq 'true')) { return $false }
+          if ([string]$row.modal -cne $Matches[4]) { return $false }
+          if ([string]$row.modal_source -cne $Matches[5]) { return $false }
+          return $true
+        }
+        $zAgreeA = & $zRowAgree $zSnapTextA $zSnapJsonA
+        $zAgreeB = & $zRowAgree $zSnapTextB $zSnapJsonB
+        $zAgreeOk = $zAgreeA -and $zAgreeB
         ST-Check 'live (PT-5): smaller self-owned B is z-first and receives the overlap hit when raised; A becomes z-first and receives it when B is placed behind A' (
-          $zTopVerified -and $zBelowVerified -and $zLiveText.Code -eq 0 -and $zLiveJsonText.Code -eq 0)
-        ST-Check 'live (PT-5): text and explicit -z JSON agree on fixture handles, order, enabled and modal source' (
-          $null -ne $zLiveJsonA -and $null -ne $zLiveJsonB -and $zLiveJsonA.z -lt $zLiveJsonB.z -and
-          $zLiveTextA -match ('^z=' + $zLiveJsonA.z + ' ') -and $zLiveTextB -match ('^z=' + $zLiveJsonB.z + ' ') -and
-          $zLiveTextA.Contains('enabled=') -and $zLiveTextA.Contains('modal=') -and $zLiveTextA.Contains('modal_source=') -and
-          $zLiveJsonA.PSObject.Properties.Name -contains 'hwnd' -and $zLiveJsonA.PSObject.Properties.Name -contains 'enabled' -and
-          $zLiveJsonA.PSObject.Properties.Name -contains 'modal' -and $zLiveJsonA.PSObject.Properties.Name -contains 'modal_source')
-        Write-Output ("      PT-5 Z proof: raised B z=$($zTopB.ZIndex) hit=$($zHitTop.Hwnd); lowered A/B=$($zBelowA.ZIndex)/$($zBelowB.ZIndex) hit=$($zHitBelow.Hwnd); CLI JSON A/B=$($zLiveJsonA.z)/$($zLiveJsonB.z)")
+          $zTopVerified -and $zBelowVerified -and $zCliOk)
+        ST-Check 'live (PT-5): text and explicit -z JSON agree field-by-field on ONE snapshot (z/order/enabled/modal/modal_source)' (
+          $zSnapOk -and $zAgreeOk)
+        $zNegZ = [pscustomobject]@{ z = ([int]$zSnapJsonA.z + 1); hwnd = $zSnapJsonA.hwnd; enabled = [bool]$zSnapJsonA.enabled; modal = $zSnapJsonA.modal; modal_source = $zSnapJsonA.modal_source }
+        $zNegEnabled = [pscustomobject]@{ z = $zSnapJsonA.z; hwnd = $zSnapJsonA.hwnd; enabled = (-not [bool]$zSnapJsonA.enabled); modal = $zSnapJsonA.modal; modal_source = $zSnapJsonA.modal_source }
+        ST-Check 'live: CONTROL - the snapshot reconciliation rejects a shifted z and a flipped enabled (the check has teeth)' (
+          $zAgreeA -and (-not (& $zRowAgree $zSnapTextA $zNegZ)) -and (-not (& $zRowAgree $zSnapTextA $zNegEnabled)))
+        Write-Output ("      PT-5 Z proof: raised B z=$($zTopB.ZIndex) hit=$($zHitTop.Hwnd); lowered A/B=$($zBelowA.ZIndex)/$($zBelowB.ZIndex) hit=$($zHitBelow.Hwnd); CLI JSON A/B=$($zLiveJsonA.z)/$($zLiveJsonB.z); one-snapshot A/B agree=$zAgreeA/$zAgreeB")
         [void][DT]::MoveWindow($zLiveB.Handle, $zOrigX, $zOrigY, [int]$zLiveB.W, [int]$zLiveB.H, $true)
         $apSteps = Join-Path $env:TEMP ('dtx-dry-' + [guid]::NewGuid().ToString('N') + '.json')
         [System.IO.File]::WriteAllText($apSteps, ('[ { "click": [' + $esx + ', ' + $esy + '], "to": "DTX-ActA" } ]'), (New-Object System.Text.UTF8Encoding($false)))
@@ -2699,6 +2775,7 @@ using System.Runtime.InteropServices;
 public class HX7 {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);
   [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr h, int i, int v);
 }
@@ -2728,14 +2805,25 @@ $Timer = New-Object System.Windows.Forms.Timer
 $Timer.Interval = 150
 $Timer.Add_Tick({
   $Timer.Stop()
-  [void]$Pop.Show()
-  [void][HX7]::SetWindowPos($Pop.Handle, [IntPtr](-1), 300, 1350, 300, 120, 0x0040)
   if ($Mode -eq 'transparent') {
+    # U12: WS_EX_NOACTIVATE has to be on the handle BEFORE Show(). Show() itself
+    # activates a topmost form, so the fixture used to race the guard it is proving
+    # (observed as 'foreground changed after send' twice: the layer, or the popup's
+    # console window, took the foreground instead of the target).
     $ex = [HX7]::GetWindowLong($Pop.Handle, -20)
-    [void][HX7]::SetWindowLong($Pop.Handle, -20, ($ex -bor 0x20))
+    [void][HX7]::SetWindowLong($Pop.Handle, -20, ($ex -bor 0x08000000 -bor 0x20))
+    # Form.Show() is ShowWindow(SW_SHOWNORMAL) and activates the window even when
+    # WS_EX_NOACTIVATE is set; SW_SHOWNOACTIVATE (4) is what actually keeps the tooltip
+    # from taking the foreground. The fixture used to re-show itself on top right after
+    # the guard activated the target, and the guard's "foreground after send" baseline
+    # was then the layer itself, so the check passed without ever testing the shape.
+    [void][HX7]::ShowWindow($Pop.Handle, 4)
   } else {
-    [void]$Pop.Activate()
+    [void]$Pop.Show()
   }
+  $zFlags = if ($Mode -eq 'transparent') { 0x0010 } else { 0x0040 }
+  [void][HX7]::SetWindowPos($Pop.Handle, [IntPtr](-1), 300, 1350, 300, 120, $zFlags)
+  if ($Mode -eq 'opaque') { [void]$Pop.Activate() }
 })
 # Every time the MAIN window is (re)activated - which is exactly what the tool's
 # foreground guard does - the layer is hidden first and re-shown 150ms later.
@@ -2756,21 +2844,31 @@ $Main.Add_Activated({
         foreach ($mode in @('transparent', 'opaque')) {
           $stale = Resolve-Window 'DTX-PopupProbe'
           if ($stale) { try { Stop-Process -Id $stale.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 500 }
-          $popProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $popPathT, '-Mode', $mode -PassThru
+          $popProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $popPathT, '-Mode', $mode -WindowStyle Hidden -PassThru
           $pwin = $null
           $pSw = [System.Diagnostics.Stopwatch]::StartNew()
           while ($pSw.Elapsed.TotalSeconds -lt 15) { $pwin = Resolve-Window 'DTX-PopupProbe'; if ($pwin) { break }; Start-Sleep -Milliseconds 300 }
           if ($null -eq $pwin) { throw "popup probe ($mode) did not appear within 15s" }
           Start-Sleep -Milliseconds 600
+          # Foreground lock: a freshly spawned process cannot take the foreground by itself,
+          # so the fixture asks the tool's own focus path (the same guard the type call uses)
+          # to put the probe in front. Only then can 'the layer did not steal it' be measured.
+          $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath focus --to 'DTX-PopupProbe' 2>&1
+          Start-Sleep -Milliseconds 700
+          $popLayer = Resolve-Window 'DTX-PopupLayer'
           $pay = 'QXPOP-' + $mode.ToUpper()
+          $fgPrePop = [DT]::GetForegroundWindow()
           $pOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $script:ToolEntryPath type --to 'DTX-PopupProbe' $pay 2>&1 | Out-String
           $pCode = $LASTEXITCODE
+          $fgPostPop = [DT]::GetForegroundWindow()
           $pRoots = Uia-Roots (Resolve-Window 'DTX-PopupProbe')
           $pName = ''
           foreach ($el in (Uia-WalkAll $pRoots.Roots)) { $nmP = ''; try { $nmP = $el.Current.Name } catch { }; if ($nmP -like '*QXPOP-*') { $pName = $nmP; break } }
           if ($mode -eq 'transparent') {
             ST-Check 'live: a click-through tooltip on top does NOT warn and the payload lands byte-exact' (
               $pCode -eq 0 -and $pName -ceq $pay -and $pOut -notmatch 'same-process popup')
+            ST-Check 'live: the click-through probe layer never took the foreground (the fixture is genuinely non-activating)' (
+              $null -ne $popLayer -and $fgPrePop -eq $pwin.Handle -and $fgPostPop -eq $pwin.Handle)
           } else {
             ST-Check 'live: a keyboard-capable same-process popup on top is reported (WARN + exit 1)' (
               $pCode -eq 1 -and $pOut -match 'same-process popup' -and $pOut -match 'NOT confirmed changed')

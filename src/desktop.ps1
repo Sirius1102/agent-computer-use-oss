@@ -2499,7 +2499,10 @@ $script:StFamilyCounts = @{
   # four-source identity isolation with its offline resolver/order legs (+440 -> 3917). Of the
   # eighteen emitter lines this round adds to the family, nine run offline and nine only inside
   # the ladder, so the declared total moves by the offline nine only (A-14b rows say which).
-  'live-suite' = 'banners=21,lines=3958'
+  # U12 (2026-11-03): the live-suite family gained the T-1 fixture hold/teeth control and the
+  # one-snapshot PT-5 reconciliation (+76 -> 4034), then the tooltip fixture's WS_EX_NOACTIVATE
+  # fix and its foreground-integrity check (+22 -> 4056; measured by the gate, not summed here).
+  'live-suite' = 'banners=21,lines=4056'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2622,7 +2625,7 @@ $script:StFamilyCheckCounts = @(
   # and the four 'environment blocked' ST-Skip lines in the receipt catch; the nine offline ones are
   # six unit (INC-02) legs + contract (INC-02), unit (INC-03) + contract (INC-03). Only the offline
   # nine can enter the declared total.
-  'Invoke-SelftestFamily-LiveSuite=185',
+  'Invoke-SelftestFamily-LiveSuite=188',
   'Invoke-SelftestFamily-GateMeta=168'
 )
 
