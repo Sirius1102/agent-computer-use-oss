@@ -419,7 +419,7 @@ shots/                 # 运行期目录（已 gitignore）：默认截图 + act
 .cowork-temp/          # 运行期目录（已 gitignore）：--live 日志
 ```
 
-本仓库 git 在册文件共 41 个（`tracked=41`，该数字由离线门禁与 `git ls-files` 比对钉住）。
+本仓库 git 在册文件共 43 个（`tracked=43`，该数字由离线门禁与 `git ls-files` 比对钉住）。
 
 **从源码构建：**在仓库根目录运行
 `powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`。

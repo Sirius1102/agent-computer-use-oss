@@ -527,7 +527,7 @@ shots/                 # runtime dir (gitignored): default screenshots + actions
 .cowork-temp/          # runtime dir (gitignored): --live logs
 ```
 
-The tracked-file inventory of this repository is 41 files (`tracked=41`, asserted against `git ls-files`).
+The tracked-file inventory of this repository is 43 files (`tracked=43`, asserted against `git ls-files`).
 
 **Build from source:** from the repository root run
 `powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`.
