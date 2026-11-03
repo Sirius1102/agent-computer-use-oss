@@ -38,15 +38,29 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # source contains the very literals it hunts (measured twice this round already).
   $jkTok = "'schemaVersion', 'contentTrust', 'oc" + "cluded', 'coveredBy'"
   $jkCall = 'Get-JsonContract' + "KeySet '"
-  $jkProducer = 0; $jkReaders = 0; $jkLits = 0
+  $jkProducer = 0; $jkReaders = 0; $jkLits = 0; $jkStray = @()
+  # Assembled at runtime for the same reason as $jkCall: a literal here would count itself.
+  $jkScope = 'Get-JsonContract' + "KeySet '(read|find)'"
   foreach ($jkL in $codeLines) {
-    $jkT = "$jkL"
+    $jkT = "$jkL".Trim()
+    if ($jkT -match '^#') { continue }
     if ($jkT.StartsWith('function Get-JsonContractKeySet')) { $jkProducer++ }
-    if ($jkT.Contains($jkCall)) { $jkReaders++ }
+    elseif ($jkT.Contains($jkCall)) {
+      $jkReaders++
+      # The gate owns the OCR read/find envelope only. A reader that names any other set
+      # is outside this contract (wins -z has its own check) and fails here by name.
+      if ($jkT -notmatch $jkScope) { $jkStray += $jkT }
+    }
     if ($jkT.Contains($jkTok)) { $jkLits++ }
   }
-  ST-Check 'lint: the published --json key contract has exactly one home (one producer, five readers, no stray literal copy - a second copy is how v3.0.0 drifted and two live checks sat red unseen for two rounds)' (
-    ($jkProducer -eq 1) -and ($jkReaders -eq 5) -and ($jkLits -eq 2))
+  # PT rounds 2026-11-02: five -> six readers. The sixth is the PT-4 read-text JSON check,
+  # which reads Get-JsonContractKeySet 'read' - the same OCR read/find envelope this gate
+  # protects - so it is inside the scope. Only code calls count (comment lines are skipped)
+  # and every reader must name 'read' or 'find'; the wins -z extended schema keeps its own
+  # independent contract checks and is never folded into this count.
+  ST-Check 'lint: the published --json key contract has exactly one home (one producer, six readers, no stray literal copy - a second copy is how v3.0.0 drifted and two live checks sat red unseen for two rounds)' (
+    ($jkProducer -eq 1) -and ($jkReaders -eq 6) -and ($jkLits -eq 2) -and (@($jkStray).Count -eq 0))
+  if (@($jkStray).Count -gt 0) { Write-Output ('      json-contract stray readers: ' + (@($jkStray) -join ' | ')) }
   Write-Output ('      json-contract homes: producer=' + $jkProducer + ' readers=' + $jkReaders + ' literals=' + $jkLits)
   $cGotFind = (@($cFind.PSObject.Properties.Name | Sort-Object) -join ',')
   $cGotRead = (@($cRead.PSObject.Properties.Name | Sort-Object) -join ',')
@@ -1166,5 +1180,61 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   } finally {
     try { if (Test-Path -LiteralPath $b2LogDir) { Remove-Item -LiteralPath $b2LogDir -Recurse -Force } } catch { }
   }
+
+  # PT-6: use the real entry point with harmless sleep-only step files. Capture the
+  # child stdout and stderr as separate byte files before decoding, so the assertions
+  # cover the complete process result rather than a host-rendered or truncated view.
+  $pt6Dir = Join-Path $env:TEMP ('st_pt6_script_' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $pt6Dir | Out-Null
+  $pt6File = Join-Path $pt6Dir 'steps.json'
+  $pt6SuccessJson = '[{"sleep":5,"desc":"PT6-before"},{"sleep":5,"desc":"PT6-after"}]'
+  $pt6FailureJson = '[{"sleep":5,"desc":"PT6-before"},{"sleep":"not-an-int","desc":"PT6-failure"},{"sleep":5,"desc":"PT6-after"}]'
+  [System.IO.File]::WriteAllText($pt6File, $pt6SuccessJson, (New-Object System.Text.UTF8Encoding($false)))
+  $pt6Run = {
+    param([string]$tail, [string]$label)
+    $soPath = Join-Path $pt6Dir ($label + '.stdout.bin')
+    $sePath = Join-Path $pt6Dir ($label + '.stderr.bin')
+    $argLine = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" ' + $tail
+    $child = Start-Process -FilePath 'powershell.exe' -ArgumentList $argLine -RedirectStandardOutput $soPath -RedirectStandardError $sePath -Wait -PassThru -WindowStyle Hidden
+    $soBytes = [System.IO.File]::ReadAllBytes($soPath)
+    $seBytes = [System.IO.File]::ReadAllBytes($sePath)
+    $enc = [System.Text.Encoding]::Default
+    $soText = $enc.GetString($soBytes); $seText = $enc.GetString($seBytes)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $soHash = ([System.BitConverter]::ToString($sha.ComputeHash($soBytes)) -replace '-', '').ToLowerInvariant(); $seHash = ([System.BitConverter]::ToString($sha.ComputeHash($seBytes)) -replace '-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    return [pscustomobject]@{ Code = [int]$child.ExitCode; Out = $soText; Err = $seText; OutBytes = $soBytes.Length; ErrBytes = $seBytes.Length; OutSha = $soHash; ErrSha = $seHash }
+  }
+  if (-not $script:PsChildOk) {
+    ST-Skip 'e2e (PT-6): real script entry returns per-step success receipts and complete raw streams for a sleep-only recipe' ($script:PsChildWhy + ' - child process unavailable')
+    ST-Skip 'e2e (PT-6): default continue mode records an intermediate failure, runs the later step, then exits 1' ($script:PsChildWhy + ' - child process unavailable')
+    ST-Skip 'e2e (PT-6): --stop-on-error prevents the step after the named failure and exits 1' ($script:PsChildWhy + ' - child process unavailable')
+    ST-Skip 'contract (PT-6): script --json is refused before the first step because the command has no JSON envelope' ($script:PsChildWhy + ' - child process unavailable')
+  } else {
+    $pt6Success = & $pt6Run ('script "' + $pt6File + '"') 'success'
+    ST-Check 'e2e (PT-6): real script entry returns both named per-step success receipts and a final success summary; complete stdout/stderr byte streams were captured separately' (
+      ($pt6Success.Code -eq 0) -and $pt6Success.Out.Contains('#1 sleep ok (PT6-before)') -and $pt6Success.Out.Contains('#2 sleep ok (PT6-after)') -and
+      $pt6Success.Out.Contains('script: 2 steps, all ok') -and $pt6Success.OutBytes -gt 0 -and $pt6Success.ErrBytes -ge 0)
+
+    [System.IO.File]::WriteAllText($pt6File, $pt6FailureJson, (New-Object System.Text.UTF8Encoding($false)))
+    $pt6Continue = & $pt6Run ('script "' + $pt6File + '"') 'continue'
+    ST-Check 'e2e (PT-6): default continue mode identifies the named middle failure, runs the later sleep, and returns final exit 1 with the full summary' (
+      ($pt6Continue.Code -eq 1) -and $pt6Continue.Out.Contains('#1 sleep ok (PT6-before)') -and $pt6Continue.Out.Contains('#2 sleep FAIL:') -and
+      $pt6Continue.Out.Contains('(PT6-failure)') -and $pt6Continue.Out.Contains('#3 sleep ok (PT6-after)') -and
+      $pt6Continue.Out.Contains('script: 3 steps, 1 FAILED'))
+
+    $pt6Stop = & $pt6Run ('script "' + $pt6File + '" --stop-on-error') 'stop'
+    ST-Check 'e2e (PT-6): --stop-on-error returns exit 1 at the named middle failure and emits no receipt for the later step' (
+      ($pt6Stop.Code -eq 1) -and $pt6Stop.Out.Contains('#2 sleep FAIL:') -and $pt6Stop.Out.Contains('script aborted by --stop-on-error after 1 failure(s)') -and
+      (-not $pt6Stop.Out.Contains('#3')) -and (-not $pt6Stop.Out.Contains('PT6-after')))
+
+    $pt6Json = & $pt6Run ('script "' + $pt6File + '" --json') 'json'
+    ST-Check 'contract (PT-6): script --json is rejected before step 1 because script has no JSON envelope; it is not accepted and silently emitted as text' (
+      ($pt6Json.Code -eq 1) -and $pt6Json.Out.Contains("--json is not supported by 'script'") -and
+      (-not $pt6Json.Out.Contains('#1')) -and (-not $pt6Json.Out.Contains('slept ')) -and
+      (-not (Test-JsonCapableCommand 'script')) -and ([string](Get-UsageText) -notmatch '(?i)ime-state/script'))
+    Write-Output ("      PT-6 child streams (stdout/stderr bytes): success=$($pt6Success.OutBytes)/$($pt6Success.ErrBytes) sha=$($pt6Success.OutSha)/$($pt6Success.ErrSha); continue=$($pt6Continue.OutBytes)/$($pt6Continue.ErrBytes) sha=$($pt6Continue.OutSha)/$($pt6Continue.ErrSha); stop=$($pt6Stop.OutBytes)/$($pt6Stop.ErrBytes); json=$($pt6Json.Code)")
+  }
+  if (Test-Path -LiteralPath $pt6Dir) { Remove-Item -LiteralPath $pt6Dir -Recurse -Force }
 
 }

@@ -25,6 +25,7 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       $dry = [bool]$own.Values['--dry']
       $staleOk = [bool]$own.Values['--stale-ok']
       $requireVer = [bool]$own.Values['--require-verified']
+      $staleContentOk = [bool]$own.Values['--stale-content-ok']
       # B-3 (v4.8.0): the margin is the CALLER's, and "the caller did not speak" is a different
       # fact from "the caller said 0" - with an unknown line width only a spoken margin can raise
       # an alert, so the distinction has to survive to the measuring function. -1 = nobody asked.
@@ -32,22 +33,18 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       $alertPx = -1.0
       if ($alertGiven) { $alertPx = [double]$own.Values['--on-grid-alert'] }
       $p = Split-Target @($own.Rest) 'imgclick'
-      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified] [--on-grid-alert <px>]' }
+      if ($p.Words.Count -ne 3) { throw 'usage: imgclick <outPath> <ix> <iy> [--to <sel>] [--expect <needle>|--expect-gone <needle>] [--dry] [--allow-outside] [--stale-ok] [--require-verified] [--stale-content-ok] [--on-grid-alert <px>]' }
       if ($requireVer -and $staleOk) { throw 'imgclick: --require-verified and --stale-ok contradict each other - one refuses anything not verified, the other explicitly maps against a stale origin; pick one' }
       $img = $p.Words[0]
       $ix = [int]$p.Words[1]; $iy = [int]$p.Words[2]
       $map = Read-MapSidecar $img
       if ($ix -lt 0 -or $ix -ge $map.OutW -or $iy -lt 0 -or $iy -ge $map.OutH) { throw "imgclick: image coords ($ix,$iy) outside $($map.OutW)x$($map.OutH) of $img" }
       $st = Test-MapSidecarStale $map
-      if ($st.Verdict -eq 'gone') { throw "imgclick: $($st.Msg)" }
-      if ($requireVer -and $st.Verdict -ne 'ok') {
-        throw "imgclick: --require-verified: this image cannot be verified against its host window ($($st.Verdict)) - $($st.Msg). Re-capture with 'win <sel>' or 'rect/zoom ... --to <sel>', or drop --require-verified to accept the OLD unverified contract"
-      }
-      if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "imgclick: $($st.Msg)" }
       $sp = Convert-ImageToScreen $map $ix $iy
       $staleNote = ''
       if ($st.Verdict -eq 'unverifiable') { $staleNote = "  ($($st.Msg))" }
-      elseif ($st.Verdict -eq 'stale') { $staleNote = "  [stale-ok] $($st.Msg)" }
+      elseif ($st.Verdict -eq 'stale' -and $staleOk) { $staleNote = "  [stale-ok] $($st.Msg)" }
+      elseif ($st.Verdict -eq 'stale') { $staleNote = "  [stale - strict path will refuse] $($st.Msg)" }
       # v1.5.7 (D-6, owner's added condition): grid lines are painted ON this image, so a
       # point read off it can land on a line. Silently mapping it through would be the
       # same class of lie as an unstated truncation. B-3 (v4.8.0): the warning now MEASURES
@@ -61,38 +58,67 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       $mapForm = $(if ($map.Scale -eq 1) { "screen = image + ($($map.OriginX),$($map.OriginY))" } else { "screen = image / $($map.Scale) + ($($map.OriginX),$($map.OriginY))" })
       "imgclick: $img ($($map.OutW)x$($map.OutH) kind=$($map.Kind) scale=$($map.Scale)) image ($ix,$iy) -> screen ($($sp.X),$($sp.Y))  [map: $img.map.txt; $mapForm]$staleNote$gridWarn"
       if ($dry) {
-        "  [dry run] not clicked"
+        if ($st.Verdict -eq 'gone') { throw "imgclick: $($st.Msg)" }
+        if ($requireVer -and $st.Verdict -ne 'ok') {
+          throw "imgclick: --require-verified: this image cannot be verified against its host window ($($st.Verdict)) - $($st.Msg). Re-capture with 'win <sel>' or 'rect/zoom ... --to <sel>', or drop --require-verified to accept the OLD unverified contract"
+        }
+        if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "imgclick: $($st.Msg)" }
+        "  [dry run] not clicked; content freshness is not read in dry mode"
       } else {
-        $tgt = $null
-        if ($p.Sel) {
-          $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
-          Emit-ResolveNote
+        $auditArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
+        $imgBound = ($p.Sel -ne '') -or ([Int64]$map.HostHwnd -ne 0)
+        $tgt = $null; $ecb = $null; $content = $null
+        $preflightError = $null
+        try {
+          if ($st.Verdict -eq 'gone') { throw "imgclick: $($st.Msg)" }
+          if ($requireVer -and $st.Verdict -ne 'ok') {
+            throw "imgclick: --require-verified: this image cannot be verified against its host window ($($st.Verdict)) - $($st.Msg). Re-capture with 'win <sel>' or 'rect/zoom ... --to <sel>', or drop --require-verified to accept the OLD unverified contract"
+          }
+          if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "imgclick: $($st.Msg)" }
+          if ($p.Sel) {
+            $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
+            Emit-ResolveNote
+          } elseif ([Int64]$map.HostHwnd -ne 0) {
+            $tgt = Resolve-Window ("hwnd:" + ([Int64]$map.HostHwnd).ToString())
+            if ($null -eq $tgt) { throw "imgclick: capture host hwnd=$(([Int64]$map.HostHwnd)) is no longer present - refusing an unbound click; re-capture" }
+          }
+          # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a strict caller must not click a point that
+          # was mapped from ANOTHER window - the pixel came from $map's host, so a --to that
+          # resolves to a different handle is the same lie as a stale origin.
+          if ($requireVer -and $null -ne $tgt -and ([Int64]$map.HostHwnd -ne 0) -and ([Int64]$tgt.Handle -ne [Int64]$map.HostHwnd)) {
+            throw "imgclick: --require-verified: the image was captured from handle=$(([Int64]$map.HostHwnd)) ('$($map.HostTitle)') but --to resolves to handle=$(([Int64]$tgt.Handle)) ('$($tgt.Title)') - refusing to click a point mapped from another window"
+          }
+          Invoke-TargetBlockGuard $tgt
+          # CU-EXTERNAL-EXPERIENCE-20261028 B5: the shared flag table already admits
+          # --expect-change for imgclick; before this line the handler accepted it and did
+          # nothing. Baseline before the click, verdict after it - same shape as click/rclick.
+          $ecb = Get-ExpectChangeBaseline $p $tgt
+          # Geometry is rechecked after activation; never translate an old mapped point.
+          $stInput = Test-MapSidecarStale $map
+          if ($stInput.Verdict -eq 'gone') { throw "imgclick: $($stInput.Msg)" }
+          if ($stInput.Verdict -eq 'stale' -and ($requireVer -or -not $staleOk)) {
+            throw "imgclick: the host moved after the initial check, immediately before input - $($stInput.Msg) - refusing; re-capture the image"
+          }
+          # Content freshness is a separate proof from the map's host geometry and PNG binding.
+          $content = Test-MapContentFreshness $map
+          if ($content.Verdict -ne 'ok' -and -not $staleContentOk) {
+            throw "imgclick: screenshot content freshness is $($content.Verdict) - $($content.Msg); no input was sent. Re-capture with win/rect/zoom and choose a stable --content-roi, or pass --stale-content-ok only when accepting this unchecked image mapping is intentional"
+          }
+        } catch { $preflightError = $_ }
+        if ($null -ne $preflightError) {
+          $preDetail = "img=$img ix=$ix iy=$iy geometry=$($st.Verdict) preflight=refused"
+          [void](Invoke-ObservedMouseInput $Cmd $auditArgs "$img image=($ix,$iy)" $sp.X $sp.Y $tgt $imgBound $p.AllowOutside $preDetail $null $preflightError)
         }
-        # CU-EXTERNAL-EXPERIENCE-20261028 (A1): a strict caller must not click a point that
-        # was mapped from ANOTHER window - the pixel came from $map's host, so a --to that
-        # resolves to a different handle is the same lie as a stale origin.
-        if ($requireVer -and $null -ne $tgt -and ([Int64]$map.HostHwnd -ne 0) -and ([Int64]$tgt.Handle -ne [Int64]$map.HostHwnd)) {
-          throw "imgclick: --require-verified: the image was captured from handle=$(([Int64]$map.HostHwnd)) ('$($map.HostTitle)') but --to resolves to handle=$(([Int64]$tgt.Handle)) ('$($tgt.Title)') - refusing to click a point mapped from another window"
+        if ($content.Verdict -eq 'ok') {
+          Write-Output "content-freshness: pass algorithm=$($content.Algorithm) roi=$($content.Roi) coverage=$($content.Coverage)"
+        } elseif ($staleContentOk) {
+          Write-Output "content-freshness: BYPASSED by --stale-content-ok ($($content.Verdict)); $($content.Msg)"
         }
-        Invoke-TargetBlockGuard $tgt
-        Invoke-HitWindowCheck $sp.X $sp.Y $tgt ($p.Sel -ne '') $p.AllowOutside
-        # CU-EXTERNAL-EXPERIENCE-20261028 B5: the shared flag table already admits
-        # --expect-change for imgclick; before this line the handler accepted it and did
-        # nothing. Baseline before the click, verdict after it - same shape as click/rclick.
-        $ecb = Get-ExpectChangeBaseline $p $tgt
-        # v4.6.7 (CU-466-REVIEW-20261028-01 A1-a): the geometry above was verified BEFORE
-        # Resolve-Target ran. Activation and the guards since then cost time, and a host that
-        # moved in that window turns a pixel mapped from the OLD origin into a lie even when the
-        # old point still falls inside the window rect (the landing guard cannot see that). So
-        # re-check the SAME recorded baseline immediately before input; never translate the old
-        # point by the measured delta. --stale-ok remains the explicit permission to map anyway.
-        $stInput = Test-MapSidecarStale $map
-        if ($stInput.Verdict -eq 'gone') { throw "imgclick: $($stInput.Msg)" }
-        if ($stInput.Verdict -eq 'stale' -and ($requireVer -or -not $staleOk)) {
-          throw "imgclick: the host moved after the initial check, immediately before input - $($stInput.Msg) - refusing; re-capture the image"
-        }
-        Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "img=$img ix=$ix iy=$iy -> $($sp.X),$($sp.Y)" $Cmd
-        Move-Click $sp.X $sp.Y 'left'
+        $contentBypass = if ($staleContentOk) { ' --stale-content-ok' } else { '' }
+        $auditDetail = "img=$img ix=$ix iy=$iy -> $($sp.X),$($sp.Y) content=$($content.Verdict)$contentBypass button=left"
+        $inputAction = { Move-Click $sp.X $sp.Y 'left' }
+        $imgRun = Invoke-ObservedMouseInput $Cmd $auditArgs "$img image=($ix,$iy)" $sp.X $sp.Y $tgt (($p.Sel -ne '') -or ([Int64]$map.HostHwnd -ne 0)) $p.AllowOutside $auditDetail $inputAction $null $contentBypass.Trim()
+        Write-Output $imgRun.Echo
         "clicked $($sp.X),$($sp.Y)"
         Invoke-ExpectChangeCheck $p $ecb 'clicked'
         Invoke-ActionExpectation $p $tgt 'clicked'
@@ -113,6 +139,7 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       $x = [int]$Rest[0]; $y = [int]$Rest[1]; $w = [int]$Rest[2]; $h = [int]$Rest[3]
       if ($w -le 0 -or $h -le 0) { throw 'zoom: w and h must be positive' }
       $scale = 2.0; $path = ''
+      $contentRoiArg = $null
       # C (v4.8.0): the quality flags ride the SAME grammar as win/rect/shot - one consumer
       # (Test-CaptureQualityFlag), so the value rules cannot drift between capture commands.
       # zoom used to push any unrecognised token into $path, which is exactly the
@@ -123,7 +150,14 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
         while ($zi -lt $Rest.Count) {
           $za = [string]$Rest[$zi]
           if (Test-CaptureQualityFlag $za $Rest ([ref]$zi) $q) { $zi++; continue }
-          if ($za -match '^\d+(\.\d+)?$') { $scale = [double]$za }
+          if ($za -eq '--content-roi') {
+            $zi++
+            if ($zi -ge $Rest.Count) { throw 'zoom --content-roi needs x,y,w,h in source-image pixels' }
+            $parts = @([string]$Rest[$zi] -split ',')
+            if ($parts.Count -ne 4 -or @($parts | Where-Object { $_ -match '^-?\d+$' }).Count -ne 4) { throw "zoom --content-roi expects x,y,w,h integers in source-image pixels, got '$($Rest[$zi])'" }
+            $contentRoiArg = @{ X = [int]$parts[0]; Y = [int]$parts[1]; W = [int]$parts[2]; H = [int]$parts[3] }
+            if ($contentRoiArg.X -lt 0 -or $contentRoiArg.Y -lt 0 -or $contentRoiArg.W -le 0 -or $contentRoiArg.H -le 0) { throw 'zoom --content-roi must have x,y >= 0 and w,h > 0' }
+          } elseif ($za -match '^\d+(\.\d+)?$') { $scale = [double]$za }
           elseif (-not $path) { $path = $za }
           else { throw "zoom: unexpected argument '$za' (usage: zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] plus the capture-quality flags - see 'desktop.ps1 help zoom')" }
           $zi++
@@ -131,6 +165,7 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
       if (-not $path) { $path = Default-ShotName 'zoom' }
+      $contentRoi = Resolve-ContentRoi $contentRoiArg $w $h
       $hostWin = $null; $hostSnap = $null
       if ($hb.Sel) {
         $ch = Resolve-CropHost $hb.Sel $x $y $w $h 'zoom'
@@ -166,6 +201,7 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
         foreach ($zl in @($zcap.Lines)) { Write-Output $zl }
         Write-Output ("  quality: verdict=pass attempts=$($zcap.Attempts) spent=$($zcap.SpentMs)ms budget=$([int]$q['RetryBudget'])ms occlusion=not re-checked (no gate on this path)")
       }
+      $contentInfo = New-ContentBaseline $src $contentRoi
       $ow = [int]($w * $scale); $oh = [int]($h * $scale)
       $dst = New-Object System.Drawing.Bitmap($ow, $oh)
       $gd = [System.Drawing.Graphics]::FromImage($dst)
@@ -186,8 +222,8 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       try { $dst.Save($msZ, [System.Drawing.Imaging.ImageFormat]::Png); $zBytes = $msZ.ToArray() } finally { $msZ.Dispose(); $dst.Dispose() }
       $shaZ = [System.Security.Cryptography.SHA256]::Create()
       try { $zSha = ([BitConverter]::ToString($shaZ.ComputeHash($zBytes)) -replace '-','').ToLower() } finally { $shaZ.Dispose() }
-      Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha
-      [System.IO.File]::WriteAllBytes($path, $zBytes)
+      $zMapPublish = { Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha $null '' $contentInfo }.GetNewClosure()
+      Publish-CapturePair $path $zBytes $zMapPublish
       $size = $zBytes.Length
       "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"

@@ -449,6 +449,7 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
   # still a promise). Promise forms (case-insensitive), and the wiring each one promises:
   #   "guards and hit-window like <cmd>"  -> Invoke-ContentGuard + Invoke-HitWindowCheck
   #   "guards + landing check like <cmd>" -> Invoke-ContentGuard + Invoke-HitWindowCheck
+  #   "guards + observed landing check like <cmd>" -> Invoke-ContentGuard + Invoke-ObservedMouseInput
   #   "guards like <cmd>"                 -> every guard helper the promised case's own body has
   #   "same default-on readback as <cmd>" -> Invoke-AutoPasteExpect
   $gaHelpers = @('Resolve-Target', 'Invoke-ContentGuard', 'Invoke-HitWindowCheck', 'Invoke-AutoPasteExpect')
@@ -495,7 +496,7 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
       }
     }
   }
-  $gaRe = '(?i)(guards and hit-window like|guards \+ landing check like|same default-on readback as|guards like) ([a-z][a-z0-9-]*)'
+  $gaRe = '(?i)(guards and hit-window like|guards \+ landing check like|guards \+ observed landing check like|same default-on readback as|guards like) ([a-z][a-z0-9-]*)'
   $gaPromises = @()
   for ($gai = 0; $gai -lt $codeLines.Count; $gai++) {
     if (($gai -ge $j5ProdStart) -and ($gai -lt $j5ProdEnd)) { continue }
@@ -526,7 +527,9 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
       continue
     }
     $gaWant = @()
-    if (($gaKind -like 'guards and hit-window*') -or ($gaKind -like 'guards + landing*')) {
+    if ($gaKind -like 'guards + observed landing check*') {
+      $gaWant = @('Invoke-ContentGuard', 'Invoke-ObservedMouseInput')
+    } elseif (($gaKind -like 'guards and hit-window*') -or ($gaKind -like 'guards + landing*')) {
       $gaWant = @('Invoke-ContentGuard', 'Invoke-HitWindowCheck')
     } elseif ($gaKind -eq 'same default-on readback as') {
       $gaWant = @('Invoke-AutoPasteExpect')
@@ -2266,11 +2269,12 @@ public static class DtxWheelProbe {
     return @{ X = [DtxWheelProbe]::RectX; Y = [DtxWheelProbe]::RectY; W = [DtxWheelProbe]::RectW; H = [DtxWheelProbe]::RectH }
   }
   function Get-WheelProbeHitWindow([int]$X, [int]$Y) {
-    if ([DtxWheelProbe]::HitHandle -eq 0) { return $null }
+    if ([DtxWheelProbe]::HitHandle -eq 0) { return @{ State = 'none'; Hwnd = $null; Pid = $null; Title = ''; Error = 'no top-level window at this point' } }
+    if ([DtxWheelProbe]::HitHandle -eq -1) { return @{ State = 'unknown'; Hwnd = $null; Pid = $null; Title = ''; Error = 'probe-refused' } }
     $hh = [IntPtr]::new([long][DtxWheelProbe]::HitHandle)
     $hp = if ([DtxWheelProbe]::HitHandle -eq 77) { 91 } else { 92 }
     $ht = if ([DtxWheelProbe]::HitHandle -eq 77) { 'synthetic-wheel-target' } else { 'synthetic-coverer' }
-    return @{ Hwnd = $hh; Pid = $hp; Title = $ht }
+    return @{ State = 'hit'; Hwnd = $hh; Pid = $hp; Title = $ht }
   }
   function Resolve-WheelProbeTarget([string]$Selector, [bool]$Force, [bool]$AlwaysActivate, [string]$ExpectHandle) {
     [DtxWheelProbe]::ResolveCount++
@@ -2360,6 +2364,16 @@ public static class DtxWheelProbe {
   try { [void](Get-WheelPointObservation-probe 201 23 $script:WheelProbeTarget 'outside case' $false) } catch { $wheelOutsideMessage = [string]$_.Exception.Message }
   [DtxWheelProbe]::HitHandle = 88
   try { [void](Get-WheelPointObservation-probe 41 23 $script:WheelProbeTarget 'coverer case' $false) } catch { $wheelCoverMessage = [string]$_.Exception.Message }
+  [DtxWheelProbe]::HitHandle = 0
+  $wheelNoneMessage = ''
+  try { [void](Get-WheelPointObservation-probe 41 23 $script:WheelProbeTarget 'none case' $false) } catch { $wheelNoneMessage = [string]$_.Exception.Message }
+  [DtxWheelProbe]::HitHandle = -1
+  $wheelUnknownMessage = ''
+  try { [void](Get-WheelPointObservation-probe 41 23 $script:WheelProbeTarget 'unknown case' $false) } catch { $wheelUnknownMessage = [string]$_.Exception.Message }
+  $wheelNoneUnknownNoInput = [DtxWheelProbe]::MoveCount -eq 0 -and [DtxWheelProbe]::ClickCount -eq 0 -and [DtxWheelProbe]::SendCount -eq 0
+  ST-Check 'unit (CU-REL-03/PT-4): a hit test that reads none or unknown refuses the scroll point with zero input' (
+    $wheelNoneMessage.Contains('observes none (nothing answers the hit test)') -and
+    $wheelUnknownMessage.Contains('observes unknown (hit test did not answer: probe-refused)') -and $wheelNoneUnknownNoInput)
   Reset-WheelProbe
   [DtxWheelProbe]::HitHandle = 88
   $wheelWrongPreMessage = ''

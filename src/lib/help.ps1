@@ -210,7 +210,7 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
 # file holds, not the ten lines the text report is willing to spend on it.
 function Get-JsonCapableCommandSet {
   return (@('chrome-tabs', 'color-at', 'capabilities', 'cluster-color', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'clip-info', 'ocr-cap', 'pt-calibrate', 'read-text', 'rect-of', 'script', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
+    'clip-info', 'ocr-cap', 'pt-calibrate', 'read-text', 'rect-of', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
     @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
@@ -386,7 +386,7 @@ function Get-OwnFlagTable {
     # anything but 'ok' (no host bound, stale rect, minimized, dead/reused handle) is
     # refused before any input. It cannot be combined with --stale-ok; the old unverified
     # crop stays usable only when the caller does NOT ask for verification.
-    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true }; '--require-verified' = @{ Bool = $true }; '--on-grid-alert' = @{ Min = 0; Max = 5000; Default = 0 } }
+    'imgclick' = @{ '--dry' = @{ Bool = $true }; '--stale-ok' = @{ Bool = $true }; '--require-verified' = @{ Bool = $true }; '--stale-content-ok' = @{ Bool = $true }; '--on-grid-alert' = @{ Min = 0; Max = 5000; Default = 0 } }
     'unmap' = @{ '--stale-ok' = @{ Bool = $true } }
     'type-in' = @{ '--tab' = @{ Min = 0; Max = 20; Default = 0 } }
     # CU-OPS-COMPLETE-20261026-01 (package B): gesture flags. --mods is a verbatim spec
@@ -450,6 +450,11 @@ function Get-OwnFlagTable {
   }
 }
 
+# Capture-only flags are kept separate from Split-Target's shared flag set.
+function Get-CaptureRouteFlagSet {
+  return @('--content-roi')
+}
+
 # Which SHARED flags actually reach a given command. Commands that call Split-Target get the
 # whole shared set; the four below parse their own arguments (menu-pick and type-in never see
 # --to, unmap never sees anything but --stale-ok), so without this declaration the refusal
@@ -468,8 +473,9 @@ function Get-CommandSharedMap {
     # the ONLY shared flag they route is --to (the host binding). Declared here so the
     # "valid here" text names exactly what their parser accepts; the reachability lint
     # follows the Resolve-CaptureTargetArgs delegation and finds the real branch.
-    'rect' = @('--to')
-    'zoom' = @('--to')
+    'win' = @(Get-CaptureRouteFlagSet)
+    'rect' = @('--to') + @(Get-CaptureRouteFlagSet)
+    'zoom' = @('--to') + @(Get-CaptureRouteFlagSet)
     # CU-REL-03..04: wheel accepts only flags it actually consumes. In particular,
     # --allow-outside and unrelated shared readback flags do not silently disappear.
     'wheel' = @('--to', '--force', '--expect-handle', '--always-activate', '--expect-change')
@@ -484,9 +490,10 @@ function Get-CommandSharedMap {
     # activate the window or imply a target), so they route none of the shared flags.
     'uia-state' = @()
     'uia-do' = @()
-    # CU-OPS packages D/F/H: tpl-find really routes only the target-binding quartet
-    # (it locates, it does not act), and the other three hand-parse with no target at all.
-    'tpl-find' = @('--to', '--force', '--expect-handle', '--always-activate')
+    # CU-OPS packages D/F/H: tpl-find accepts a read-only target binding and optional
+    # identity pin. The two activation overrides are routed so the handler can refuse them by
+    # name ('tpl-find is read-only'), instead of the generic unknown-flag text hiding that fact.
+    'tpl-find' = @('--to', '--expect-handle', '--force', '--always-activate')
     'clip-info' = @()
     'wait-cond' = @()
     'capabilities' = @()

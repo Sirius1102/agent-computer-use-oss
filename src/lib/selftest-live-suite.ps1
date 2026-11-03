@@ -2373,18 +2373,16 @@ $staged = & $stageLoop
         while ($apSw.Elapsed.TotalSeconds -lt 15) { $awin = Resolve-Window 'DTX-ActA'; if ($awin) { break }; Start-Sleep -Milliseconds 400 }
         if ($null -eq $awin) { throw 'activation probe window did not appear within 15s' }
         Start-Sleep -Milliseconds 800
-        # z-order index of a titled top-level window, read from the enumeration order
-        # (EnumWindows walks top -> bottom). This is the EXTERNAL observable - the whole
-        # point is that `activated=` alone would only be the code talking about itself.
+        # Verified z-order rank of a titled top-level window, read from the GetWindow
+        # relationship chain. This is the OS-observed observable - `activated=` alone
+        # would only be the code talking about itself.
         $zPair = {
           param([string]$t1, [string]$t2)
           $rows = @(Get-WinList)
-          $i1 = -1; $i2 = -1; $k = 0
-          foreach ($r in $rows) {
-            if ($i1 -lt 0 -and $r.Title -ceq $t1) { $i1 = $k }
-            if ($i2 -lt 0 -and $r.Title -ceq $t2) { $i2 = $k }
-            $k++
-          }
+          $r1 = @($rows | Where-Object { $_.Title -ceq $t1 } | Select-Object -First 1)
+          $r2 = @($rows | Where-Object { $_.Title -ceq $t2 } | Select-Object -First 1)
+          $i1 = if (@($r1).Count -gt 0 -and $r1[0].ZState -eq 'verified') { [int]$r1[0].ZIndex } else { -1 }
+          $i2 = if (@($r2).Count -gt 0 -and $r2[0].ZState -eq 'verified') { [int]$r2[0].ZIndex } else { -1 }
           return @{ A = $i1; B = $i2 }
         }
         $bRow = @(Get-WinList | Where-Object { $_.Title -ceq 'DTX-ActB' })
@@ -2541,6 +2539,49 @@ $staged = & $stageLoop
         ST-Check 'live: wins carries main=yes on the host row and main=no on the popup row (columns are real, not lint-only)' (
           @($d7RowA).Count -ge 1 -and @($d7RowB).Count -ge 1 -and $d7RowA[0].Contains('main=yes') -and $d7RowB[0].Contains('main=no'))
         Write-Output ("      D-7 wins rows: " + $d7Cols)
+        # PT-5: prove the actual GetWindow(GW_HWNDNEXT) Z rank against the OS hit test using only these
+        # self-owned forms. B is smaller than A, so it is first when raised and second when
+        # placed directly behind A; the point hit must follow the same top-level order.
+        # The arrangement uses DT (compiled by the tool itself): HX13 exists only inside the
+        # fixture process, so the first version of this block died with "type [HX13] not
+        # found" in the parent and never reached either assertion.
+        # ConvertFrom-Json is assigned before @(): 5.1 emits a JSON array as ONE pipeline
+        # object, so @( ... | ConvertFrom-Json ) would nest the rows and every row lookup
+        # below would read an array as a scalar.
+        $zLiveA = Resolve-Window 'DTX-ActA'; $zLiveB = Resolve-Window 'DTX-ActB'
+        $zOrigX = [int]$zLiveB.Left; $zOrigY = [int]$zLiveB.Top
+        $zOverlapX = [int]($zLiveA.Left + 50); $zOverlapY = [int]($zLiveA.Top + 60)
+        [void][DT]::MoveWindow($zLiveB.Handle, $zOverlapX, $zOverlapY, [int]$zLiveB.W, [int]$zLiveB.H, $true); [void][DT]::BringWindowToTop($zLiveB.Handle)
+        Start-Sleep -Milliseconds 200
+        $zTopRows = @(Get-WinList)
+        $zTopA = @($zTopRows | Where-Object { $_.Handle -eq $zLiveA.Handle })[0]
+        $zTopB = @($zTopRows | Where-Object { $_.Handle -eq $zLiveB.Handle })[0]
+        $zHitTop = Get-HitWindow ([int]($zOverlapX + [int]($zLiveB.W / 2))) ([int]($zOverlapY + [int]($zLiveB.H / 2)))
+        $zTopVerified = $null -ne $zTopA -and $null -ne $zTopB -and $zTopB.ZIndex -lt $zTopA.ZIndex -and $zHitTop.State -eq 'hit' -and $zHitTop.Hwnd -eq $zLiveB.Handle
+        [void][DT]::BringWindowToTop($zLiveA.Handle)
+        Start-Sleep -Milliseconds 200
+        $zBelowRows = @(Get-WinList)
+        $zBelowA = @($zBelowRows | Where-Object { $_.Handle -eq $zLiveA.Handle })[0]
+        $zBelowB = @($zBelowRows | Where-Object { $_.Handle -eq $zLiveB.Handle })[0]
+        $zHitBelow = Get-HitWindow ([int]($zOverlapX + [int]($zLiveB.W / 2))) ([int]($zOverlapY + [int]($zLiveB.H / 2)))
+        $zBelowVerified = $null -ne $zBelowA -and $null -ne $zBelowB -and $zBelowA.ZIndex -lt $zBelowB.ZIndex -and $zHitBelow.State -eq 'hit' -and $zHitBelow.Hwnd -eq $zLiveA.Handle
+        $zLiveText = & $apCmd 'wins -z'
+        $zLiveJsonText = & $apCmd 'wins -z --json'
+        $zLiveJsonClean = (@($zLiveJsonText.Out -split "`r?`n" | Where-Object { $_ -notmatch '^(WARNING|ERROR): ' }) -join "`n"); $zLiveJsonParsed = $zLiveJsonClean | ConvertFrom-Json; $zLiveJsonRows = @($zLiveJsonParsed)
+        $zLiveJsonA = @($zLiveJsonRows | Where-Object { [int64]$_.hwnd -eq ([IntPtr]$zLiveA.Handle).ToInt64() })[0]
+        $zLiveJsonB = @($zLiveJsonRows | Where-Object { [int64]$_.hwnd -eq ([IntPtr]$zLiveB.Handle).ToInt64() })[0]
+        $zLiveTextA = @($zLiveText.Out -split "`r?`n" | Where-Object { $_ -match ('hwnd=0x' + ([IntPtr]$zLiveA.Handle).ToInt64().ToString('X') + ' ') })[0]
+        $zLiveTextB = @($zLiveText.Out -split "`r?`n" | Where-Object { $_ -match ('hwnd=0x' + ([IntPtr]$zLiveB.Handle).ToInt64().ToString('X') + ' ') })[0]
+        ST-Check 'live (PT-5): smaller self-owned B is z-first and receives the overlap hit when raised; A becomes z-first and receives it when B is placed behind A' (
+          $zTopVerified -and $zBelowVerified -and $zLiveText.Code -eq 0 -and $zLiveJsonText.Code -eq 0)
+        ST-Check 'live (PT-5): text and explicit -z JSON agree on fixture handles, order, enabled and modal source' (
+          $null -ne $zLiveJsonA -and $null -ne $zLiveJsonB -and $zLiveJsonA.z -lt $zLiveJsonB.z -and
+          $zLiveTextA -match ('^z=' + $zLiveJsonA.z + ' ') -and $zLiveTextB -match ('^z=' + $zLiveJsonB.z + ' ') -and
+          $zLiveTextA.Contains('enabled=') -and $zLiveTextA.Contains('modal=') -and $zLiveTextA.Contains('modal_source=') -and
+          $zLiveJsonA.PSObject.Properties.Name -contains 'hwnd' -and $zLiveJsonA.PSObject.Properties.Name -contains 'enabled' -and
+          $zLiveJsonA.PSObject.Properties.Name -contains 'modal' -and $zLiveJsonA.PSObject.Properties.Name -contains 'modal_source')
+        Write-Output ("      PT-5 Z proof: raised B z=$($zTopB.ZIndex) hit=$($zHitTop.Hwnd); lowered A/B=$($zBelowA.ZIndex)/$($zBelowB.ZIndex) hit=$($zHitBelow.Hwnd); CLI JSON A/B=$($zLiveJsonA.z)/$($zLiveJsonB.z)")
+        [void][DT]::MoveWindow($zLiveB.Handle, $zOrigX, $zOrigY, [int]$zLiveB.W, [int]$zLiveB.H, $true)
         $apSteps = Join-Path $env:TEMP ('dtx-dry-' + [guid]::NewGuid().ToString('N') + '.json')
         [System.IO.File]::WriteAllText($apSteps, ('[ { "click": [' + $esx + ', ' + $esy + '], "to": "DTX-ActA" } ]'), (New-Object System.Text.UTF8Encoding($false)))
         # v3.0.1 (audit #20): $apSteps is a TEMP path, and TEMP is under the profile on
@@ -2861,7 +2902,7 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
           $occOwn = $true
           foreach ($occQ in @((Get-OcclusionPoints $tW.Left $tW.Top $tW.W $tW.H 5).Points)) {
             $occH = Get-HitWindow $occQ.X $occQ.Y
-            if (-not $occH -or $occH.Hwnd -ne $tW.Handle) { $occOwn = $false; break }
+            if ($null -eq $occH -or [string](Get-OptValue $occH 'State') -ne 'hit' -or $occH.Hwnd -ne $tW.Handle) { $occOwn = $false; break }
           }
           if ($occOwn -or $occTries -ge 12) { break }
         }
@@ -2901,9 +2942,9 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
           $occC = Get-OcclusionVerdict $tW.Left $tW.Top $tW.W $tW.H $tW.Handle 5
           $badOv = @($occC.Covering | Where-Object { (@($ovCand | ForEach-Object { $_.Handle }) -contains $_.Hwnd) })
           ST-Check 'live: click-through overlays are not counted as covering (hit-test, not rect overlap)' (
-            $badOv.Count -eq 0 -and $null -ne $hitC -and $hitC.Hwnd -eq $tW.Handle)
+            $badOv.Count -eq 0 -and $null -ne $hitC -and [string](Get-OptValue $hitC 'State') -eq 'hit' -and $hitC.Hwnd -eq $tW.Handle)
           Write-Output "      overlay candidates: $(@($ovCand | ForEach-Object { "$($_.Proc):$($_.Class)" }) -join '; ')"
-          Write-Output "      centre hit (own target): pid=$($hitC.Pid) title='$($hitC.Title)'; overlays in covering: $($badOv.Count)"
+          Write-Output "      centre hit (own target): state=$([string](Get-OptValue $hitC 'State')) pid=$($hitC.Pid) title='$($hitC.Title)'; overlays in covering: $($badOv.Count)"
         }
 
         # item 5 (true positive): a spawned coverer moved over the centre
@@ -3863,7 +3904,7 @@ $gaTimer.Start()
     # measured, not assumed: every one of the four names has to answer empty here, or the 'all-empty'
     # leg below is proving nothing about the resolver and is only proving that this machine had unset vars.
     $q3ClearNotes = @()
-    foreach ($q3n in $q3Names) { if ($null -ne [Environment]::GetEnvironmentVariable($q3n, 'Process')) { $q3ClearNotes += ($q3n + '=still-set') } }
+    foreach ($q3n in $q3Names) { if ([string][Environment]::GetEnvironmentVariable($q3n, 'Process') -ne '') { $q3ClearNotes += ($q3n + '=still-set') } }  # pwsh7 answers '' for an absent var while 5.1 answers $null - the resolver reads both as clear, so the ruler must too
     $q3All = Get-DtxCallIdentity $null
     $q3Cases += [pscustomobject]@{ Leg = 'all-empty'; Label = [string]$q3All.CallerLabel; Session = [string]$q3All.CallerSessionId; Source = [string]$q3All.IdentitySource }
     [Environment]::SetEnvironmentVariable('CODEX_THREAD_' + 'ID', 'q3-thread-fixture', 'Process')

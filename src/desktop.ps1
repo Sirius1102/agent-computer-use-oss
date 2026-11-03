@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.8.0  (version sync list lives in the project overview doc)
+# version: 4.9.0  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.8.0'
+$script:ToolVersion = '4.9.0'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -521,7 +521,7 @@ Set-StrictMode -Version Latest
 # four-source identity resolver legs with their order ruler). The other nine emitter lines the
 # live suite gained are inside the ladder and cannot be emitted offline, so they do not enter
 # this total (1166 -> 1183). v4.8.0 B-round (CU-REMAINDER-FINAL-20261029-01): the B-1 calibration fixture is rebuilt (labels measured CAL-A/B/C, geometry 1100x800, bands on the measured box quantization), B-2 adds the origin-resolver and archive-walk criteria (+6 emitters), B-3 adds the grid-proximity criteria (+7), and every A-14 registration moves with the measured tallies (1183 -> 1240).
-$script:DeclaredCheckTotal = 1252
+$script:DeclaredCheckTotal = 1305
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2394,15 +2394,15 @@ $script:StFamilyCounts = @{
   # v4.8.0 B-2 (b-wip-r3): the A-07/A-09 registration notes grow the family by 9 lines (measured).
   # v4.8.0 B-round (b-wip-r9): the A-14a banner-pin note grows the family by 3 more (+3 -> 1356).
   # v4.8.0 C (c-wip-r8): the banner-pin comment grows by one more line (+1 -> 1357).
-  'split-machine' = 'banners=23,lines=1357'
+  'split-machine' = 'banners=23,lines=1396'
   'repo-contract' = 'banners=5,lines=322'
-  'gate-meta' = 'banners=30,lines=2808'
+  'gate-meta' = 'banners=30,lines=2822'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
   # D-5 (v4.6.13): the same prose names the new 97/100/111 and which round moved them (+1 -> 889).
   # v4.8.0 B-2 (b-wip-r3): the --scope registration notes grow the family by 13 lines (measured).
   # v4.8.0 C (c-wip-r7): the flag-forward lint's 14th-argument note grows it by 3 more (+3 -> 905).
-  'flags-grammar' = 'banners=16,lines=905'
+  'flags-grammar' = 'banners=16,lines=906'
   # D-1 (v4.6.13): the PT profile / anchor banner and its two e2e cases land here; the row
   # is the measured value from the offline gate (the D-1 block grew the family by 9 lines).
   # v4.7.0 (B-1): the calibration banner lands here (+1 banner) and its block grows the family to
@@ -2414,13 +2414,13 @@ $script:StFamilyCounts = @{
   # (the family process's GDI+ font state had drifted every OCR box by +(3,5) and dropped E's
   # duplicated row entirely - measured via the hash line: same DrawString calls, different
   # bytes), which grew the region by 34 more lines (+34 -> 1869).
-  'capture-ocr' = 'banners=11,lines=1882'
+  'capture-ocr' = 'banners=11,lines=2101'
   'popup-occlusion' = 'banners=7,lines=348'
   # D-3 (v4.6.13): the origin-column banner and its block land here (+1 banner, +105 lines).
   # v4.8.0 (B-2) (b-wip-r3): the origin-resolution / archive-walk banner and its 5 checks (one
   # is the child-process e2e, one a conditional SKIP) add one banner and 99 lines
   # (+1 -> 12, +99 -> 1150), measured by the b-wip-r3 attribution run on this tree.
-  'audit-output' = 'banners=12,lines=1150'
+  'audit-output' = 'banners=12,lines=1220'
   # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
@@ -2443,7 +2443,7 @@ $script:StFamilyCounts = @{
   # v4.8.0 (C) single-file guards (stitched-gate3): the A-22 skip guards over the B-1/C lint
   # sections add 5 lines here and 13 to capture-ocr; the A-14b AST counter counts the 8+1
   # ST-Skip emitters the guards hold (170/263), in BOTH modes - the stitch is line-identical.
-  'window-targeting' = 'banners=16,lines=2872'
+  'window-targeting' = 'banners=16,lines=3213'
   'expect-family' = 'banners=9,lines=705'
   # v4.7.0 (CU-REMAINDER-FINAL-20261029-01 INC-01): the companion-content resolver block - eight
   # offline legs, the wiring ruler and its swap witness, and the fixture-shape fix in the
@@ -2451,7 +2451,7 @@ $script:StFamilyCounts = @{
   # v4.8.0 (c-final live finding): the managed-view leg splits the read-failed negative (a raw
   # read answering null is the managed view of the text payload, measured on real clipboards in
   # live v48-live-r1/r2 where the shipped refusal broke every paste) (+9 -> 319).
-  'clipboard-input' = 'banners=4,lines=319'
+  'clipboard-input' = 'banners=4,lines=333'
   'docs-contract' = 'banners=12,lines=646'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
@@ -2499,7 +2499,7 @@ $script:StFamilyCounts = @{
   # four-source identity isolation with its offline resolver/order legs (+440 -> 3917). Of the
   # eighteen emitter lines this round adds to the family, nine run offline and nine only inside
   # the ladder, so the declared total moves by the offline nine only (A-14b rows say which).
-  'live-suite' = 'banners=21,lines=3917'
+  'live-suite' = 'banners=21,lines=3958'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2595,9 +2595,9 @@ $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', '
 # A-14b counter over the family body, not by adding the numbers by hand).
 $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
-  'Invoke-SelftestFamily-CaptureOcr=170',
+  'Invoke-SelftestFamily-CaptureOcr=188',
   'Invoke-SelftestFamily-FlagsGrammar=92',
-  'Invoke-SelftestFamily-WindowTargeting=263',
+  'Invoke-SelftestFamily-WindowTargeting=292',
   'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
@@ -2605,11 +2605,11 @@ $script:StFamilyCheckCounts = @(
   # (seven unit/contract legs over the real resolver plus the source-shape wiring lint), 32 -> 40,
   # measured by re-running the same A-14b AST counter over lib/selftest-clipboard-input.ps1
   # (ST-Check=40, ST-Skip=0), not by adding the block's lines by hand.
-  'Invoke-SelftestFamily-ClipboardInput=41',
+  'Invoke-SelftestFamily-ClipboardInput=42',
   'Invoke-SelftestFamily-RepoContract=26',
   'Invoke-SelftestFamily-SplitMachine=66',
   'Invoke-SelftestFamily-PopupOcclusion=48',
-  'Invoke-SelftestFamily-AuditOutput=90',
+  'Invoke-SelftestFamily-AuditOutput=98',
   'Invoke-SelftestFamily-ExpectFamily=87',
   'Invoke-SelftestFamily-DragPress=22',
   # v4.6.13: the occlusion true-negative leg grew its own ST-Skip branch (premise not established),
@@ -2622,8 +2622,8 @@ $script:StFamilyCheckCounts = @(
   # and the four 'environment blocked' ST-Skip lines in the receipt catch; the nine offline ones are
   # six unit (INC-02) legs + contract (INC-02), unit (INC-03) + contract (INC-03). Only the offline
   # nine can enter the declared total.
-  'Invoke-SelftestFamily-LiveSuite=183',
-  'Invoke-SelftestFamily-GateMeta=167'
+  'Invoke-SelftestFamily-LiveSuite=185',
+  'Invoke-SelftestFamily-GateMeta=168'
 )
 
 # A-23 (criterion-5): every `exit` this tree can execute, named by the owner that holds it. Registered by CASE
@@ -2649,16 +2649,13 @@ $script:StCommandOwners = @(
   'fn:Invoke-Handler-chrome-a11y=1',
   'fn:Invoke-Handler-chrome-debug-off=1',
   'fn:Invoke-Handler-chrome-menu-read=1',
-  'fn:Invoke-Handler-click=1',
   'fn:Invoke-Handler-copy-file=1',
-  'fn:Invoke-Handler-dblclick=1',
   'fn:Invoke-Handler-dialog-cancel=1',
   'fn:Invoke-Handler-drag=1',
   'fn:Invoke-Handler-drag-to=1',
   'fn:Invoke-Handler-find-click=1',
   'fn:Invoke-Handler-focus=1',
   'fn:Invoke-Handler-hover=1',
-  'fn:Invoke-Handler-imgclick=1',
   'fn:Invoke-Handler-keys=1',
   # CU-OPS package C: `key` names the command when it logs its one gesture receipt.
   'fn:Invoke-Handler-key=1',
@@ -2671,8 +2668,7 @@ $script:StCommandOwners = @(
   # CU-OPS package A: proc-start logs its start, proc-kill logs only a real --go termination.
   'fn:Invoke-Handler-proc-kill=1',
   'fn:Invoke-Handler-proc-start=1',
-  'fn:Invoke-Handler-rclick=1',
-  'fn:Invoke-Handler-relclick=1',
+  'fn:Invoke-ObservedMouseInput=5',
   'fn:Invoke-Handler-shots-cleanup=1',
   'fn:Invoke-Handler-type=1',
   'fn:Invoke-Handler-type-in=1',
@@ -2838,8 +2834,8 @@ $script:StLoadTimeNames = @(
 # still reads caller scope fails the lint by name instead of writing a column that only looks
 # like a command.
 $script:StCommandNameArgs = @(
-  '3|$Cmd=54',
-  '3|$CmdName=4',
+  '3|$Cmd=49',
+  '3|$CmdName=9',
   '3|$cmdName=1'
 )
 
@@ -2850,6 +2846,9 @@ $script:StCommandNameArgs = @(
 $script:StCmdVarUses = @(
   # v4.7.0 B-2: +1 - the dispatcher now reads the top-level command once more (the selftest-mode
   # origin set: `if ($Cmd -eq 'selftest')`), so the script-scope use count is 17, not 16.
+  # PT rounds 2026-11-02: the five observed-input handlers (click/dblclick/imgclick/rclick/
+  # relclick) now hand the command name to Invoke-ObservedMouseInput as well, so each declares
+  # two reads instead of one (+5 total -> 94); measured by the A-09 owner scan, not by hand.
   '<script>=17',
   'fn:Invoke-DesktopCommand=5',
   'fn:Get-HandlerName=1',
@@ -2862,16 +2861,16 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-chrome-a11y=1',
   'fn:Invoke-Handler-chrome-debug-off=1',
   'fn:Invoke-Handler-chrome-menu-read=1',
-  'fn:Invoke-Handler-click=1',
+  'fn:Invoke-Handler-click=2',
   'fn:Invoke-Handler-copy-file=1',
-  'fn:Invoke-Handler-dblclick=1',
+  'fn:Invoke-Handler-dblclick=2',
   'fn:Invoke-Handler-dialog-cancel=1',
   'fn:Invoke-Handler-drag=1',
   'fn:Invoke-Handler-drag-to=3',
   'fn:Invoke-Handler-find-click=1',
   'fn:Invoke-Handler-focus=1',
   'fn:Invoke-Handler-hover=1',
-  'fn:Invoke-Handler-imgclick=1',
+  'fn:Invoke-Handler-imgclick=2',
   'fn:Invoke-Handler-keys=1',
   'fn:Invoke-Handler-key=1',
   'fn:Invoke-Handler-menu-pick=1',
@@ -2883,8 +2882,8 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-press-up=2',
   'fn:Invoke-Handler-proc-kill=1',
   'fn:Invoke-Handler-proc-start=1',
-  'fn:Invoke-Handler-rclick=1',
-  'fn:Invoke-Handler-relclick=1',
+  'fn:Invoke-Handler-rclick=2',
+  'fn:Invoke-Handler-relclick=2',
   'fn:Invoke-Handler-shots-cleanup=1',
   'fn:Invoke-Handler-type=1',
   'fn:Invoke-Handler-type-in=1',
@@ -2951,6 +2950,7 @@ public class DT {
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] public static extern IntPtr GetTopWindow(IntPtr h);
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT val, int cb);
   [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
@@ -3895,6 +3895,68 @@ function Format-WinRowText($r) {
   return "pid=$($r.Pid) proc=$($r.Proc) class=$($r.Class) popup=$($r.Popup.ToString().ToLower()) owner=$ownTxt main=$($r.Main)  rect=($($r.Left),$($r.Top))-($($r.Right),$($r.Bottom))  size=$($r.W)x$($r.H)  title=$($r.Title)"
 }
 
+function Format-WinZRowText($r) {
+  $own = [int64]$r.Owner
+  $ownTxt = if ($own -eq 0) { '-' } else { "$own" }
+  $modal = [string](Get-OptValue $r 'Modal')
+  $source = [string](Get-OptValue $r 'ModalSource')
+  $enabled = [string]([bool]$r.Enabled).ToString().ToLowerInvariant()
+  $hwnd = '0x' + ([IntPtr]$r.Handle).ToInt64().ToString('X')
+  $title = Format-AuditField $r.Title 128
+  $zState = Get-OptValue $r 'ZState'
+  $z = if ([string]$zState -eq 'verified' -or ($null -eq $zState -and $null -ne (Get-OptValue $r 'ZIndex'))) { [string]$r.ZIndex } else { 'unknown' }
+  return "z=$z hwnd=$hwnd pid=$($r.Pid) proc=$($r.Proc) class=$($r.Class) owner=$ownTxt enabled=$enabled modal=$modal modal_source=$source popup=$($r.Popup.ToString().ToLower()) main=$($r.Main) rect=($($r.Left),$($r.Top))-($($r.Right),$($r.Bottom)) size=$($r.W)x$($r.H) title=$title"
+}
+
+# Build ranks from the documented GetWindow Z-order links, not from a sorted area or an assumed
+# EnumWindows callback order. The walk is bounded and cycle-checked because windows can disappear
+# while a snapshot is being read. Unknown handles stay explicitly unranked.
+function Get-TopLevelZOrderMap($Probe = $null) {
+  $map = @{}
+  $seen = @{}
+  $rank = 0
+  $maxWalk = 32768
+  # The documented links are injectable so the no-seed rule below can be judged offline; production
+  # passes nothing and reads the real GetTopWindow/GW_HWNDNEXT chain.
+  $topmostFn = if ($null -ne $Probe) { $Probe.Topmost } else { { param($ph) try { return (([int64][DT]::GetWindowLong($ph, -20) -band 0x8L) -ne 0) } catch { return $false } } }
+  $nextFn = if ($null -ne $Probe) { $Probe.Next } else { { param($ph) try { return [DT]::GetWindow($ph, 2) } catch { return [IntPtr]::Zero } } }
+  $head = [IntPtr]::Zero
+  if ($null -ne $Probe) { $head = [IntPtr]$Probe.Head }
+  else { try { $head = [DT]::GetTopWindow([IntPtr]::Zero) } catch { $head = [IntPtr]::Zero } }
+  $h = $head
+  $firstNormal = [IntPtr]::Zero
+  while ($h -ne [IntPtr]::Zero -and $rank -lt $maxWalk) {
+    $key = ([IntPtr]$h).ToInt64().ToString()
+    if ($seen.ContainsKey($key)) { break }
+    $isTopmost = [bool](& $topmostFn $h)
+    if (-not $isTopmost) { $firstNormal = $h; break }
+    $seen[$key] = $true
+    $rank++
+    $map[$key] = $rank
+    $h = [IntPtr](& $nextFn $h)
+  }
+  # GetWindow keeps topmost and ordinary top-level bands distinct. Start the ordinary chain from
+  # its GW_HWNDFIRST member, then follow GW_HWNDNEXT; the documented band ordering puts it below
+  # the topmost chain. If the walk never reached the ordinary band there is no seed to start from
+  # - the rows above it stay unranked (unknown), which is the honest reading. Picking an arbitrary
+  # row and asking it for GW_HWNDFIRST would silently promote a truncated list into a rank.
+  if ($firstNormal -ne [IntPtr]::Zero) {
+    $h = $firstNormal
+    $normalWalk = 0
+    while ($h -ne [IntPtr]::Zero -and $normalWalk -lt $maxWalk -and $rank -lt $maxWalk) {
+      $key = ([IntPtr]$h).ToInt64().ToString()
+      if ($seen.ContainsKey($key)) { break }
+      $isTopmost = [bool](& $topmostFn $h)
+      if ($isTopmost) { break }
+      $seen[$key] = $true
+      $rank++; $normalWalk++
+      $map[$key] = $rank
+      $h = [IntPtr](& $nextFn $h)
+    }
+  }
+  return $map
+}
+
 function Get-WinList {
   $script:WL = New-Object System.Collections.ArrayList
   if (-not $script:ProcNameCache) { $script:ProcNameCache = @{} }
@@ -3939,6 +4001,7 @@ function Get-WinList {
           [void]$script:WL.Add([pscustomobject]@{
             Handle = $h; Pid = $procId; Proc = $script:ProcNameCache[$procId]
             Class = $cn.ToString(); Popup = $popup
+            Enabled = [bool][DT]::IsWindowEnabled($h)
             # v1.5.7 (D-7): GW_OWNER (4). A Steam-style promo popup and the app's real
             # main window can share pid, class AND the WS_POPUP bit (Steam's main window
             # carries WS_POPUP itself), so `popup=` cannot tell them apart and a title
@@ -3954,6 +4017,17 @@ function Get-WinList {
     return $true
   }
   [void][DT]::EnumWindows($cb, [IntPtr]::Zero)
+  $zMap = Get-TopLevelZOrderMap
+  foreach ($r in @($script:WL)) {
+    $zKey = ([IntPtr]$r.Handle).ToInt64().ToString()
+    if ($zMap.ContainsKey($zKey)) {
+      $r | Add-Member -NotePropertyName ZIndex -NotePropertyValue ([int]$zMap[$zKey]) -Force
+      $r | Add-Member -NotePropertyName ZState -NotePropertyValue 'verified' -Force
+    } else {
+      $r | Add-Member -NotePropertyName ZIndex -NotePropertyValue $null -Force
+      $r | Add-Member -NotePropertyName ZState -NotePropertyValue 'unknown' -Force
+    }
+  }
   # v1.5.7 (D-7): stamp main=yes|no once, here, from the pure rule - so wins/info/the
   # selector note all read the SAME judgement instead of three hand-copied versions of it.
   $mainMap = Select-MainWindowMap $script:WL
@@ -4219,6 +4293,7 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
   $gridStyle = 'thin'
   $gridStyleUser = $false
   $marks = New-Object System.Collections.ArrayList
+  $contentRoi = $null
   # C (v4.8.0): the capture-quality flags ride the same parse (ONE consumer, Test-CaptureQualityFlag,
   # so the value rules cannot drift between the commands that take them). The keys land flat in the
   # returned table, which is what Save-RectEx already receives as its 13th argument.
@@ -4227,7 +4302,14 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
   while ($i -lt $words.Count) {
     $t = $words[$i]
     if (Test-CaptureQualityFlag $t $words ([ref]$i) $q) { $i++; continue }
-    if ($t -eq '--fit') {
+    if ($t -eq '--content-roi') {
+      $i++
+      if ($i -ge $words.Count) { throw '--content-roi needs x,y,w,h in source-image pixels' }
+      $parts = @([string]$words[$i] -split ',')
+      if ($parts.Count -ne 4 -or @($parts | Where-Object { $_ -match '^-?\d+$' }).Count -ne 4) { throw "--content-roi expects x,y,w,h integers in source-image pixels, got '$($words[$i])'" }
+      $contentRoi = @{ X = [int]$parts[0]; Y = [int]$parts[1]; W = [int]$parts[2]; H = [int]$parts[3] }
+      if ($contentRoi.X -lt 0 -or $contentRoi.Y -lt 0 -or $contentRoi.W -le 0 -or $contentRoi.H -le 0) { throw '--content-roi must have x,y >= 0 and w,h > 0' }
+    } elseif ($t -eq '--fit') {
       $fitUser = $true
       $i++
       if ($i -ge $words.Count) { throw '--fit needs a width in px (0 = full resolution)' }
@@ -4256,7 +4338,7 @@ function Parse-CaptureFlags([string[]]$words, [bool]$defaultFit) {
     $i++
   }
   if ($null -eq $fit) { $fit = if ($defaultFit) { 900 } else { 0 } }
-  $out = @{ Rest = @($rest); Fit = [int]$fit; Grid = $grid; Marks = @($marks); FitUser = $fitUser; GridUser = $gridUser; GridStyle = $gridStyle; GridStyleUser = $gridStyleUser }
+  $out = @{ Rest = @($rest); Fit = [int]$fit; Grid = $grid; Marks = @($marks); FitUser = $fitUser; GridUser = $gridUser; GridStyle = $gridStyle; GridStyleUser = $gridStyleUser; ContentRoi = $contentRoi }
   foreach ($qk in @(Get-HashKeys $q)) { $out[$qk] = $q[$qk] }
   return $out
 }
@@ -4713,6 +4795,10 @@ function Get-GridAvoidRects([System.Drawing.Bitmap]$bmp, [int]$originX, [int]$or
 # window grab) is recorded in the sidecar so imgclick/unmap can detect that
 # the window moved/resized since capture instead of silently mis-mapping.
 function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]$fit, [int]$grid, $marks, [string]$mapKind = '', $mapWin = $null, $mapRect = $null, $cf = $null, [scriptblock]$occlRecheck = $null, [scriptblock]$captureStep = $null) {
+  $contentRoiArg = Get-OptValue $cf 'ContentRoi'
+  if (-not $mapKind -and $null -ne $contentRoiArg) { throw '--content-roi applies only to win/rect/zoom captures that write a point map; shot does not bind a content baseline' }
+  $contentRoi = $null
+  if ($mapKind) { $contentRoi = Resolve-ContentRoi $contentRoiArg $w $h }
   $autoGrid = $false
   Ensure-OutDir
   $scale = 1.0
@@ -4796,6 +4882,10 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     foreach ($ql in $qualityLines) { Write-Output $ql }
     Write-Output ('  ' + $qualityTail)
   }
+  # PT-2 (CU-PT-FIX-20261102-01): take the content baseline from this same 1:1 captured frame,
+  # before fit, grid or mark drawing. The sidecar carries this summary with the final PNG hash.
+  $contentInfo = $null
+  if ($mapKind) { $contentInfo = New-ContentBaseline $bmp $contentRoi }
   # D-4 (v4.6.13): the text boxes are read off the 1:1 frame BEFORE the --fit downscale - they
   # are screen-space facts, and the recognizer reads more at 1:1 than after a bicubic shrink.
   # Get-GridAvoidRects never throws; an unavailable engine becomes a named line in the echo.
@@ -4861,8 +4951,8 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     try { $bmp.Save($msP, [System.Drawing.Imaging.ImageFormat]::Png); $pngBytes = $msP.ToArray() } finally { $msP.Dispose(); $bmp.Dispose() }
     $shaW = [System.Security.Cryptography.SHA256]::Create()
     try { $pendingSha = ([BitConverter]::ToString($shaW.ComputeHash($pngBytes)) -replace '-','').ToLower() } finally { $shaW.Dispose() }
-    Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha $null $gridStyle
-    [System.IO.File]::WriteAllBytes($path, $pngBytes)
+    $mapPublish = { Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha $null $gridStyle $contentInfo }.GetNewClosure()
+    Publish-CapturePair $path $pngBytes $mapPublish
   } else {
     # v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A2): a capture that publishes NO sidecar (shot, script
     # steps) must not leave a previous sidecar at the same name standing as its explanation. A
@@ -4913,7 +5003,107 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
 # v1.5.1 WP-B: kind=win sidecars additionally record pid/handle/title_b64
 # (the staleness anchor). Title is base64 because window titles may contain
 # newlines, '=' or non-ASCII bytes.
-function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '', $tileInfo = $null, [string]$gridStyle = '') {
+function Resolve-ContentRoi($requested, [int]$sourceW, [int]$sourceH) {
+  if ($null -eq $requested) { return @{ X = 0; Y = 0; W = $sourceW; H = $sourceH; SourceW = $sourceW; SourceH = $sourceH } }
+  $x = [int](Get-OptValue $requested 'X'); $y = [int](Get-OptValue $requested 'Y')
+  $w = [int](Get-OptValue $requested 'W'); $h = [int](Get-OptValue $requested 'H')
+  if ($x -lt 0 -or $y -lt 0 -or $w -lt 1 -or $h -lt 1 -or ([long]$x + $w) -gt $sourceW -or ([long]$y + $h) -gt $sourceH) {
+    throw "--content-roi ($x,$y,$w,$h) is outside the original $($sourceW)x$($sourceH) capture frame; use a positive ROI fully inside source-image pixels"
+  }
+  return @{ X = $x; Y = $y; W = $w; H = $h; SourceW = $sourceW; SourceH = $sourceH }
+}
+
+function Get-ContentPixelDigest([System.Drawing.Bitmap]$Bitmap, $Roi) {
+  $norm = ConvertTo-Bitmap32 $Bitmap
+  $disposeNorm = -not [object]::ReferenceEquals($norm, $Bitmap)
+  try {
+    $rowBytes = [long]$Roi.W * 4
+    $totalBytes = $rowBytes * [long]$Roi.H
+    if ($Roi.W -lt 1 -or $Roi.H -lt 1 -or $totalBytes -gt 134217728) { throw "content ROI byte count $totalBytes is outside the supported 1..134217728 range" }
+    if ([long]$Roi.X + [long]$Roi.W -gt $norm.Width -or [long]$Roi.Y + [long]$Roi.H -gt $norm.Height) { throw 'content ROI is outside the normalized source frame' }
+    $full = New-Object System.Drawing.Rectangle(0, 0, $norm.Width, $norm.Height)
+    $bd = $norm.LockBits($full, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+      $data = New-Object byte[] ([int]$totalBytes)
+      for ($row = 0; $row -lt [int]$Roi.H; $row++) {
+        $offset = ([int]$Roi.Y + $row) * [int]$bd.Stride + [int]$Roi.X * 4
+        $src = [IntPtr]::Add($bd.Scan0, $offset)
+        [System.Runtime.InteropServices.Marshal]::Copy($src, $data, $row * [int]$rowBytes, [int]$rowBytes)
+      }
+    } finally { $norm.UnlockBits($bd) }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($data)) -replace '-', '').ToLowerInvariant() } finally { $sha.Dispose() }
+  } finally { if ($disposeNorm) { $norm.Dispose() } }
+}
+
+function New-ContentBaseline([System.Drawing.Bitmap]$Bitmap, $Roi) {
+  $sha = Get-ContentPixelDigest $Bitmap $Roi
+  return @{ Version = 1; PixelFormat = 'Format32bppArgb'; Algorithm = 'sha256-exact-v1'; RoiX = [int]$Roi.X; RoiY = [int]$Roi.Y; RoiW = [int]$Roi.W; RoiH = [int]$Roi.H; SourceW = [int]$Roi.SourceW; SourceH = [int]$Roi.SourceH; Sha256 = $sha }
+}
+
+function Test-MapContentFreshness($map) {
+  if ([int](Get-OptValue $map 'ContentVersion') -ne 1) {
+    return @{ Verdict = 'missing'; Algorithm = 'unknown'; Roi = 'unknown'; Coverage = 'unknown'; Msg = 'map predates screenshot-content freshness evidence' }
+  }
+  $roi = @{ X = 0; Y = 0; W = [int]$map.ContentRoiW; H = [int]$map.ContentRoiH; SourceW = [int]$map.ContentRoiW; SourceH = [int]$map.ContentRoiH }
+  $screenX = [int]$map.OriginX + [int]$map.ContentRoiX
+  $screenY = [int]$map.OriginY + [int]$map.ContentRoiY
+  $roiLabel = "screen=($screenX,$screenY,$($roi.W)x$($roi.H)) source=($($map.ContentRoiX),$($map.ContentRoiY))"
+  $coverage = [math]::Round((100.0 * [double]$map.ContentRoiW * [double]$map.ContentRoiH) / ([double]$map.ContentSourceW * [double]$map.ContentSourceH), 2)
+  try {
+    $shot = Get-ScreenBitmap $screenX $screenY $roi.W $roi.H 1.0
+    try { $actual = Get-ContentPixelDigest $shot.Bitmap $roi } finally { $shot.Bitmap.Dispose() }
+  } catch {
+    return @{ Verdict = 'read-failed'; Algorithm = $map.ContentAlgorithm; Roi = $roiLabel; Coverage = "$coverage%"; Msg = "could not read the protected screen ROI ($($_.Exception.GetType().Name))" }
+  }
+  if ($actual -cne [string]$map.ContentSha256) {
+    return @{ Verdict = 'changed'; Algorithm = $map.ContentAlgorithm; Roi = $roiLabel; Coverage = "$coverage%"; Msg = "protected ROI digest changed (captured=$(([string]$map.ContentSha256).Substring(0, 12)) current=$($actual.Substring(0, 12)))" }
+  }
+  return @{ Verdict = 'ok'; Algorithm = $map.ContentAlgorithm; Roi = $roiLabel; Coverage = "$coverage%"; Msg = 'all protected ROI pixels exactly match the capture baseline' }
+}
+
+# Stage the PNG before publishing the map. Each final replace is atomic on the same volume; if the
+# second replace fails, restore the prior map bytes (or remove the newly created map) so a same-name
+# capture failure leaves the previous usable pair intact. This is rollback protection, not a claim
+# that two independent directory entries form one filesystem transaction.
+function Publish-CapturePair([string]$ImagePath, [byte[]]$PngBytes, [scriptblock]$PublishMap) {
+  $mapPath = $ImagePath + '.map.txt'
+  $imageDir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($ImagePath))
+  $tmpImage = Join-Path $imageDir ([System.IO.Path]::GetFileName($ImagePath) + '.pending-' + [guid]::NewGuid().ToString('N'))
+  $hadMap = [System.IO.File]::Exists($mapPath)
+  $oldMapBytes = $null
+  if ($hadMap) { $oldMapBytes = [System.IO.File]::ReadAllBytes($mapPath) }
+  try {
+    [System.IO.File]::WriteAllBytes($tmpImage, $PngBytes)
+    & $PublishMap
+    if ([System.IO.File]::Exists($ImagePath)) { [System.IO.File]::Replace($tmpImage, $ImagePath, [NullString]::Value) }
+    else { [System.IO.File]::Move($tmpImage, $ImagePath) }
+  } catch {
+    $publishError = $_.Exception.Message
+    $rollbackError = ''
+    try {
+      if ($hadMap) {
+        $current = if ([System.IO.File]::Exists($mapPath)) { [System.IO.File]::ReadAllBytes($mapPath) } else { [byte[]]@() }
+        $same = [System.IO.File]::Exists($mapPath) -and ($current.Length -eq $oldMapBytes.Length)
+        if ($same) { for ($bi = 0; $bi -lt $current.Length; $bi++) { if ($current[$bi] -ne $oldMapBytes[$bi]) { $same = $false; break } } }
+        if (-not $same) {
+          $tmpMap = $mapPath + '.restore-' + [guid]::NewGuid().ToString('N')
+          try {
+            [System.IO.File]::WriteAllBytes($tmpMap, $oldMapBytes)
+            if ([System.IO.File]::Exists($mapPath)) { [System.IO.File]::Replace($tmpMap, $mapPath, [NullString]::Value) }
+            else { [System.IO.File]::Move($tmpMap, $mapPath) }
+          } finally { if ([System.IO.File]::Exists($tmpMap)) { [System.IO.File]::Delete($tmpMap) } }
+        }
+      } elseif ([System.IO.File]::Exists($mapPath)) { [System.IO.File]::Delete($mapPath) }
+    } catch { $rollbackError = $_.Exception.Message }
+    if ($rollbackError) { throw "capture pair NOT published: image=$ImagePath map=$mapPath; map rollback also failed ($rollbackError), so inspect the pair before use; original failure: $publishError" }
+    throw "capture pair NOT published: $ImagePath; the previous map/image pair was preserved (or no new pair remains): $publishError"
+  } finally {
+    if ([System.IO.File]::Exists($tmpImage)) { try { [System.IO.File]::Delete($tmpImage) } catch { } }
+  }
+}
+
+function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '', $tileInfo = $null, [string]$gridStyle = '', $contentInfo = $null) {
   $inv = [System.Globalization.CultureInfo]::InvariantCulture
   $s = [math]::Round($scale, 6).ToString($inv)
   $text = "origin_x=$ox`r`norigin_y=$oy`r`nscale=$s`r`nout_w=$ow`r`nout_h=$oh`r`nkind=$kind`r`n"
@@ -4961,6 +5151,9 @@ function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale
   if ($kind -eq 'tile') {
     if ($null -eq $tileInfo) { throw 'map sidecar: a tile map must carry its grid - write tiles through tile <x> <y> <w> <h> --out-dir <dir>, never by hand' }
     $text += "tile_c=$([int]$tileInfo.C)`r`ntile_r=$([int]$tileInfo.R)`r`ntile_cols=$([int]$tileInfo.Cols)`r`ntile_rows=$([int]$tileInfo.Rows)`r`ntile_overlap=$([int]$tileInfo.Overlap)`r`ntile_step_x=$([int]$tileInfo.StepX)`r`ntile_step_y=$([int]$tileInfo.StepY)`r`nregion_x=$([int]$tileInfo.RegionX)`r`nregion_y=$([int]$tileInfo.RegionY)`r`nregion_w=$([int]$tileInfo.RegionW)`r`nregion_h=$([int]$tileInfo.RegionH)`r`n"
+  }
+  if ($null -ne $contentInfo) {
+    $text += "content_version=$([int]$contentInfo.Version)`r`ncontent_pixel_format=$($contentInfo.PixelFormat)`r`ncontent_algorithm=$($contentInfo.Algorithm)`r`ncontent_source_w=$([int]$contentInfo.SourceW)`r`ncontent_source_h=$([int]$contentInfo.SourceH)`r`ncontent_roi_x=$([int]$contentInfo.RoiX)`r`ncontent_roi_y=$([int]$contentInfo.RoiY)`r`ncontent_roi_w=$([int]$contentInfo.RoiW)`r`ncontent_roi_h=$([int]$contentInfo.RoiH)`r`ncontent_sha256=$([string]$contentInfo.Sha256)`r`n"
   }
   # v4.6.8 (CU-467-REVIEW-20261028-01 A1-b): a sidecar must say WHICH BYTES it describes. The
   # capture now refuses before saving, so a normal failure never lands; this hash is the second
@@ -5089,6 +5282,32 @@ function Read-MapSidecar([string]$imagePath) {
     if (@('thin', 'bold', 'contrast', 'unknown') -notcontains $gStyle) { throw "map sidecar malformed (grid-style='$gStyle' is not unknown|thin|bold|contrast): $mapPath - a style this tool never draws is not a legacy field; re-capture the image" }
     if ($gStyle -eq '') { throw "map sidecar malformed (grid-style is present but empty): $mapPath - an unreadable field is not a legacy sidecar; re-capture the image" }
   }
+  $contentVersion = 0; $contentPixelFormat = ''; $contentAlgorithm = ''; $contentSourceW = $null; $contentSourceH = $null
+  $contentRoiX = $null; $contentRoiY = $null; $contentRoiW = $null; $contentRoiH = $null; $contentSha = ''
+  $contentLines = @($raw -split "`r?`n" | Where-Object { $_ -match '^content_' })
+  if (@($contentLines).Count -gt 0) {
+    $contentFields = @('content_version', 'content_pixel_format', 'content_algorithm', 'content_source_w', 'content_source_h', 'content_roi_x', 'content_roi_y', 'content_roi_w', 'content_roi_h', 'content_sha256')
+    foreach ($field in $contentFields) {
+      if (@([regex]::Matches($raw, "(?m)^$field=")).Count -ne 1) { throw "map sidecar malformed (content baseline field '$field' is missing or repeated): $mapPath - re-capture the image" }
+    }
+    if ($raw -notmatch '(?m)^content_version=(\d+)\s*$') { throw "map sidecar malformed (content_version): $mapPath - re-capture the image" }; $contentVersion = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_pixel_format=([A-Za-z0-9]+)\s*$') { throw "map sidecar malformed (content_pixel_format): $mapPath - re-capture the image" }; $contentPixelFormat = $Matches[1]
+    if ($raw -notmatch '(?m)^content_algorithm=([A-Za-z0-9-]+)\s*$') { throw "map sidecar malformed (content_algorithm): $mapPath - re-capture the image" }; $contentAlgorithm = $Matches[1]
+    if ($raw -notmatch '(?m)^content_source_w=(\d+)\s*$') { throw "map sidecar malformed (content_source_w): $mapPath - re-capture the image" }; $contentSourceW = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_source_h=(\d+)\s*$') { throw "map sidecar malformed (content_source_h): $mapPath - re-capture the image" }; $contentSourceH = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_roi_x=(\d+)\s*$') { throw "map sidecar malformed (content_roi_x): $mapPath - re-capture the image" }; $contentRoiX = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_roi_y=(\d+)\s*$') { throw "map sidecar malformed (content_roi_y): $mapPath - re-capture the image" }; $contentRoiY = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_roi_w=(\d+)\s*$') { throw "map sidecar malformed (content_roi_w): $mapPath - re-capture the image" }; $contentRoiW = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_roi_h=(\d+)\s*$') { throw "map sidecar malformed (content_roi_h): $mapPath - re-capture the image" }; $contentRoiH = [int]$Matches[1]
+    if ($raw -notmatch '(?m)^content_sha256=([^\r\n]*)\s*$') { throw "map sidecar malformed (content_sha256): $mapPath - re-capture the image" }; $contentSha = $Matches[1].Trim().ToLowerInvariant()
+    if ($contentVersion -ne 1 -or $contentPixelFormat -cne 'Format32bppArgb' -or $contentAlgorithm -cne 'sha256-exact-v1' -or
+      $contentSourceW -lt 1 -or $contentSourceH -lt 1 -or $contentRoiW -lt 1 -or $contentRoiH -lt 1 -or
+      ([long]$contentRoiX + $contentRoiW) -gt $contentSourceW -or ([long]$contentRoiY + $contentRoiH) -gt $contentSourceH -or
+      $contentSha -notmatch '^[0-9a-f]{64}$') {
+      throw "map sidecar malformed (invalid/unsupported screenshot content baseline): $mapPath - re-capture the image"
+    }
+    if ($kd -notin @('win', 'rect', 'zoom') -or $raw -notmatch '(?m)^png_sha256=[0-9a-fA-F]{64}\s*$') { throw "map sidecar malformed (content baseline is not bound to a win/rect/zoom PNG SHA): $mapPath - re-capture the image" }
+  }
   # v4.6.8 (CU-467-REVIEW-20261028-01 A1-b): when the sidecar names the PNG bytes it was written
   # for, the pair is checked HERE, at the one chokepoint every reader (imgclick/unmap/help paths)
   # passes. A re-capture that failed after overwriting the PNG used to leave the old sidecar
@@ -5116,6 +5335,7 @@ function Read-MapSidecar([string]$imagePath) {
     }
   }
   return @{ OriginX = $ox; OriginY = $oy; Scale = $sc; OutW = $ow; OutH = $oh; Kind = $kd; Grid = $gStep; GridStyle = $gStyle; HostPid = $(if ($null -ne $hPid) { $hPid } else { 0 }); HostHwnd = $hHwnd; HostTitle = $title; HostX = $hx; HostY = $hy; HostW = $hwd; HostH = $hht; PngSha = $pngSha;
+    ContentVersion = $contentVersion; ContentPixelFormat = $contentPixelFormat; ContentAlgorithm = $contentAlgorithm; ContentSourceW = $contentSourceW; ContentSourceH = $contentSourceH; ContentRoiX = $contentRoiX; ContentRoiY = $contentRoiY; ContentRoiW = $contentRoiW; ContentRoiH = $contentRoiH; ContentSha256 = $contentSha;
     TileC = $tc; TileR = $tr; TileCols = $tcols; TileRows = $trows; TileOverlap = $tov; TileStepX = $tsx; TileStepY = $tsy;
     RegionX = $rgx; RegionY = $rgy; RegionW = $rgw; RegionH = $rgh }
 }
@@ -7112,9 +7332,9 @@ function Format-PointSpaceReceipt($origin, [int]$rx, [int]$ry) {
 
 # After-send foreground recheck: the pre-send guard verifies the target BEFORE
 # v1.5.3 (audit R-06): the same-process popup hole.
-# EnumWindows returns top-level windows in Z-ORDER (topmost first), so "is there
-# one of the target's own windows sitting ON TOP of the target" is answerable
-# without any geometry guessing. This matters because the post-send reconciliation
+# GetWindow's GW_HWNDNEXT relationship is the documented top-to-bottom Z-order, so
+# "is there one of the target's own windows sitting ON TOP of the target" is answerable
+# without geometry guessing or relying on EnumWindows callback order. This matters because the post-send reconciliation
 # compared PIDs: a popup owned by the SAME process as the target (context menu,
 # autocomplete dropdown, a dialog the app throws over its own input box) passed
 # silently, and the command reported a successful send while the text went
@@ -7128,18 +7348,14 @@ function Format-PointSpaceReceipt($origin, [int]$rx, [int]$ry) {
 function Get-SamePidWindowsAbove($target) {
   $found = New-Object System.Collections.ArrayList
   if ($null -eq $target -or -not [DT]::IsWindow($target.Handle)) { return @($found) }
-  $order = New-Object System.Collections.ArrayList
-  $cb = [DT+EnumProc] {
-    param($h, $l)
-    if ([DT]::IsWindowVisible($h)) { [void]$order.Add($h) }
-    return $true
-  }
-  [void][DT]::EnumWindows($cb, [IntPtr]::Zero)
-  $idxTarget = -1
-  for ($k = 0; $k -lt $order.Count; $k++) { if ($order[$k] -eq $target.Handle) { $idxTarget = $k; break } }
-  if ($idxTarget -lt 0) { return @($found) }   # target is not (or no longer) on the list
-  for ($k = 0; $k -lt $idxTarget; $k++) {
-    $h = $order[$k]
+  $order = Get-TopLevelZOrderMap
+  $targetKey = ([IntPtr]$target.Handle).ToInt64().ToString()
+  if (-not $order.ContainsKey($targetKey)) { return @($found) }   # target is not (or no longer) on the live chain
+  $idxTarget = [int]$order[$targetKey]
+  $above = @(Get-HashKeys $order | Where-Object { [int]$order[$_] -lt $idxTarget } | Sort-Object { [int]$order[$_] })
+  foreach ($candidateKey in $above) {
+    $h = [IntPtr]([int64]$candidateKey)
+    if (-not [DT]::IsWindowVisible($h)) { continue }
     $pid2 = [uint32]0
     [void][DT]::GetWindowThreadProcessId($h, [ref]$pid2)
     if ([uint32]$target.Pid -ne $pid2) { continue }
@@ -7323,17 +7539,28 @@ function Test-MenuWindow($w, [int]$screenW, [int]$screenH) {
 # screen point (WindowFromPoint then GetAncestor GA_ROOT=2, so the echo names
 # the real app window and not an inner control). Returns a hashtable or $null.
 function Get-HitWindow([int]$x, [int]$y) {
-  $pt = New-Object DT+POINT
-  $pt.X = $x; $pt.Y = $y
-  $h = [DT]::WindowFromPoint($pt)
-  if ($h -eq [IntPtr]::Zero) { return $null }
-  $root = [DT]::GetAncestor($h, 2)
-  if ($root -ne [IntPtr]::Zero) { $h = $root }
+  $seen = (Get-Date).ToUniversalTime().ToString('o')
+  try {
+    $pt = New-Object DT+POINT
+    $pt.X = $x; $pt.Y = $y
+    $h = [DT]::WindowFromPoint($pt)
+  } catch {
+    return @{ State = 'unknown'; Hwnd = [IntPtr]::Zero; Pid = 0; Proc = '?'; Title = ''; X = $x; Y = $y; ObservedUtc = $seen; Error = 'WindowFromPoint failed' }
+  }
+  if ($h -eq [IntPtr]::Zero) {
+    return @{ State = 'none'; Hwnd = [IntPtr]::Zero; Pid = 0; Proc = '?'; Title = ''; X = $x; Y = $y; ObservedUtc = $seen; Error = '' }
+  }
+  try { $root = [DT]::GetAncestor($h, 2) } catch { $root = [IntPtr]::Zero }
+  if ($root -eq [IntPtr]::Zero) {
+    return @{ State = 'unknown'; Hwnd = [IntPtr]::Zero; ChildHwnd = $h; Pid = 0; Proc = '?'; Title = ''; X = $x; Y = $y; ObservedUtc = $seen; Error = 'root hwnd unavailable' }
+  }
   $procId = 0
-  [void][DT]::GetWindowThreadProcessId($h, [ref]$procId)
+  try { [void][DT]::GetWindowThreadProcessId($root, [ref]$procId) } catch { $procId = 0 }
   $proc = '?'
-  try { $proc = (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { }
-  return @{ Hwnd = $h; Pid = $procId; Proc = $proc; Title = [DT]::Text($h) }
+  if ($procId -gt 0) { try { $proc = (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { } }
+  $title = ''
+  try { $title = [DT]::Text($root) } catch { }
+  return @{ State = 'hit'; Hwnd = $root; Pid = $procId; Proc = $proc; Title = $title; X = $x; Y = $y; ObservedUtc = $seen; Error = '' }
 }
 
 # ---------------------------------------------------------------------------
@@ -7667,8 +7894,17 @@ function Invoke-HitWindowCheck([int]$x, [int]$y, $target, [bool]$enforce, [bool]
       $occTxt = ' ' + (Format-OcclusionVerdict 'hit' $tr $opct $orep.Summary $ov.Err)
     }
   }
-  if ($null -eq $hit) { Write-Output "hit-window: (none)  (inside-target=$inside)$occTxt" }
-  else { Write-Output "hit-window: pid=$($hit.Pid) proc=$($hit.Proc) title='$($hit.Title)'  (inside-target=$inside)$occTxt" }
+  # Get-HitWindow answers three states, and only 'hit' is a window. A reading it could not
+  # make is echoed as unknown with its reason instead of being folded into "no window here".
+  $hitState = if ($null -eq $hit) { 'unknown' } else { [string](Get-OptValue $hit 'State') }
+  if ($hitState -eq 'hit') {
+    Write-Output "hit-window: pid=$($hit.Pid) proc=$($hit.Proc) title='$($hit.Title)'  (inside-target=$inside)$occTxt"
+  } elseif ($hitState -eq 'none') {
+    Write-Output "hit-window: none (no top-level window answers the hit test here)  (inside-target=$inside)$occTxt"
+  } else {
+    $hitWhy = if ($null -ne $hit) { [string](Get-OptValue $hit 'Error') } else { 'no observation' }
+    Write-Output "hit-window: unknown (hit test did not answer) reason='$hitWhy'  (inside-target=$inside)$occTxt"
+  }
   if ($enforce -and $inside -eq 'no') {
     $desc = if ($target) { "'$($target.Title)'" } else { 'target' }
     $rr = if ($null -ne $tr) { "($($tr.X),$($tr.Y),$($tr.W)x$($tr.H))" } else { '(rect unknown)' }
@@ -7677,6 +7913,116 @@ function Invoke-HitWindowCheck([int]$x, [int]$y, $target, [bool]$enforce, [bool]
     }
     Write-Output "  (outside target rect - proceeding anyway: --allow-outside)"
   }
+}
+
+# A log value is a single bounded field. Window titles are supplied by applications, so raw
+# CR/LF or a pipe must never be able to forge another actions.log row or column.
+function Format-AuditField([object]$Value, [int]$MaxChars = 128) {
+  $s = [string]$Value
+  $s = $s.Replace('\', '\\').Replace([string][char]13, '\r').Replace([string][char]10, '\n').Replace([string][char]9, '\t').Replace('|', '\|')
+  $s = [regex]::Replace($s, '[\x00-\x08\x0B\x0C\x0E-\x1F]', '?')
+  if ($s.Length -gt $MaxChars) { $s = $s.Substring(0, $MaxChars) + '...' }
+  return $s
+}
+
+function Get-InputLandingAuditTail($observation, $target, [bool]$bound, [string]$requested, [string]$bypass, [string]$stage, [string]$outcome) {
+  $targetHwnd = 'unknown'; $targetPid = 'unknown'; $targetProc = 'unknown'; $targetTitle = 'unknown'
+  if ($null -ne $target) {
+    $targetHwnd = ([IntPtr]$target.Handle).ToInt64().ToString()
+    $targetPid = [string]$target.Pid
+    $targetProc = Format-AuditField (Get-OptValue $target 'Proc') 64
+    $targetTitle = Format-AuditField (Get-OptValue $target 'Title') 128
+  }
+  $hitState = 'unknown'; $hitHwnd = 'unknown'; $hitPid = 'unknown'; $hitProc = 'unknown'; $hitTitle = 'unknown'; $observed = 'unknown'
+  if ($null -ne $observation) {
+    $hitState = [string](Get-OptValue $observation 'State')
+    $observed = [string](Get-OptValue $observation 'ObservedUtc')
+    if ($hitState -eq 'none') { $hitHwnd = 'none'; $hitPid = 'none'; $hitProc = 'none'; $hitTitle = 'none' }
+    elseif ($hitState -eq 'hit') {
+      $hitHwnd = ([IntPtr]$observation.Hwnd).ToInt64().ToString()
+      $hitPid = [string]$observation.Pid
+      $hitProc = Format-AuditField $observation.Proc 64
+      $hitTitle = Format-AuditField $observation.Title 128
+    }
+  }
+  $binding = if ($bound) { 'bound' } else { 'unbound' }
+  $resolved = 'unknown'
+  if ($null -ne $observation -and $null -ne (Get-OptValue $observation 'X') -and $null -ne (Get-OptValue $observation 'Y')) {
+    $resolved = "$([int](Get-OptValue $observation 'X')),$([int](Get-OptValue $observation 'Y'))"
+  }
+  return "requested=$(Format-AuditField $requested 96) resolved_screen=$resolved binding=$binding target_hwnd=$targetHwnd target_pid=$targetPid target_proc=$targetProc target_title='$targetTitle' hit_state=$hitState hit_hwnd=$hitHwnd hit_pid=$hitPid hit_proc=$hitProc hit_title='$hitTitle' observed_utc=$observed bypass=$(if ($bypass) { $bypass } else { 'none' }) stage=$stage outcome=$outcome"
+}
+
+# Final point-in-window observation for click/rclick/dblclick/imgclick/relclick. Geometry and
+# the real WindowFromPoint -> GA_ROOT result are sampled once here, after activation/guards and
+# immediately before pointer movement. Observation, decision, echo and audit use the same object.
+function Invoke-ObservedMouseInput([string]$CmdName, [string[]]$AuditArgs, [string]$Requested, [int]$X, [int]$Y, $Target, [bool]$Bound, [bool]$AllowOutside, [string]$Detail, [scriptblock]$InputAction, $PreflightError = $null, [string]$ContentBypass = '') {
+  $safeArgs = @($AuditArgs | ForEach-Object { Format-AuditField $_ 256 })
+  $safeDetail = Format-AuditField $Detail 320
+  if ($null -ne $PreflightError) {
+    $unknown = [pscustomobject]@{ State = 'unknown'; Hwnd = $null; Pid = $null; Proc = ''; Title = ''; X = $null; Y = $null; ObservedUtc = 'unknown'; Error = 'not-observed-before-preflight-refusal' }
+    $preflightBypass = if ($AllowOutside) { '--allow-outside-present-not-applied-at-preflight' } else { '' }
+    $preflightOutcome = 'refused-before-hit-observation:' + (Format-AuditField $PreflightError.Exception.GetType().Name 48)
+    $tail = Get-InputLandingAuditTail $unknown $Target $Bound $Requested $preflightBypass 'before-input' $preflightOutcome
+    try { Log-Action $safeArgs ($safeDetail + ' ' + $tail) $CmdName }
+    catch { throw "pre-input refusal could not be recorded in the audit log; no mouse input was sent: $($_.Exception.Message)" }
+    throw $PreflightError
+  }
+  $rect = $null
+  $inside = 'n/a'
+  if ($null -ne $Target) {
+    try { $rect = Get-TargetRect $Target } catch { $rect = $null }
+    if ($null -ne $rect -and [int]$rect.W -gt 0 -and [int]$rect.H -gt 0) {
+      if ($X -ge [int]$rect.X -and $X -lt ([int]$rect.X + [int]$rect.W) -and $Y -ge [int]$rect.Y -and $Y -lt ([int]$rect.Y + [int]$rect.H)) { $inside = 'yes' } else { $inside = 'no' }
+    }
+  }
+  $observation = Get-HitWindow $X $Y
+  $hitTitle = if ($observation.State -eq 'hit') { Format-AuditField $observation.Title 128 } else { $observation.State }
+  if ($observation.State -eq 'hit') {
+    $echoLine = "hit-window: hwnd=$(([IntPtr]$observation.Hwnd).ToInt64()) pid=$($observation.Pid) proc=$(Format-AuditField $observation.Proc 64) title='$hitTitle' (inside-target=$inside) observed=$($observation.ObservedUtc)"
+  } else {
+    $echoLine = "hit-window: $($observation.State) (inside-target=$inside) observed=$($observation.ObservedUtc)$(if ($observation.Error) { ' reason=' + (Format-AuditField $observation.Error 96) })"
+  }
+  $reason = ''
+  if ($Bound -and $null -eq $Target) { $reason = 'explicit target did not resolve' }
+  elseif ($Bound -and ($null -eq $rect -or [int]$rect.W -le 0 -or [int]$rect.H -le 0)) { $reason = 'target rectangle is unknown' }
+  elseif ($Bound -and $observation.State -ne 'hit') { $reason = "hit-test is $($observation.State)" }
+  # --allow-outside relaxes only the old rectangle boundary rule. It cannot
+  # send input to a different top-level window that covers the requested point.
+  elseif ($Bound -and (Test-LandingOnTarget $observation $Target) -eq $false) { $reason = 'hit root hwnd does not equal the explicit target' }
+  elseif ($Bound -and $inside -eq 'no' -and -not $AllowOutside) { $reason = 'point is outside the target visible rectangle' }
+  # A bypass must be named where the decision is recorded, including one that only relaxed the
+  # screenshot-content check: it still let this input go out and the audit is the only trace.
+  $bypassParts = @()
+  if ($AllowOutside) { $bypassParts += '--allow-outside(rect-only)' }
+  if ($ContentBypass) { $bypassParts += $ContentBypass }
+  $bypass = ($bypassParts -join ';')
+  if ($reason) {
+    $tail = Get-InputLandingAuditTail $observation $Target $Bound $Requested $bypass 'before-input' 'refused'
+    Log-Action $safeArgs ($safeDetail + ' ' + $tail) $CmdName
+    throw "landing guard: $reason at ($X,$Y) - NOTHING was moved or clicked. Re-read 'wins -z' and choose the intended hwnd. --allow-outside only relaxes the target-rectangle boundary; it does not permit a different covering window."
+  }
+  if ($Bound -and $AllowOutside -and $inside -eq 'no') {
+    $echoLine = $echoLine + "`n" + (Format-LandingVerdict $X $Y $observation $Target $true ($inside -eq 'no'))
+  }
+  $before = Get-InputLandingAuditTail $observation $Target $Bound $Requested $bypass 'before-input' 'send-attempted'
+  Log-Action $safeArgs ($safeDetail + ' ' + $before) $CmdName
+  try {
+    [void](& $InputAction)
+  } catch {
+    $failed = Get-InputLandingAuditTail $observation $Target $Bound $Requested $bypass 'input-result' ('exception:' + (Format-AuditField $_.Exception.GetType().Name 48))
+    try { Log-Action $safeArgs ($safeDetail + ' ' + $failed) $CmdName } catch { }
+    throw
+  }
+  $receipt = [string](Get-Variable -Name 'LastMouseReceipt' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  if ($receipt -eq '') { $receipt = 'input-routine-returned;native-count-unavailable' }
+  $returned = Get-InputLandingAuditTail $observation $Target $Bound $Requested $bypass 'input-result' ('routine-returned;delivery-unconfirmed;receipt=' + (Format-AuditField $receipt 96))
+  try { Log-Action $safeArgs ($safeDetail + ' ' + $returned) $CmdName }
+  catch { throw "mouse input routine returned, but its result audit could not be appended; before-input observation is recorded, delivery remains unconfirmed: $($_.Exception.Message)" }
+  # The caller prints this line on its own success-stream pass. Returning it as a property (and
+  # not writing it here) is what keeps the echo alive at call sites that assign or [void] the
+  # result - the PT-1 external review measured that the old form was silently discarded.
+  return [pscustomobject]@{ Echo = $echoLine; Observation = $observation }
 }
 
 # CU-REL-01 (v4.4.1): the landing question the click family never asked before sending -
@@ -7690,19 +8036,24 @@ function Invoke-HitWindowCheck([int]$x, [int]$y, $target, [bool]$enforce, [bool]
 # Pure over the two objects it is handed, so the four shapes are pinned offline (see the unit
 # check in the window-targeting family) instead of needing a live window to be believed.
 function Test-LandingOnTarget($hit, $target) {
-  if ($null -eq $hit) { return $false }
+  if ($null -eq $hit -or $null -eq $target) { return $false }
+  # Only a real hit identifies a window; 'none' and 'unknown' are readings, not handles.
+  if ([string](Get-OptValue $hit 'State') -ne 'hit') { return $false }
   return ($hit.Hwnd -eq $target.Handle)
 }
 
 # The one producer of the refusal/relaxation sentence for that verdict, so the echo names the
 # thing that was actually relaxed (the card's rule: a relaxation flag keeps its own definition
 # and must say so). Returns the sentence only - the caller decides whether to throw or print.
-function Format-LandingVerdict([int]$x, [int]$y, $hit, $target, [bool]$relaxed) {
-  $who = if ($null -eq $hit) { '(nothing answers the hit test)' } else { "pid=$($hit.Pid) hwnd=$($hit.Hwnd) '$([DT]::Text($hit.Hwnd))'" }
+function Format-LandingVerdict([int]$x, [int]$y, $hit, $target, [bool]$relaxed, [bool]$outsideRect = $false) {
+  $who = if ($null -eq $hit -or [string](Get-OptValue $hit 'State') -ne 'hit') { '(nothing answers the hit test)' } else { "pid=$($hit.Pid) hwnd=$(([IntPtr]$hit.Hwnd).ToInt64()) '$(Format-AuditField $hit.Title 128)'" }
+  $targetTitle = Format-AuditField (Get-OptValue $target 'Title') 128
   if ($relaxed) {
-    return "  (landing guard RELAXED by --allow-outside: clicking at ($x,$y) where $who sits, while the resolved target is hwnd=$($target.Handle) '$($target.Title)')"
+    $why = New-Object System.Collections.ArrayList
+    if ($outsideRect) { [void]$why.Add('point is outside the target visible rectangle') }
+    return "  (landing guard RELAXED by --allow-outside ($(Format-AuditField ($why -join '; ') 128)): hit at ($x,$y) is $who; resolved target is hwnd=$($target.Handle) '$targetTitle')"
   }
-  return "landing guard: the window under ($x,$y) is $who, not the resolved target hwnd=$($target.Handle) '$($target.Title)' - NOTHING was clicked. Move or close the coverer (wins -z lists what is on top), point at the target itself, or pass --allow-outside to send anyway (it will say it relaxed the guard)."
+  return "landing guard: the window under ($x,$y) is $who, not the resolved target hwnd=$($target.Handle) '$targetTitle' - NOTHING was clicked. Re-read 'wins -z' and choose the intended hwnd; --allow-outside only relaxes the target-rectangle boundary and does not permit a different covering window."
 }
 
 # ---------- CU-EXTERNAL-EXPERIENCE-20261028 (B2): the pre-input block state ----------
@@ -7750,6 +8101,59 @@ function Get-UiaModalState([IntPtr]$hwnd) {
     if ([bool]$pat.Current.IsModal) { return 'yes' }
     return 'no'
   } catch { return 'unsupported' }
+}
+
+# `wins -z` probes at most MaxWindows in one hidden helper process and kills that helper at
+# BudgetMs. A non-WindowPattern toolkit (including Qt) is unknown; owner is never used to infer
+# modal state. Every visible row still appears, with `probe-cap` when it was outside the bounded set.
+function Get-BoundedWindowModalStates($rows, [int]$BudgetMs = 1000, [int]$MaxWindows = 24) {
+  $states = @{}
+  $all = @($rows)
+  foreach ($row in $all) { $states[[string]([IntPtr]$row.Handle).ToInt64()] = @{ State = 'unknown'; Source = 'probe-cap' } }
+  # Rows beyond this probe cap stay in wins output but are not shown as confirmed; they carry
+  # modal=unknown, source=probe-cap, so the bounded walk never turns into a silent modal no.
+  $probeRows = @($all | Select-Object -First $MaxWindows)
+  if (@($probeRows).Count -eq 0) { return $states }
+  $handles = @($probeRows | ForEach-Object { ([IntPtr]$_.Handle).ToInt64().ToString() })
+  $probeText = @'
+param([string]$ArgsFile, [string]$OutFile)
+$ErrorActionPreference = 'Stop'
+function Write-Result($o) { $j = $o | ConvertTo-Json -Depth 4 -Compress; [System.IO.File]::WriteAllText($OutFile, $j, (New-Object System.Text.UTF8Encoding($false))) }
+try {
+  $a = [System.IO.File]::ReadAllText($ArgsFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $facts = New-Object System.Collections.ArrayList
+  foreach ($raw in @(([string]$a.name) -split ',')) {
+    $h = [int64]0
+    if (-not [int64]::TryParse($raw, [ref]$h) -or $h -le 0) { continue }
+    $state = 'unknown'; $source = 'uia-error'
+    try {
+      $el = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$h)
+      if ($null -eq $el) { $source = 'uia-no-root' }
+      else {
+        $pat = $null
+        if (-not $el.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$pat) -or $null -eq $pat) { $source = 'uia-unsupported' }
+        else { $state = if ([bool]$pat.Current.IsModal) { 'yes' } else { 'no' }; $source = 'uia-windowpattern' }
+      }
+    } catch { $source = 'uia-error' }
+    [void]$facts.Add(($h.ToString() + '=' + $state + ':' + $source))
+  }
+  Write-Result @{ status = 'ok'; value = ($facts -join ';'); detail = ''; scanned = $facts.Count }
+} catch { Write-Result @{ status = 'error'; value = ''; detail = ''; scanned = 0 } }
+'@
+  $probe = Invoke-BoundedUiaProbe 0 ($handles -join ',') $BudgetMs $probeText
+  if ([string]$probe.Status -ne 'ok') {
+    $source = 'uia-' + [string]$probe.Status
+    foreach ($row in $probeRows) { $states[[string]([IntPtr]$row.Handle).ToInt64()] = @{ State = 'unknown'; Source = $source } }
+    return $states
+  }
+  foreach ($item in @(([string]$probe.Value) -split ';')) {
+    if ($item -match '^(\d+)=(yes|no|unknown):(uia-[a-z-]+)$') {
+      $states[$Matches[1]] = @{ State = $Matches[2]; Source = $Matches[3] }
+    }
+  }
+  return $states
 }
 
 # Visible top-level windows whose owner chain (GW_OWNER, bounded walk) reaches the target.
@@ -10733,35 +11137,24 @@ function Move-Click([int]$x, [int]$y, [string]$button, [string]$mods = '') {
   $mb = Get-MouseButtonSpec $button
   $script:LastMouseReceipt = ''
   $act = {
-    [void][DT]::SetCursorPos($x, $y)
+    if (-not [DT]::SetCursorPos($x, $y)) { throw "SetCursorPos failed for ($x,$y) - no mouse button event was sent" }
     Start-Sleep -Milliseconds 150
-    if ($modList.Count -eq 0 -and $mb.Name -eq 'left') {
-      [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
+    # SendInput returns an inserted-event count; mouse_event was void and could not support
+    # an honest input-result receipt. Always release in finally after a confirmed down.
+    [void](Invoke-MouseButtonEvent $mb.Name $true)
+    try {
       Start-Sleep -Milliseconds 60
-      [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
-    } elseif ($modList.Count -eq 0 -and $mb.Name -eq 'right') {
-      [DT]::mouse_event($MOUSE_RDOWN, 0, 0, 0, [IntPtr]::Zero)
-      Start-Sleep -Milliseconds 60
-      [DT]::mouse_event($MOUSE_RUP, 0, 0, 0, [IntPtr]::Zero)
-    } else {
-      # CU-OPS-ADJ-06: a new button (middle/side) is DOWN only for the span of this
-      # block, and the UP runs in a finally - a failure between the two must not leave
-      # the button held down with a receipt that claims a completed click.
-      [void](Invoke-MouseButtonEvent $mb.Name $true)
-      try {
-        Start-Sleep -Milliseconds 60
-      } finally {
-        [void](Invoke-MouseButtonEvent $mb.Name $false)
-      }
+    } finally {
+      [void](Invoke-MouseButtonEvent $mb.Name $false)
     }
     Start-Sleep -Milliseconds 200
   }
   if ($modList.Count -gt 0) {
     $rc = Invoke-ModifierGesture $modList $act
-    $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
+    $script:LastMouseReceipt = (Format-ModifierReceipt $rc) + ' mouse=SendInput-inserted=2/2'
   } else {
     & $act
-    $script:LastMouseReceipt = ''
+    $script:LastMouseReceipt = 'SendInput-inserted=2/2'
   }
 }
 
@@ -11895,7 +12288,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.9.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -11913,14 +12306,14 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     with the capture's .map.txt sidecar. Takes the
                                     capture-quality flags (see rect); no window
                                     gate runs on this path and the echo says so.
-    win <sel> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y]
+    win <sel> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y] [--content-roi x,y,w,h]
               [--occlude off|warn|strict] [--grid-style thin|bold|contrast]
               [--min-ink pc] [--retry 0..5]
                                     capture a window; echoes the image->screen
                                     mapping (screen = image + (L,T), or
                                     (L + ix/scale, T + iy/scale) when fitted)
                                     and the labelled occluded=N% verdict if covered
-    rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y]
+    rect <x> <y> <w> <h> [outPath] [--fit px|0] [--grid [step] | --no-grid] [--mark x,y] [--content-roi x,y,w,h]
               [--occlude off|warn|strict] [--to <sel>] [--grid-style thin|bold|contrast]
                                     capture a region. Default fit=900: wider
                                     crops are saved downscaled with an explicit
@@ -11986,7 +12379,13 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     line per try and a quality: verdict= line; a
                                     path with no window gate says occlusion=not
                                     re-checked instead of pretending one ran.
-    zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] [--min-ink pc] [--retry 0..5]
+                                    PT-2: win/rect/zoom bind a SHA-256 content
+                                    baseline from that same raw 1:1 frame (before
+                                    fit/grid/marks). The default protected ROI is the
+                                    full source frame; --content-roi x,y,w,h narrows it
+                                    in source-image pixels. shot has no point map and
+                                    refuses this flag.
+    zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] [--min-ink pc] [--retry 0..5] [--content-roi x,y,w,h]
                                     small region enlarged (default 2x) + echo
                                     mapping screen = (x + ix/scale, y + iy/scale);
                                     --to binds the crop to a window exactly like
@@ -12011,7 +12410,8 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     resampled. The rebuilt image gets a kind=stitch
                                     map at the REGION origin (unmap/imgclick work
                                     on it like on any single capture).
-    wins                            list visible windows: pid proc class popup
+    wins [-z]                       default: area order; -z: verified GetWindow Z-order chain
+                                    adds hwnd, enabled, modal=yes|no|unknown and source
                                     owner main rect size title (popup=yes marks
                                     context menus - they are their OWN top-level
                                     windows. main=yes|no is the ONE window a pid
@@ -12019,7 +12419,11 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     owner= is GW_OWNER or '-': a Steam-style promo
                                     popup shares pid, class AND WS_POPUP with the
                                     app window, so popup=yes cannot separate them
-                                    and main= was the missing column (D-7))
+                                    and main= was the missing column (D-7)). The
+                                    default JSON remains 11 keys; -z opts into its
+                                    extended shape. Modal comes only from a bounded
+                                    UIA WindowPattern check, not ownership; unsupported
+                                    or capped probes say unknown.
     status-summary [--json]         read-only checkpoint: HEAD, clean/ahead,
                                     offline selftest counts, latest live log and
                                     red count, plus DTX window residuals
@@ -12126,6 +12530,12 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     modal/scrim incident measured 0.07, blank reads 0.00).
                                     A dump should REPORT its quality; a shout belongs
                                     only where the read cannot support a conclusion.
+                                    Text mode adds a separate OCR-suitability hint with
+                                    raw total-lines, area/density and a bounded UIA
+                                    availability/count/truncation probe (1000ms, 256
+                                    nodes). Unknown is not zero; file and unbound-region
+                                    reads say not-probed. This hint never changes OCR,
+                                    JSON or exit code.
                                     find-text / assert-text / expect / challenge-probe
                                     KEEP the 1.5 band: there the read is the claim of
                                     absence, so the alarm belongs. --min-line-density 0
@@ -12255,7 +12665,11 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     Multi-hit is a REFUSAL unless --index names one -
                                     picking the first would be a guess. It reports
                                     points and NEVER clicks; --space says which origin
-                                    the printed coordinates are expressed in.
+                                    the printed coordinates are expressed in. The point
+                                    is the template top-left plus size; centre is
+                                    (x+floor(w/2), y+floor(h/2)). Bind any later click
+                                    with --to <sel>; a new screenshot/layout needs a new
+                                    template or a narrower region.
     clip-info                       clipboard METADATA only: kind, format count and names,
                                     character count, file count, image availability,
                                     and whether this tool can restore it. No text is
@@ -12464,7 +12878,7 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     index default 0; hits are OCR LINES in
                                     reading order (top to bottom), so two
                                     occurrences on one line count as one hit
-    imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok] [--require-verified] [--on-grid-alert <px>]
+    imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok] [--require-verified] [--stale-content-ok] [--on-grid-alert <px>]
                                     reverse-map an image pixel through the
                                     <outPath>.map.txt sidecar (written by win/
                                     rect/zoom) and click the screen point;
@@ -12481,6 +12895,16 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     caller never clicks through an unverified,
                                     stale or minimized mapping; it cannot be
                                     combined with --stale-ok. When the image
+                                    carries a content baseline (new win/rect/zoom
+                                    maps), every pixel in its protected ROI is
+                                    compared with the current screen before input.
+                                    Changed, unreadable, legacy or missing evidence
+                                    is refused; --stale-content-ok bypasses only
+                                    this content check, not geometry or landing.
+                                    --content-roi x,y,w,h explicitly narrows the
+                                    protected ROI in source-image pixels; default
+                                    is the full source frame. Dry mode reads no pixels.
+                                    When the image
                                     carries a grid, the echo MEASURES this point
                                     against it (B-3): nearest vertical/horizontal
                                     line in BOTH units, the alert radius and a
@@ -12902,7 +13326,11 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     later steps look, then let go.
                                     Non-guard failures are reported and (by
                                     default) execution continues; exit 1 if any
-                                    step failed. See README for the step schema.
+                                    step failed. Add desc to name a step; ok is an
+                                    execution receipt, not a business assertion. Use
+                                    assert-text / expectText for the result. --json is
+                                    refused: script has no JSON envelope. See README
+                                    for the step schema.
     replay [<actions.log>] [--last n] [--grep s] [--go]
                                     re-run recorded act/text/clipboard commands;
                                     DRY RUN by default, --go executes. Unknown
@@ -13062,7 +13490,7 @@ desktop.ps1 v4.8.0 - Windows desktop automation (DPI-aware, absolute screen pixe
           selector matches SEVERAL windows, resolution refuses and prints every
           candidate - use pid / proc: / class: to disambiguate.
   --json anywhere = machine-readable output for wins/info/rect-of/color-at/
-          find-color/find-text/read-text/hash/wait-stable/ime-state/script.
+          find-color/find-text/read-text/hash/wait-stable/ime-state.
   selftest [--live] [--timing] [--index] [--only <pat>] = mechanical regression checks (source lint for the PS 5.1
           "@(Fn)" list-return trap, BOM/ASCII invariants, unit checks of every
           pure helper, and with --live a real OCR round-trip). Non-zero exit on
@@ -13540,7 +13968,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 # dispatch switch stays a dispatch). No direct Log-Action here - steps log
 # through their own commands, so audit semantics are unchanged.
 function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
-      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--json]
+      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>]
       # Runs a JSON array of steps in ONE process launch, with a foreground
       # guard between steps and assert checkpoints - the replacement for
       # "action -> read echo -> screenshot -> next action" call cycles.

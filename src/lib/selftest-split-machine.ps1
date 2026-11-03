@@ -228,9 +228,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (45 keys, 59 sites, table sums to the same 59)' (
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 59 sites, table sums to the same 59)' (
     ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 59) -and
-    ($a07OwnerSum -eq 59) -and (@($script:StCommandOwners).Count -eq 45))
+    ($a07OwnerSum -eq 59) -and (@($script:StCommandOwners).Count -eq 41))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -287,7 +287,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a08Args = @()
   $a08HandNotes = @()
   $a08Seen = @()
-  $a08Helpers = @('Trim-ShotDir', 'Release-Press', 'Close-PressHold', 'Invoke-PressWatchdog', 'Invoke-UiaSettextByPath')
+  $a08Helpers = @('Trim-ShotDir', 'Release-Press', 'Close-PressHold', 'Invoke-PressWatchdog', 'Invoke-UiaSettextByPath', 'Invoke-ObservedMouseInput')
   foreach ($a08R in @($a08Records -split "`n")) {
     if ($a08R -eq '') { continue }
     $a08F = @([string]$a08R -split "`t", 4)
@@ -312,11 +312,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the three sources account for all fifty-nine (none left reading caller scope)' (
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all fifty-nine (none left reading caller scope)' (
     ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 59) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
-  ST-Check 'lint (A-08): the five helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all five are actually on the list' (
-    (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 5))
+  ST-Check 'lint (A-08): the six helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all six are actually on the list' (
+    (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 6))
   if (@($a08HandNotes).Count -gt 0) { Write-Output ('      handoff: ' + ($a08HandNotes -join ';')) }
   $a08Align = Get-StubAlignmentDiscrepancy $a07Parsed "$script:StCommandToken"
   $a08Plant = @(
@@ -403,12 +403,51 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09DAbsent = Get-FunctionDeclaresParameter $a09PlantParsed 'F-No-Such' 'Cmd'
   # uses 88 -> 89: the B-2 selftest-mode origin set adds one top-level read of the dispatcher
   # variable (registered as <script>=17 above).
-  ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, and the registered owners account for every use of the dispatcher variable (the count is in the detail line, not in the name)' (
+  # PT rounds 2026-11-02: 89 -> 94 - each of the five observed-input handlers hands the command
+  # name to Invoke-ObservedMouseInput TWICE, at two mutually exclusive sites: the preflight-refusal
+  # arm (whose helper call throws) and the normal arm. The former registration (=1) predated that
+  # split; the registration was stale, not the implementation double-injecting an observation.
+  # The shape is pinned below by counting call ASTs: one site reused twice would be calls=1, and a
+  # genuine duplicate would put two sites in the same arm (preflight=2 or direct=2). The shared
+  # helper must read no dispatcher variable at all - it logs under its own $CmdName parameter.
+  $a09ObsNames = @('click', 'dblclick', 'imgclick', 'rclick', 'relclick')
+  $a09ObsNotes = @()
+  $a09ObsOk = $true
+  foreach ($a09On in $a09ObsNames) {
+    $a09Fd = $null
+    foreach ($a09F in @($a07Parsed.Root.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true))) {
+      if (([string]$a09F.Name) -ceq ('Invoke-Handler-' + $a09On)) { $a09Fd = $a09F; break }
+    }
+    if ($null -eq $a09Fd) { $a09ObsNotes += ($a09On + ':absent'); $a09ObsOk = $false; continue }
+    $a09Calls = 0; $a09ArgCmd = 0; $a09Guarded = 0; $a09Direct = 0
+    foreach ($a09C in @($a09Fd.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))) {
+      if (([string]$a09C.GetCommandName()) -cne 'Invoke-ObservedMouseInput') { continue }
+      $a09Calls++
+      if (@($a09C.CommandElements).Count -ge 2 -and
+        $a09C.CommandElements[1] -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        ([string]$a09C.CommandElements[1].VariablePath.UserPath) -ceq 'Cmd') { $a09ArgCmd++ }
+      $a09P = $a09C.Parent; $a09If = $null
+      while ($null -ne $a09P -and $a09P -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) {
+        if ($a09P -is [System.Management.Automation.Language.IfStatementAst]) { $a09If = $a09P; break }
+        $a09P = $a09P.Parent
+      }
+      if ($null -ne $a09If) {
+        $a09Cond = (@($a09If.Clauses) | ForEach-Object { [string]$_.Item1.Extent.Text }) -join ' '
+        if ($a09Cond.Contains('preflightError')) { $a09Guarded++ } else { $a09Direct++ }
+      } else { $a09Direct++ }
+    }
+    $a09ObsNotes += ($a09On + ':calls=' + $a09Calls + ';argcmd=' + $a09ArgCmd + ';preflight=' + $a09Guarded + ';direct=' + $a09Direct)
+    if ($a09Calls -ne 2 -or $a09ArgCmd -ne 2 -or $a09Guarded -ne 1 -or $a09Direct -ne 1) { $a09ObsOk = $false }
+  }
+  $a09HelperCmd = Get-VarUseCountInFunction $a07Parsed 'Invoke-ObservedMouseInput' $a09Var
+  ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, the registered owners account for every use of the dispatcher variable, and each observed-input handler hands the name over at exactly two mutually exclusive sites (the counts are in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 89) -and (@($script:StCmdVarUses).Count -eq 46))
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 94) -and (@($script:StCmdVarUses).Count -eq 46) -and
+    ($a09ObsOk) -and ($a09HelperCmd -ceq '0'))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
     ' bare-reads-in-audited-body=' + $a09Bare + ' own-param-uses=' + $a09OwnUses + ' undeclared=[' + $a09Undeclared + ']')
+  Write-Output ('      A-09 observed-input sites: ' + ($a09ObsNotes -join ' ') + ' helper-dispatcher-reads=' + $a09HelperCmd)
 
   # ---------- v4.4.0 (A-11a): the path anchors are the only way a moved section can name the tool ----------
   $a11Parsed = $a07Parsed

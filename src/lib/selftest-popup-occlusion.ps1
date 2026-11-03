@@ -15,8 +15,8 @@ function Invoke-SelftestFamily-PopupOcclusion($Ctx) {
   $j5ProdEnd = $Ctx['j5ProdEnd']
 
   # ---------- unit: v1.5.3 R-06 same-process popup delta ----------
-  # The RULE is pure (which handles count as newly on top), the enumeration is
-  # not - so the two are tested apart. Synthetic windows only here.
+  # The DIFFER is pure (which handles count as newly on top), the live GetWindow
+  # Z-order walk is not - so the two are tested apart. Synthetic windows only here.
   $wA = [pscustomobject]@{ Handle = [IntPtr]100; Class = 'Win'; Title = 'A'; Transparent = $false }
   $wB = [pscustomobject]@{ Handle = [IntPtr]200; Class = '#32768'; Title = ''; Transparent = $false }
   $wT = [pscustomobject]@{ Handle = [IntPtr]300; Class = 'tooltips_class32'; Title = ''; Transparent = $true }
@@ -279,7 +279,7 @@ function Invoke-SelftestFamily-PopupOcclusion($Ctx) {
   #     that guards it). Both are pinned against the merged differ's own answer.
   $c36SnapBase = @{ Hwnd = [IntPtr]4321; Pid = 777; Class = '#32768'; X = 620; Y = 300; W = 480; H = 320; OwnerHwnd = [IntPtr]4000; Above0 = $c36Above; Tolerance = 3; MustBeFg = $false }
   $c36SnapOk = Test-PopupGuardAlive $c36SnapBase $true @() @{ X = 620; Y = 300; W = 480; H = 320 } ([IntPtr]0)
-  ST-Check 'unit: popup guard verdict - the z-order leg reads the CURRENT enumeration, not the arm-time snapshot (buried popup fails even when it was in the baseline)' (
+  ST-Check 'unit: popup guard verdict - the z-order leg reads the CURRENT GetWindow chain, not the arm-time snapshot (buried popup fails even when it was in the baseline)' (
     (-not $c36SnapOk.Alive) -and ($c36SnapOk.Above -eq 'no'))
   $c36TipPopup = @([pscustomobject]@{ Handle = [IntPtr]4321; Class = 'tooltips_class32'; Title = 'x'; Transparent = $true })
   $c36TipAlive = Test-PopupGuardAlive $c36Base $true $c36TipPopup @{ X = 620; Y = 300; W = 480; H = 320 } ([IntPtr]0)

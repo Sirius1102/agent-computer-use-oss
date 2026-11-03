@@ -770,8 +770,227 @@ function Invoke-SelftestFamily-CaptureOcr($Ctx) {
   $curFTolOut = Test-TemplateAt $curFHayB $curFShift 10 8 11
   ST-Check 'unit (F-03): the per-channel tolerance is INCLUSIVE (a 12-off channel passes at 12 and fails at 11)' (
     $curFTolEdgeA -and $curFTolIn -and (-not $curFTolOut))
+
+  # Exercise the REAL tpl-find handler with only the screen capture seam replaced by a
+  # synthetic bitmap. This pins the command contract (unique/no-match/ambiguity/index/
+  # scale/tolerance/budget) without touching the desktop or sending input.
+  $tplHandlerDir = Join-Path $env:TEMP ('st_tpl_handler_' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $tplHandlerDir | Out-Null
+  $tplHandlerPath = Join-Path $tplHandlerDir 'needle.png'
+  $curFTpl.Save($tplHandlerPath, [System.Drawing.Imaging.ImageFormat]::Png)
+  $tplHandlerNames = @('Get-ScreenBitmap', 'Move-Click', 'Resolve-Window', 'Get-TargetRect', 'Resolve-Target', 'Activate-Win')
+  $tplHandlerOrig = @{}
+  foreach ($tplHandlerName in $tplHandlerNames) { $tplHandlerOrig[$tplHandlerName] = (Get-Item ('function:' + $tplHandlerName)).ScriptBlock }
+  $script:tplHandlerCapture = $curFHay.Clone()
+  $script:tplHandlerClickCount = 0
+  $script:tplHandlerResolveTargetCalls = 0; $script:tplHandlerActivateCalls = 0; $script:tplHandlerCaptureArgs = $null
+  $tplHandlerUnique = $false; $tplHandlerNoMatch = $false; $tplHandlerAmbiguous = $false
+  $tplHandlerIndex = $false; $tplHandlerScale = $false; $tplHandlerTolerance = $false; $tplHandlerBudget = $false
+  try {
+    Set-Item -Path 'function:Get-ScreenBitmap' -Value { param($x, $y, $w, $h, $scale) $script:tplHandlerCaptureArgs = @{ X = $x; Y = $y; W = $w; H = $h }; return @{ Bitmap = $script:tplHandlerCapture.Clone(); Scale = 1.0 } }
+    Set-Item -Path 'function:Move-Click' -Value { param($x, $y, $button) $script:tplHandlerClickCount++ }
+    Set-Item -Path 'function:Resolve-Window' -Value { param($sel) $script:ResolveNote = ''; return [pscustomobject]@{ Handle = [IntPtr]4242; Pid = 4242; Title = 'tpl-fixture'; Class = 'tpl-fixture'; Left = 100; Top = 200; W = 40; H = 30 } }
+    Set-Item -Path 'function:Get-TargetRect' -Value { param($target) return @{ X = 100; Y = 200; W = 40; H = 30 } }
+    Set-Item -Path 'function:Resolve-Target' -Value { param($sel, $force, $always, $pin, $created) $script:tplHandlerResolveTargetCalls++; throw 'tpl-find must not call Resolve-Target' }
+    Set-Item -Path 'function:Activate-Win' -Value { param($target) $script:tplHandlerActivateCalls++; throw 'tpl-find must not activate a window' }
+
+    $tplHandlerUniqueOut = @((Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30'))) -join "`n"
+    $tplHandlerUnique = ($tplHandlerUniqueOut -like '*matches=1*') -and ($tplHandlerUniqueOut -like '*screen=(10,8)*')
+    ST-Check 'unit (F-04): the real tpl-find handler returns the unique planted screen location from a synthetic capture' $tplHandlerUnique
+    if (-not $tplHandlerUnique) { Write-Output ('      F-04 output: ' + $tplHandlerUniqueOut) }
+
+    $tplHandlerBoundOut = @((Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--to', 'tpl-fixture', '--region', '0,0,40,30', '--space', 'window'))) -join "`n"
+    ST-Check 'unit (F-04a): target-bound template matching converts the window-relative region to screen pixels without activating or clicking' (
+      ($tplHandlerBoundOut -like '*screen=(110,208)*') -and $script:tplHandlerCaptureArgs.X -eq 100 -and $script:tplHandlerCaptureArgs.Y -eq 200 -and
+      $script:tplHandlerResolveTargetCalls -eq 0 -and $script:tplHandlerActivateCalls -eq 0 -and $script:tplHandlerClickCount -eq 0)
+    # Both overrides are exercised separately. The refusal must carry the flag that was
+    # passed in a machine-readable token (reason=read-only-override flag=<name>), not
+    # only in prose; and it must stop before target resolve, capture and activation.
+    # The three stubs count all three, so "no window was activated" is measured, not read.
+    $script:tplHandlerCaptureArgs = $null
+    $tplHandlerForceErr = ''
+    try { [void](Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--to', 'tpl-fixture', '--force')) } catch { $tplHandlerForceErr = [string]$_.Exception.Message }
+    $tplHandlerForceFlags = @()
+    $tplHandlerForceToken = [regex]::Match($tplHandlerForceErr, 'reason=read-only-override flag=([^)]*)')
+    if ($tplHandlerForceToken.Success) { $tplHandlerForceFlags = @($tplHandlerForceToken.Groups[1].Value -split ',') }
+    $tplHandlerForceOk = ($tplHandlerForceFlags -contains '--force') -and $script:tplHandlerResolveTargetCalls -eq 0 -and
+      $script:tplHandlerActivateCalls -eq 0 -and $script:tplHandlerClickCount -eq 0 -and $null -eq $script:tplHandlerCaptureArgs
+    ST-Check 'unit (F-04b-1): --force is refused by name as a read-only override, with zero resolve/capture/activation' $tplHandlerForceOk
+    if (-not $tplHandlerForceOk) { Write-Output ('      F-04b-1 error: ' + $tplHandlerForceErr) }
+
+    $script:tplHandlerCaptureArgs = $null
+    $tplHandlerAlwaysErr = ''
+    try { [void](Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--to', 'tpl-fixture', '--always-activate')) } catch { $tplHandlerAlwaysErr = [string]$_.Exception.Message }
+    $tplHandlerAlwaysFlags = @()
+    $tplHandlerAlwaysToken = [regex]::Match($tplHandlerAlwaysErr, 'reason=read-only-override flag=([^)]*)')
+    if ($tplHandlerAlwaysToken.Success) { $tplHandlerAlwaysFlags = @($tplHandlerAlwaysToken.Groups[1].Value -split ',') }
+    $tplHandlerAlwaysOk = ($tplHandlerAlwaysFlags -contains '--always-activate') -and $script:tplHandlerResolveTargetCalls -eq 0 -and
+      $script:tplHandlerActivateCalls -eq 0 -and $script:tplHandlerClickCount -eq 0 -and $null -eq $script:tplHandlerCaptureArgs
+    ST-Check 'unit (F-04b-2): --always-activate is refused by name as a read-only override, with zero resolve/capture/activation' $tplHandlerAlwaysOk
+    if (-not $tplHandlerAlwaysOk) { Write-Output ('      F-04b-2 error: ' + $tplHandlerAlwaysErr) }
+
+    $script:tplHandlerCapture.Dispose()
+    $script:tplHandlerCapture = New-Object System.Drawing.Bitmap(40, 30, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $tplHandlerG = [System.Drawing.Graphics]::FromImage($script:tplHandlerCapture)
+    try { $tplHandlerG.Clear([System.Drawing.Color]::White) } finally { $tplHandlerG.Dispose() }
+    $tplHandlerNoMatchErr = ''
+    try { [void](Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30')) } catch { $tplHandlerNoMatchErr = [string]$_.Exception.Message }
+    $tplHandlerNoMatch = $tplHandlerNoMatchErr -like '*no match*'
+    ST-Check 'unit (F-05): the real tpl-find handler reports no match for a blank synthetic capture' $tplHandlerNoMatch
+    if (-not $tplHandlerNoMatch) { Write-Output ('      F-05 error: ' + $tplHandlerNoMatchErr) }
+
+    $script:tplHandlerCapture.Dispose()
+    $script:tplHandlerCapture = $curFHay.Clone()
+    $tplHandlerG = [System.Drawing.Graphics]::FromImage($script:tplHandlerCapture)
+    try { $tplHandlerG.DrawImageUnscaled($curFTpl, 25, 18) } finally { $tplHandlerG.Dispose() }
+    $tplHandlerAmbiguousErr = ''
+    try { [void](Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30')) } catch { $tplHandlerAmbiguousErr = [string]$_.Exception.Message }
+    $tplHandlerAmbiguous = ($tplHandlerAmbiguousErr -like '*2 matches*') -and ($tplHandlerAmbiguousErr -like '*ambiguous*')
+    ST-Check 'unit (F-06): two separated copies are reported as ambiguous and no candidate is chosen implicitly' $tplHandlerAmbiguous
+    if (-not $tplHandlerAmbiguous) { Write-Output ('      F-06 error: ' + $tplHandlerAmbiguousErr) }
+    $tplHandlerIndexOut = @((Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30', '--index', '1'))) -join "`n"
+    $tplHandlerIndex = ($tplHandlerIndexOut -like '*matches=2*') -and ($tplHandlerIndexOut -like '*selected index=1 screen=(25,18)*')
+    ST-Check 'unit (F-07): --index 1 selects the second separated match in stable top-to-bottom, left-to-right order' $tplHandlerIndex
+    if (-not $tplHandlerIndex) { Write-Output ('      F-07 output: ' + $tplHandlerIndexOut) }
+
+    $script:tplHandlerCapture.Dispose()
+    $script:tplHandlerCapture = New-Object System.Drawing.Bitmap(40, 30, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $tplHandlerG = [System.Drawing.Graphics]::FromImage($script:tplHandlerCapture)
+    $tplHandlerScaled = Resize-BitmapNearest $curFTpl 1.5
+    try { $tplHandlerG.Clear([System.Drawing.Color]::White); $tplHandlerG.DrawImageUnscaled($tplHandlerScaled, 12, 9) }
+    finally { $tplHandlerG.Dispose(); $tplHandlerScaled.Dispose() }
+    $tplHandlerScaleOut = @((Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30', '--scales', '1.5'))) -join "`n"
+    $tplHandlerScale = ($tplHandlerScaleOut -like '*size=9x6*') -and ($tplHandlerScaleOut -like '*screen=(12,9)*') -and ($tplHandlerScaleOut -like '*scale=1.5*')
+    ST-Check 'unit (F-08): the handler finds the exact 1.5x synthetic template and reports its scaled dimensions' $tplHandlerScale
+    if (-not $tplHandlerScale) { Write-Output ('      F-08 output: ' + $tplHandlerScaleOut) }
+
+    $script:tplHandlerCapture.Dispose()
+    $script:tplHandlerCapture = New-Object System.Drawing.Bitmap(40, 30, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $tplHandlerG = [System.Drawing.Graphics]::FromImage($script:tplHandlerCapture)
+    try { $tplHandlerG.Clear([System.Drawing.Color]::White); $tplHandlerG.DrawImageUnscaled($curFTpl, 7, 6) }
+    finally { $tplHandlerG.Dispose() }
+    $script:tplHandlerCapture.SetPixel(7, 6, [System.Drawing.Color]::FromArgb(255, 212, 10, 10))
+    $tplHandlerToleranceOut = @((Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30', '--tolerance', '12'))) -join "`n"
+    $tplHandlerToleranceErr = ''
+    try { [void](Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerPath, '--region', '0,0,40,30', '--tolerance', '11')) } catch { $tplHandlerToleranceErr = [string]$_.Exception.Message }
+    $tplHandlerTolerance = ($tplHandlerToleranceOut -like '*screen=(7,6)*') -and ($tplHandlerToleranceErr -like '*no match*')
+    ST-Check 'unit (F-09): command-level channel tolerance includes a 12-value edge and rejects the same pixel at 11' $tplHandlerTolerance
+    if (-not $tplHandlerTolerance) { Write-Output ('      F-09 tolerance 12=[' + $tplHandlerToleranceOut + '] tolerance 11=[' + $tplHandlerToleranceErr + ']') }
+
+    $script:tplHandlerCapture.Dispose()
+    $script:tplHandlerCapture = New-Object System.Drawing.Bitmap(1000, 1000, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $tplHandlerG = [System.Drawing.Graphics]::FromImage($script:tplHandlerCapture)
+    try { $tplHandlerG.Clear([System.Drawing.Color]::White) } finally { $tplHandlerG.Dispose() }
+    $tplHandlerBudgetNeedle = New-Object System.Drawing.Bitmap(20, 20, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $tplHandlerBudgetG = [System.Drawing.Graphics]::FromImage($tplHandlerBudgetNeedle)
+    try { $tplHandlerBudgetG.Clear([System.Drawing.Color]::White) } finally { $tplHandlerBudgetG.Dispose() }
+    $tplHandlerBudgetNeedle.SetPixel(19, 19, [System.Drawing.Color]::FromArgb(255, 200, 10, 10))
+    $tplHandlerBudgetPath = Join-Path $tplHandlerDir 'budget.png'
+    $tplHandlerBudgetNeedle.Save($tplHandlerBudgetPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $tplHandlerBudgetNeedle.Dispose()
+    $tplHandlerBudgetErr = ''
+    try { [void](Invoke-Handler-tpl-find 'tpl-find' @($tplHandlerBudgetPath, '--region', '0,0,1000,1000', '--max-ms', '50')) } catch { $tplHandlerBudgetErr = [string]$_.Exception.Message }
+    $tplHandlerBudget = ($tplHandlerBudgetErr -like '*exceeded its 50ms budget*') -and ($tplHandlerBudgetErr -like '*positions*')
+    ST-Check 'unit (F-10): a real handler search over a bounded synthetic image stops and reports its 50ms scan budget' $tplHandlerBudget
+    if (-not $tplHandlerBudget) { Write-Output ('      F-10 budget error: ' + $tplHandlerBudgetErr) }
+    ST-Check 'unit (F-11): all tpl-find handler fixtures are read-only and never call a pointer input function' ($script:tplHandlerClickCount -eq 0)
+  } finally {
+    foreach ($tplHandlerName in $tplHandlerNames) { Set-Item -Path ('function:' + $tplHandlerName) -Value $tplHandlerOrig[$tplHandlerName] }
+    if ($null -ne $script:tplHandlerCapture) { $script:tplHandlerCapture.Dispose(); $script:tplHandlerCapture = $null }
+    if (Test-Path -LiteralPath $tplHandlerDir) { Remove-Item -LiteralPath $tplHandlerDir -Recurse -Force }
+  }
   $curFHay.Dispose()
   $curFTpl.Dispose()
+
+  # PT-4: exercise the actual read-text formatter and its actual UIA-hint parser with
+  # synthetic OCR/UIA results. The only replacements are screen/OCR/provider seams;
+  # no target window is contacted and the hint cannot change the OCR result or JSON.
+  $pt4Names = @('Resolve-Region', 'Invoke-OcrRegion', 'Invoke-OcclusionGate', 'Invoke-OcclusionOwners', 'Invoke-OcrFile', 'Invoke-BoundedUiaProbe')
+  $pt4Orig = @{}
+  foreach ($pt4Name in $pt4Names) { $pt4Orig[$pt4Name] = (Get-Item ('function:' + $pt4Name)).ScriptBlock }
+  $pt4Dir = Join-Path $env:TEMP ('st_readtext_hint_' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $pt4Dir | Out-Null
+  $pt4File = Join-Path $pt4Dir 'fixture.png'
+  $pt4FileBmp = New-Object System.Drawing.Bitmap(4, 4, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  try { $pt4FileBmp.Save($pt4File, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $pt4FileBmp.Dispose() }
+  $pt4Win = [pscustomobject]@{ Handle = [IntPtr]4242; Title = 'PT4 synthetic fixture'; Pid = 4242 }
+  $script:pt4Region = [pscustomobject]@{ X = 10; Y = 20; W = 1200; H = 900; Win = $pt4Win }
+  $script:pt4Lines = @(
+    [pscustomobject]@{ Text = 'ordinary sparse row'; X = 12; Y = 22; W = 130; H = 18 },
+    [pscustomobject]@{ Text = 'needle first row'; X = 12; Y = 52; W = 120; H = 18 },
+    [pscustomobject]@{ Text = 'needle second row'; X = 12; Y = 82; W = 130; H = 18 }
+  )
+  $script:pt4ProbeCalls = 0; $script:pt4ProbeHwnd = 0L; $script:pt4ProbeBudget = 0; $script:pt4ProbeScript = ''
+  $script:pt4ProbeStatus = 'ok'; $script:pt4ProbeValue = 'nodes=256;truncated=true'; $script:pt4ProbeScanned = 256
+  $script:pt4FileLines = @([pscustomobject]@{ Text = 'needle from saved image'; X = 1; Y = 1; W = 2; H = 1 })
+  $pt4JsonBefore = [bool]$script:Json
+  try {
+    Set-Item -Path 'function:Resolve-Region' -Value { param($words, $i) return $script:pt4Region }
+    Set-Item -Path 'function:Invoke-OcrRegion' -Value { param($x, $y, $w, $h, $forceScale, $DeadlineMs) return ,$script:pt4Lines }
+    Set-Item -Path 'function:Invoke-OcclusionGate' -Value { param($rect, $handle, $action, $grid, $desc, $sel, $kind) return @{ Pct = 0; Err = $false; Covering = @(); Echo = 'clear' } }
+    Set-Item -Path 'function:Invoke-OcclusionOwners' -Value { param($rect, $action, $grid) return @{ Ran = $false; Echo = 'not run'; Owners = @(); Checked = 0 } }
+    Set-Item -Path 'function:Invoke-OcrFile' -Value { param($path, $scale) return @{ Lines = @($script:pt4FileLines); W = 4; H = 4; Scale = $scale; Tiles = 0; Ms = 1; Notes = @() } }
+    Set-Item -Path 'function:Invoke-BoundedUiaProbe' -Value { param([int64]$hwnd, [string]$nameSub, [int]$budgetMs, [string]$ScriptText)
+      $script:pt4ProbeCalls++; $script:pt4ProbeHwnd = $hwnd; $script:pt4ProbeBudget = $budgetMs; $script:pt4ProbeScript = $ScriptText
+      return @{ Status = $script:pt4ProbeStatus; Value = $script:pt4ProbeValue; Detail = ''; Scanned = $script:pt4ProbeScanned }
+    }
+
+    $pt4Out = @((Invoke-Handler-read-text 'read-text' @('fixture', '--filter', 'needle', '--max-lines', '1'))) -join "`n"
+    $pt4ProbeWired = ($script:pt4ProbeCalls -eq 1) -and ($script:pt4ProbeHwnd -eq 4242) -and ($script:pt4ProbeBudget -eq 1000) -and
+      ($script:pt4ProbeScript -match '\$n -lt 256') -and ($script:pt4ProbeScript -match 'q\.Count -ge 256')
+    ST-Check 'unit (PT-4): the actual read-text UIA hint uses the bound HWND, 1000ms child timeout and 256-node queue bound' $pt4ProbeWired
+    ST-Check 'unit (PT-4): the actual read-text hint reports raw line count, area/density, UIA truncation, filter count and output cut without changing original OCR line numbers' (
+      ($pt4Out -like '*total-lines=3 area=1080000 px2*') -and ($pt4Out -like '*density=0.278 lines/100kpx2*') -and
+      ($pt4Out -like '*uia=available walked=256 truncated=true*') -and ($pt4Out -like '*filtered-matches=2 output-cut=1*') -and
+      ($pt4Out -like '*L02 rect=*needle first row*') -and ($pt4Out -notlike '*L03 rect=*'))
+    if (-not ($pt4Out -like '*uia=available walked=256 truncated=true*')) { Write-Output ('      PT-4 available output: ' + $pt4Out) }
+
+    $script:pt4Region = [pscustomobject]@{ X = 10; Y = 20; W = 1200; H = 900; Win = $pt4Win }
+    $script:pt4Lines = @()
+    $pt4BlankOut = @((Invoke-Handler-read-text 'read-text' @('fixture'))) -join "`n"
+    ST-Check 'unit (PT-4): an empty/covered/loading-style OCR result reports low readability from the measured area and remains a successful read with the existing WARN kept separate' (
+      ($pt4BlankOut -like '*total-lines=0 area=1080000 px2 density=0 lines/100kpx2*') -and
+      ($pt4BlankOut -like '*OCR suitability: suspected-low-readability*') -and ($pt4BlankOut -like '*WARN:*') -and
+      ($pt4BlankOut -like '*uia=available walked=256 truncated=true*'))
+    $script:pt4Lines = @(
+      [pscustomobject]@{ Text = 'ordinary sparse row'; X = 12; Y = 22; W = 130; H = 18 },
+      [pscustomobject]@{ Text = 'needle first row'; X = 12; Y = 52; W = 120; H = 18 },
+      [pscustomobject]@{ Text = 'needle second row'; X = 12; Y = 82; W = 130; H = 18 }
+    )
+
+    $script:pt4ProbeCalls = 0; $script:pt4ProbeStatus = 'timeout'; $script:pt4ProbeValue = ''; $script:pt4ProbeScanned = 0
+    $pt4UnknownOut = @((Invoke-Handler-read-text 'read-text' @('fixture'))) -join "`n"
+    ST-Check 'unit (PT-4): a timed-out UIA hint is unknown, never a measured zero, and the text-only OCR read still succeeds' (
+      ($pt4UnknownOut -like '*uia=unknown walked=unknown truncated=unknown source=uia-timeout*') -and
+      ($pt4UnknownOut -like '*L01 rect=*ordinary sparse row*') -and ($script:pt4ProbeCalls -eq 1))
+    if (-not ($pt4UnknownOut -like '*uia=unknown walked=unknown*')) { Write-Output ('      PT-4 unknown output: ' + $pt4UnknownOut) }
+
+    $script:pt4Region = [pscustomobject]@{ X = 10; Y = 20; W = 1200; H = 900; Win = $null }
+    $script:pt4ProbeCalls = 0; $script:pt4ProbeStatus = 'ok'; $script:pt4ProbeValue = 'nodes=5;truncated=false'; $script:pt4ProbeScanned = 5
+    $pt4UnboundOut = @((Invoke-Handler-read-text 'read-text' @('10', '20', '1200', '900'))) -join "`n"
+    ST-Check 'unit (PT-4): an unbound coordinate region explicitly says UIA was not probed and makes zero provider calls' (
+      ($pt4UnboundOut -like '*uia=not-probed walked=not-probed truncated=not-probed source=region-unbound*') -and ($script:pt4ProbeCalls -eq 0))
+
+    $script:pt4ProbeCalls = 0
+    $pt4FileOut = @((Invoke-Handler-read-text 'read-text' @('--file', $pt4File))) -join "`n"
+    ST-Check 'unit (PT-4): file OCR labels image-pixel coordinates, reports UIA not-probed, and never contacts a window provider' (
+      ($pt4FileOut -like '*source=file*') -and ($pt4FileOut -like '*uia=not-probed walked=not-probed truncated=not-probed source=file-mode*') -and ($script:pt4ProbeCalls -eq 0))
+
+    $script:Json = $true
+    $script:pt4Region = [pscustomobject]@{ X = 10; Y = 20; W = 1200; H = 900; Win = $pt4Win }
+    $script:pt4ProbeCalls = 0
+    $pt4JsonText = @((Invoke-Handler-read-text 'read-text' @('fixture', '--filter', 'needle', '--max-lines', '1'))) -join "`n"
+    $pt4JsonObj = $null; try { $pt4JsonObj = $pt4JsonText | ConvertFrom-Json } catch { }
+    $pt4JsonKeys = if ($null -ne $pt4JsonObj) { (@($pt4JsonObj.PSObject.Properties.Name | Sort-Object) -join ',') } else { '' }
+    $pt4JsonWant = Get-JsonContractKeySet 'read'
+    ST-Check 'contract (PT-4): read-text JSON retains its exact published envelope and one filtered line; UIA hints remain text-only and are not probed on JSON' (
+      ($pt4JsonKeys -ceq $pt4JsonWant) -and (@($pt4JsonObj.lines).Count -eq 1) -and ($pt4JsonObj.lines[0].n -eq 2) -and ($script:pt4ProbeCalls -eq 0))
+    if ($pt4JsonKeys -cne $pt4JsonWant) { Write-Output ('      PT-4 JSON keys: [' + $pt4JsonKeys + '] expected [' + $pt4JsonWant + ']') }
+  } finally {
+    $script:Json = $pt4JsonBefore
+    foreach ($pt4Name in $pt4Names) { Set-Item -Path ('function:' + $pt4Name) -Value $pt4Orig[$pt4Name] }
+    if (Test-Path -LiteralPath $pt4Dir) { Remove-Item -LiteralPath $pt4Dir -Recurse -Force }
+  }
 
   # ---------- CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b): one budget, checked on EVERY exit ----------
   # The reviewer reproduced two holes against the real functions: a first-read HIT returned

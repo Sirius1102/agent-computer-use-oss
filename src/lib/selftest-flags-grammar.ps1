@@ -243,10 +243,10 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
     }
     # v3.1.0 (P-06): a handler may delegate its own argument parse to a pure Resolve-*Args
     # function - menu-pick did exactly that so a trailing-flag hole could be tested offline.
-    # FOLLOW the delegation instead of exempting it: the branch has to exist in the called
-    # parser, and only functions named Resolve-*Args that the case body actually calls are
-    # folded in, so no command can claim routing a flag it parses nowhere.
-    foreach ($dm in @([regex]::Matches($d1Block, '(Resolve-[A-Za-z0-9]+Args)'))) {
+    # Capture commands also share Parse-CaptureFlags. FOLLOW either delegation instead of
+    # exempting it: the branch has to exist in the called parser, so no command can claim a
+    # flag it parses nowhere.
+    foreach ($dm in @([regex]::Matches($d1Block, '(Resolve-[A-Za-z0-9]+Args|Parse-CaptureFlags)'))) {
       $d1Fn = $dm.Groups[1].Value
       $d1Fs = -1; $d1Fe = -1
       for ($dq = 0; $dq -lt $d1Src.Count; $dq++) {
@@ -436,8 +436,9 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
       # nothing and could never have gone red. Index the dictionary itself, like the
       # production getter for the same table does.
       $csMap = Get-CommandSharedMap
+      $validRoutedFlags = @((Get-SharedFlagSet) + @(Get-CaptureRouteFlagSet))
       foreach ($k in @(Get-HashKeys $csMap)) {
-        foreach ($f in (Get-OptValue $csMap $k)) { if (-not (@(Get-SharedFlagSet) -contains $f)) { $bad += "$k=$f" } }
+        foreach ($f in (Get-OptValue $csMap $k)) { if (-not ($validRoutedFlags -contains $f)) { $bad += "$k=$f" } }
       }
       # v4.0.1 (audit observation 6): the green condition is "nothing bad found", which an empty
       # table satisfies for free - the exact shape that made this check vacuous before X-02

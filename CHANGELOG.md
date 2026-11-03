@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.9.0 - 2026-11-03
+
+- **Shared landing observation for the click family (PT-1).** `click`/`rclick`/`dblclick`/
+  `imgclick`/`relclick` now share one `WindowFromPoint → GA_ROOT` observation with three states
+  (`hit`/`none`/`unknown`). With `--to`, only `hit` on the target's root hwnd is allowed; `none`,
+  `unknown` and another window are refused before any input. Bare coordinates still work and are
+  audited as `binding=unbound`; `--allow-outside` relaxes the rect, never the hit identity.
+- **Content baseline for image clicks (PT-2).** Captures publish a Format32bppArgb SHA-256 of the
+  1:1 frame; `imgclick` re-reads the same screen ROI and strictly compares it. Stale maps, missing
+  fields, read failures and changed pixels are refusals. `--stale-content-ok` relaxes only the
+  content comparison, never window geometry or the hit guard.
+- **`tpl-find` is read-only.** It never activates or clicks; `--force` and `--always-activate` are
+  refused by name before resolve/capture/activation (`reason=read-only-override`).
+- **`read-text` OCR applicability hint.** Text mode appends raw line count, area/density and
+  bound-window UIA status/traversal/truncation. It does not change OCR results, JSON keys or the
+  exit code.
+- **`wins -z` key contract (PT-5).** Default `wins --json` keeps the original 11 keys;
+  `wins -z --json` is a 16-key shape (`z hwnd enabled modal modal_source` added). `z` ranks come
+  only from the `GetTopWindow` document-chain head; unreachable rows stay `unknown` (JSON null).
+  `modal` is a bounded UIA WindowPattern probe, never inferred from ownership.
+- **`script` has no JSON envelope (PT-6).** `script --json` is refused before the first step; the
+  text receipt remains `#n action ok/FAIL`.
+- **Selftest and contract fixes.** The offline gate now declares 1305 checks, matching the actual
+  plan; registered family line/emitter counts, dispatcher counts, JSON key contracts and the
+  PowerShell 5.1 list-return/language traps are reconciled. No assertion was relaxed to reach green.
+- **No tag or release in this change.** The v4.8.0 single-file, portable ZIP and SHA assets are
+  untouched; this entry tracks the source tree.
+
 ## v4.8.0 - 2026-10-31
 
 - **Screenshot quality gate and bounded re-capture (new, opt-in).** `shot`/`win`/`rect`/`zoom`

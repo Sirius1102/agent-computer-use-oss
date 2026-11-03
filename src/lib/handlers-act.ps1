@@ -74,25 +74,35 @@ function Invoke-Handler-click([string]$Cmd, [string[]]$Rest) {
       $created = [string]$own.Values['--created']
       [void](Get-MouseButtonSpec $button)
       [void](Resolve-MouseModifiers $mods)
-      $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
-        Emit-ResolveNote
-        if ($p.GuardText -or $p.GuardRegion) {
-          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
-        }
-      }
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
-      $origin = Get-PointSpaceOrigin $space $tgt
-      $pt = Convert-PointSpace $rx $ry $origin
-      Invoke-TargetBlockGuard $tgt
-      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
-      $ecb = Get-ExpectChangeBaseline $p $tgt
       $clickLogArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
+      $tgt = $null; $ecb = $null
+      $origin = [pscustomobject]@{ Space = 'screen'; X = 0; Y = 0; W = 0; H = 0 }
+      $pt = [pscustomobject]@{ X = $rx; Y = $ry }
+      $preflightError = $null
+      try {
+        if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+          $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
+          Emit-ResolveNote
+          if ($p.GuardText -or $p.GuardRegion) {
+            Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+          }
+        }
+        $origin = Get-PointSpaceOrigin $space $tgt
+        $pt = Convert-PointSpace $rx $ry $origin
+        Invoke-TargetBlockGuard $tgt
+        $ecb = Get-ExpectChangeBaseline $p $tgt
+      } catch { $preflightError = $_ }
       if ($null -ne $tgt) { $clickLogArgs = @($clickLogArgs) + @("pid=$($tgt.Pid)") }
+      if ($null -ne $preflightError) {
+        $preDetail = "coords=$rx,$ry space=$space button=$($button.ToLowerInvariant()) preflight=refused"
+        [void](Invoke-ObservedMouseInput $Cmd $clickLogArgs "$rx,$ry space=$space" $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside $preDetail $null $preflightError)
+      }
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
-      Log-Action $clickLogArgs "coords=$($pt.X),$($pt.Y)$spaceLog button=$($button.ToLowerInvariant()) mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
-      Move-Click $pt.X $pt.Y $button $mods
+      $auditDetail = "coords=$($pt.X),$($pt.Y)$spaceLog button=$($button.ToLowerInvariant()) mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })"
+      $inputAction = { Move-Click $pt.X $pt.Y $button $mods }
+      $clickRun = Invoke-ObservedMouseInput $Cmd $clickLogArgs "$rx,$ry space=$($origin.Space)" $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside $auditDetail $inputAction
+      Write-Output $clickRun.Echo
       "clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry) button=$($button.ToLowerInvariant())$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'clicked'
       Invoke-ActionExpectation $p $tgt 'clicked'
@@ -100,7 +110,7 @@ function Invoke-Handler-click([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): rclick - the case body, verbatim
 function Invoke-Handler-rclick([string]$Cmd, [string[]]$Rest) {
-      # rclick <x> <y> [--mods shift...] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force] (guards + landing check like click)
+      # rclick <x> <y> [--mods shift...] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force] (guards + observed landing check like click)
       $own = Strip-OwnFlags $Rest 'rclick'
       $p = Split-Target @($own.Rest)
       if ($p.Words.Count -lt 2) { throw 'usage: rclick <x> <y> [--mods shift] [--space screen|window|client] [--created <iso>] [--to <sel>] [--guard-text <s>|--guard-region x,y,w,h=s] [--allow-outside] [--force]' }
@@ -109,23 +119,34 @@ function Invoke-Handler-rclick([string]$Cmd, [string[]]$Rest) {
       if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
       $created = [string]$own.Values['--created']
       [void](Resolve-MouseModifiers $mods)
-      $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
-        Emit-ResolveNote
-        if ($p.GuardText -or $p.GuardRegion) {
-          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
-        }
-      }
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
-      $origin = Get-PointSpaceOrigin $space $tgt
-      $pt = Convert-PointSpace $rx $ry $origin
-      Invoke-TargetBlockGuard $tgt
-      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
-      $ecb = Get-ExpectChangeBaseline $p $tgt
+      $auditArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
+      $tgt = $null; $ecb = $null
+      $origin = [pscustomobject]@{ Space = 'screen'; X = 0; Y = 0; W = 0; H = 0 }
+      $pt = [pscustomobject]@{ X = $rx; Y = $ry }
+      $preflightError = $null
+      try {
+        if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+          $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
+          Emit-ResolveNote
+          if ($p.GuardText -or $p.GuardRegion) {
+            Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+          }
+        }
+        $origin = Get-PointSpaceOrigin $space $tgt
+        $pt = Convert-PointSpace $rx $ry $origin
+        Invoke-TargetBlockGuard $tgt
+        $ecb = Get-ExpectChangeBaseline $p $tgt
+      } catch { $preflightError = $_ }
+      if ($null -ne $preflightError) {
+        $preDetail = "coords=$rx,$ry space=$space button=right preflight=refused"
+        [void](Invoke-ObservedMouseInput $Cmd $auditArgs "$rx,$ry space=$space" $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside $preDetail $null $preflightError)
+      }
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
-      Move-Click $pt.X $pt.Y 'right' $mods
+      $auditDetail = "coords=$($pt.X),$($pt.Y)$spaceLog button=right mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })"
+      $inputAction = { Move-Click $pt.X $pt.Y 'right' $mods }
+      $rclickRun = Invoke-ObservedMouseInput $Cmd $auditArgs "$rx,$ry space=$($origin.Space)" $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside $auditDetail $inputAction
+      Write-Output $rclickRun.Echo
       "right-clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry)$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'right-clicked'
       Invoke-ActionExpectation $p $tgt 'right-clicked'
@@ -142,38 +163,48 @@ function Invoke-Handler-dblclick([string]$Cmd, [string[]]$Rest) {
       if ($space -ne 'screen' -and -not $p.Sel) { throw "--space $space needs --to <sel>: a relative point with no named window has no defined origin (the foreground window is not an identity); no input was sent" }
       $created = [string]$own.Values['--created']
       [void](Resolve-MouseModifiers $mods)
-      $tgt = $null
-      if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
-        Emit-ResolveNote
-        if ($p.GuardText -or $p.GuardRegion) {
-          Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
-        }
-      }
       $rx = [int]$p.Words[0]; $ry = [int]$p.Words[1]
-      $origin = Get-PointSpaceOrigin $space $tgt
-      $pt = Convert-PointSpace $rx $ry $origin
-      Invoke-TargetBlockGuard $tgt
-      Invoke-HitWindowCheck $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside
+      $auditArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
+      $tgt = $null; $ecb = $null
+      $origin = [pscustomobject]@{ Space = 'screen'; X = 0; Y = 0; W = 0; H = 0 }
+      $pt = [pscustomobject]@{ X = $rx; Y = $ry }
+      $preflightError = $null
+      try {
+        if ($p.Sel -or $p.GuardText -or $p.GuardRegion -or $created -or ($space -ne 'screen')) {
+          $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
+          Emit-ResolveNote
+          if ($p.GuardText -or $p.GuardRegion) {
+            Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+          }
+        }
+        $origin = Get-PointSpaceOrigin $space $tgt
+        $pt = Convert-PointSpace $rx $ry $origin
+        Invoke-TargetBlockGuard $tgt
+        $ecb = Get-ExpectChangeBaseline $p $tgt
+      } catch { $preflightError = $_ }
+      if ($null -ne $preflightError) {
+        $preDetail = "coords=$rx,$ry space=$space button=left preflight=refused"
+        [void](Invoke-ObservedMouseInput $Cmd $auditArgs "$rx,$ry space=$space" $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside $preDetail $null $preflightError)
+      }
       $spaceLog = if ($origin.Space -eq 'screen') { '' } else { " space=$($origin.Space) rel=$rx,$ry" }
-      Log-Action (Get-RedactedLogArgs $Rest @() $p.LogPayload) "coords=$($pt.X),$($pt.Y)$spaceLog mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })" $Cmd
-      $ecb = Get-ExpectChangeBaseline $p $tgt
       $script:LastMouseReceipt = ''
       $mx = $pt.X; $my = $pt.Y
       $dbl = {
-        [void][DT]::SetCursorPos($mx, $my)
+        if (-not [DT]::SetCursorPos($mx, $my)) { throw "SetCursorPos failed for ($mx,$my) - no mouse button event was sent" }
         Start-Sleep -Milliseconds 150
         1..2 | ForEach-Object {
-          [DT]::mouse_event($MOUSE_LDOWN, 0, 0, 0, [IntPtr]::Zero)
-          Start-Sleep -Milliseconds 40
-          [DT]::mouse_event($MOUSE_LUP, 0, 0, 0, [IntPtr]::Zero)
+          [void](Invoke-MouseButtonEvent 'left' $true)
+          try { Start-Sleep -Milliseconds 40 } finally { [void](Invoke-MouseButtonEvent 'left' $false) }
           Start-Sleep -Milliseconds 60
         }
+        $script:LastMouseReceipt = 'SendInput-inserted=4/4'
       }
       if ($mods) {
-        $rc = Invoke-ModifierGesture @(Resolve-MouseModifiers $mods) $dbl
-        $script:LastMouseReceipt = (Format-ModifierReceipt $rc)
-      } else { & $dbl }
+        $inputAction = { $rc = Invoke-ModifierGesture @(Resolve-MouseModifiers $mods) $dbl; $script:LastMouseReceipt = (Format-ModifierReceipt $rc) + ' mouse=SendInput-inserted=4/4' }
+      } else { $inputAction = $dbl }
+      $auditDetail = "coords=$($pt.X),$($pt.Y)$spaceLog button=left x2 mods=$(if ($mods) { $mods.ToLowerInvariant() } else { 'none' })"
+      $dblclickRun = Invoke-ObservedMouseInput $Cmd $auditArgs "$rx,$ry space=$($origin.Space)" $pt.X $pt.Y $tgt ($p.Sel -ne '') $p.AllowOutside $auditDetail $inputAction
+      Write-Output $dblclickRun.Echo
       "double-clicked $($pt.X),$($pt.Y)$(Format-PointSpaceReceipt $origin $rx $ry)$(if ($mods) { ' mods=' + $mods.ToLowerInvariant() })$($script:LastMouseReceipt)"
       Invoke-ExpectChangeCheck $p $ecb 'double-clicked'
       Invoke-ActionExpectation $p $tgt 'double-clicked'
@@ -250,10 +281,13 @@ function Get-WheelPointObservation([int]$X, [int]$Y, $Target, [string]$Phase, [b
         }
       }
       $hit = Get-HitWindow $X $Y
+      $hitState = if ($null -eq $hit) { 'unknown' } else { [string](Get-OptValue $hit 'State') }
       $foreground = [DT]::GetForegroundWindow()
       if ($null -ne $Target) {
-        $observed = if ($null -eq $hit) { '(none)' } else { "pid=$($hit.Pid) hwnd=$($hit.Hwnd) title='$($hit.Title)'" }
-        if ($null -eq $hit -or $hit.Hwnd -ne $Target.Handle) {
+        $observed = if ($hitState -eq 'hit') { "pid=$($hit.Pid) hwnd=$($hit.Hwnd) title='$($hit.Title)'" }
+          elseif ($hitState -eq 'none') { 'none (nothing answers the hit test)' }
+          else { 'unknown (hit test did not answer' + $(if ($null -ne $hit) { ': ' + [string](Get-OptValue $hit 'Error') } else { '' }) + ')' }
+        if ($hitState -ne 'hit' -or $hit.Hwnd -ne $Target.Handle) {
           throw "wheel target guard ($Phase): scroll point ($X,$Y) observes $observed, not target hwnd=$($Target.Handle) '$($Target.Title)'; no wheel input was sent."
         }
         if ($RequireForeground -and $foreground -ne $Target.Handle) {
@@ -625,39 +659,40 @@ function Invoke-Handler-relclick([string]$Cmd, [string[]]$Rest) {
       $rcSel = [string]$p.Words[0]
       $rcDx = [int]$p.Words[1]
       $rcDy = [int]$p.Words[2]
-      $tgt = Resolve-Target $rcSel $p.Force $p.AlwaysActivate $p.ExpectHandle
-      Emit-ResolveNote
-      Invoke-TargetBlockGuard $tgt
-      # v4.4.1 CU-REL-01: the rect is read again, by handle, AFTER the activation above - restoring
-      # or re-raising a window moves it, and Get-TargetRect prefers the snapshot taken at select
-      # time. The six geometry fields are pinned onto the target so every reader in this call (the
-      # content guard and the landing check both go through Get-TargetRect) judges the SAME
-      # rectangle this click is computed from; otherwise one call computes from one rect and
-      # refuses against another.
-      $rcRect = Get-WindowVisibleRect $tgt.Handle
-      if ($null -eq $rcRect) { throw "relclick: the target window could not be measured after activation (handle gone?) - NOTHING was clicked. Re-read it with 'wins'." }
-      if ($rcRect.X -le -32000 -or $rcRect.Y -le -32000) { throw "relclick: the target still sits at the parked position ($($rcRect.X),$($rcRect.Y)) - it is minimized or off-screen, so NOTHING was clicked. Run 'win-restore <sel>' first." }
-      $tgt | Add-Member -NotePropertyName Left -NotePropertyValue $rcRect.X -Force
-      $tgt | Add-Member -NotePropertyName Top -NotePropertyValue $rcRect.Y -Force
-      $tgt | Add-Member -NotePropertyName W -NotePropertyValue $rcRect.W -Force
-      $tgt | Add-Member -NotePropertyName H -NotePropertyValue $rcRect.H -Force
-      $tgt | Add-Member -NotePropertyName Right -NotePropertyValue ($rcRect.X + $rcRect.W) -Force
-      $tgt | Add-Member -NotePropertyName Bottom -NotePropertyValue ($rcRect.Y + $rcRect.H) -Force
-      Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
-      $rcX = $rcRect.X + $rcDx
-      $rcY = $rcRect.Y + $rcDy
-      Invoke-HitWindowCheck $rcX $rcY $tgt $true $p.AllowOutside
-      # The rect check above answers "is the point inside the target". It does not answer "whose
-      # window is under the point", and that second half is what relclick never asked.
-      $rcHit = Get-HitWindow $rcX $rcY
-      if (-not (Test-LandingOnTarget $rcHit $tgt)) {
-        if (-not $p.AllowOutside) { throw (Format-LandingVerdict $rcX $rcY $rcHit $tgt $false) }
-        Write-Output (Format-LandingVerdict $rcX $rcY $rcHit $tgt $true)
-      }
-      $rcLanding = $(if ($null -eq $rcHit) { 'none' } else { "$($rcHit.Hwnd)" })
       $rcLogArgs = Get-RedactedLogArgs $Rest @() $p.LogPayload
-      Log-Action $rcLogArgs "pid=$($tgt.Pid) title='$($tgt.Title)' screen=$rcX,$rcY rect=($($rcRect.X),$($rcRect.Y),$($rcRect.W)x$($rcRect.H)) origin=fresh-after-activation landing=$rcLanding sel='$rcSel'" $Cmd
-      Move-Click $rcX $rcY 'left'
+      $tgt = $null; $rcRect = $null
+      $rcX = 0; $rcY = 0
+      $preflightError = $null
+      try {
+        $tgt = Resolve-Target $rcSel $p.Force $p.AlwaysActivate $p.ExpectHandle
+        Emit-ResolveNote
+        Invoke-TargetBlockGuard $tgt
+        # v4.4.1 CU-REL-01: the rect is read again, by handle, AFTER the activation above - restoring
+        # or re-raising a window moves it, and Get-TargetRect prefers the snapshot taken at select
+        # time. Pin the same fresh rectangle for point derivation and the final landing check.
+        $rcRect = Get-WindowVisibleRect $tgt.Handle
+        if ($null -eq $rcRect) { throw "relclick: the target window could not be measured after activation (handle gone?) - NOTHING was clicked. Re-read it with 'wins'." }
+        if ($rcRect.X -le -32000 -or $rcRect.Y -le -32000 -or $rcRect.W -le 0 -or $rcRect.H -le 0) { throw "relclick: the target still has no usable visible rectangle ($($rcRect.X),$($rcRect.Y),$($rcRect.W)x$($rcRect.H)) - NOTHING was clicked. Run 'win-restore <sel>' first or re-read 'wins'." }
+        $tgt | Add-Member -NotePropertyName Left -NotePropertyValue $rcRect.X -Force
+        $tgt | Add-Member -NotePropertyName Top -NotePropertyValue $rcRect.Y -Force
+        $tgt | Add-Member -NotePropertyName W -NotePropertyValue $rcRect.W -Force
+        $tgt | Add-Member -NotePropertyName H -NotePropertyValue $rcRect.H -Force
+        $tgt | Add-Member -NotePropertyName Right -NotePropertyValue ($rcRect.X + $rcRect.W) -Force
+        $tgt | Add-Member -NotePropertyName Bottom -NotePropertyValue ($rcRect.Y + $rcRect.H) -Force
+        Invoke-ContentGuard $tgt $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
+        $rcX = $rcRect.X + $rcDx
+        $rcY = $rcRect.Y + $rcDy
+      } catch { $preflightError = $_ }
+      if ($null -ne $preflightError) {
+        $preDetail = "sel=$rcSel rel=$rcDx,$rcDy preflight=refused"
+        [void](Invoke-ObservedMouseInput $Cmd $rcLogArgs "$rcSel $rcDx,$rcDy" $rcX $rcY $tgt $true $p.AllowOutside $preDetail $null $preflightError)
+      }
+      $rcDetail = "pid=$($tgt.Pid) screen=$rcX,$rcY rect=($($rcRect.X),$($rcRect.Y),$($rcRect.W)x$($rcRect.H)) origin=fresh-after-activation sel='$rcSel' button=left"
+      $rcAction = { Move-Click $rcX $rcY 'left' }
+      $rcRun = Invoke-ObservedMouseInput $Cmd $rcLogArgs "$rcSel $rcDx,$rcDy" $rcX $rcY $tgt $true $p.AllowOutside $rcDetail $rcAction
+      Write-Output $rcRun.Echo
+      $rcHit = $rcRun.Observation
+      $rcLanding = $(if ($null -eq $rcHit -or $rcHit.State -ne 'hit') { 'unknown' } else { "$($rcHit.Hwnd)" })
       "clicked window-relative ($rcDx,$rcDy) -> screen ($rcX,$rcY) of pid=$($tgt.Pid) hwnd=$($tgt.Handle) rect=($($rcRect.X),$($rcRect.Y),$($rcRect.W)x$($rcRect.H)) (origin re-read after activation, landing window=$rcLanding)"
 }
 

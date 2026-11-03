@@ -191,7 +191,12 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
     @($d7InlineRow).Count -eq 0 -and @($d7Calls).Count -eq 1)
   foreach ($d in @($d7InlineRow)) { Write-Output "      second copy of the row shape: $($d.Trim())" }
   $d7JsonPat = 'popup = [bool]$_.Popup;' + ' owner ='
-  $d7JsonLine = @($codeLines | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains($d7JsonPat) })
+  $d7JsonAll = @($codeLines | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains($d7JsonPat) })
+  # PT-5 added a second, opt-in projection for 'wins -z'. The default contract is pinned here;
+  # the extension is pinned by its own unit below, so neither schema can drift unnoticed and
+  # the default scan no longer reads a second line as a contract edit.
+  $d7JsonLine = @($d7JsonAll | Where-Object { -not $_.Contains('; z = ') })
+  $d7JsonZLine = @($d7JsonAll | Where-Object { $_.Contains('; z = ') })
   $d7Keys = @()
   if (@($d7JsonLine).Count -eq 1) {
     $d7Keys = @([regex]::Matches($d7JsonLine[0], '([a-z_]+) = ') | ForEach-Object { $_.Groups[1].Value })
@@ -201,6 +206,15 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
     @($d7JsonLine).Count -eq 1 -and (@($d7Keys | Sort-Object) -join ',') -ceq (($d7Want | Sort-Object) -join ','))
   if (@($d7JsonLine).Count -ne 1) { Write-Output "      wins json projection lines found: $(@($d7JsonLine).Count)" }
   if (@($d7Keys).Count -gt 0) { Write-Output "      wins json keys: $(@($d7Keys) -join ' ')" }
+  $d7ZKeys = @()
+  if (@($d7JsonZLine).Count -eq 1) {
+    $d7ZKeys = @([regex]::Matches($d7JsonZLine[0], '([a-z_]+) = ') | ForEach-Object { $_.Groups[1].Value })
+  }
+  $d7ZWant = @('pid', 'proc', 'class', 'popup', 'owner', 'main', 'x', 'y', 'w', 'h', 'title', 'z', 'hwnd', 'enabled', 'modal', 'modal_source')
+  ST-Check 'unit (PT-5): wins -z --json is exactly the declared 16-key extension (the 11 default keys plus z/hwnd/enabled/modal/modal_source, none dropped)' (
+    @($d7JsonZLine).Count -eq 1 -and (@($d7ZKeys | Sort-Object) -join ',') -ceq (($d7ZWant | Sort-Object) -join ','))
+  if (@($d7JsonZLine).Count -ne 1) { Write-Output "      wins -z json projection lines found: $(@($d7JsonZLine).Count)" }
+  if (@($d7ZKeys).Count -gt 0) { Write-Output ("      wins -z json keys: " + (@($d7ZKeys) -join ' ')) }
 
 
   # INC-01 (CU-REMAINDER-FINAL-20261029-01): the companion-content check is a pure function, so

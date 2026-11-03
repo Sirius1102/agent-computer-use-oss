@@ -18,7 +18,23 @@ function Invoke-Handler-help([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): wins - the case body, verbatim
 function Invoke-Handler-wins([string]$Cmd, [string[]]$Rest) {
-      $list = @(Get-WinList | Sort-Object -Property Area -Descending)
+      $zOrder = $false
+      foreach ($arg in @($Rest)) {
+        if ([string]$arg -ceq '-z') { $zOrder = $true }
+        else { throw (Get-UnknownFlagMessage 'wins' ([string]$arg)) }
+      }
+      $wins = @(Get-WinList)
+      if ($zOrder) {
+        $list = @($wins | Sort-Object -Property @{ Expression = { if ([string](Get-OptValue $_ 'ZState') -eq 'verified' -or ($null -eq (Get-OptValue $_ 'ZState') -and $null -ne (Get-OptValue $_ 'ZIndex'))) { 0 } else { 1 } } }, @{ Expression = { if ($null -ne (Get-OptValue $_ 'ZIndex')) { [int]$_.ZIndex } else { [int]::MaxValue } } })
+        $modalMap = Get-BoundedWindowModalStates $list 1000 24
+        foreach ($row in $list) {
+          $modal = $modalMap[[string]([IntPtr]$row.Handle).ToInt64()]
+          if ($null -eq $modal) { $modal = @{ State = 'unknown'; Source = 'probe-cap' } }
+          $row | Add-Member -NotePropertyName Enabled -NotePropertyValue ([bool][DT]::IsWindowEnabled($row.Handle)) -Force
+          $row | Add-Member -NotePropertyName Modal -NotePropertyValue ([string]$modal.State) -Force
+          $row | Add-Member -NotePropertyName ModalSource -NotePropertyValue ([string]$modal.Source) -Force
+        }
+      } else { $list = @($wins | Sort-Object -Property Area -Descending) }
       # proc + class columns exist because titles lie: two windows can both be
       # titled WeChat while belonging to Weixin.exe and its WeChatAppEx webview.
       # popup=yes marks WS_POPUP windows (context menus are their own top-level
@@ -29,9 +45,14 @@ function Invoke-Handler-wins([string]$Cmd, [string[]]$Rest) {
       # the JSON keys are pinned by a selftest unit, so adding or dropping one is a
       # deliberate contract edit and not a silent side effect of touching the print.
       if ($script:Json) {
-        @($list | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; class = $_.Class; popup = [bool]$_.Popup; owner = [int64]$_.Owner; main = $_.Main; x = $_.Left; y = $_.Top; w = $_.W; h = $_.H; title = $_.Title } }) | ConvertTo-Json -Compress -Depth 3
+        if ($zOrder) {
+          @($list | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; class = $_.Class; popup = [bool]$_.Popup; owner = [int64]$_.Owner; main = $_.Main; x = $_.Left; y = $_.Top; w = $_.W; h = $_.H; title = $_.Title; z = $(if ($null -ne (Get-OptValue $_ 'ZIndex')) { [int]$_.ZIndex } else { $null }); hwnd = ([IntPtr]$_.Handle).ToInt64(); enabled = [bool]$_.Enabled; modal = [string]$_.Modal; modal_source = [string]$_.ModalSource } }) | ConvertTo-Json -Compress -Depth 3
+        } else {
+          @($list | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; class = $_.Class; popup = [bool]$_.Popup; owner = [int64]$_.Owner; main = $_.Main; x = $_.Left; y = $_.Top; w = $_.W; h = $_.H; title = $_.Title } }) | ConvertTo-Json -Compress -Depth 3
+        }
       } else {
-        $list | ForEach-Object { Format-WinRowText $_ }
+        if ($zOrder) { $list | ForEach-Object { Format-WinZRowText $_ } }
+        else { $list | ForEach-Object { Format-WinRowText $_ } }
       }
 }
 
@@ -396,6 +417,7 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
         }
         [void]$shown.Add(@{ N = ($li + 1); Line = $ln })
       }
+      $filteredCount = @($shown).Count
       $cut = 0
       if ($maxLines -ge 0 -and @($shown).Count -gt $maxLines) { $cut = @($shown).Count - $maxLines; $shown = @($shown | Select-Object -First $maxLines) }
       # v1.5.9 (P-4): sparse-read hint on the negative path, TEXT MODE ONLY - the --json
@@ -423,9 +445,26 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
       $srArea = [long]$boxW * [long]$boxH
       $srPolicy = Get-SparseReadPolicy $srArea $minLineDensity
       $readLabel = ''
+      $readHint = $null
       if (-not $script:Json -and $srPolicy.Enabled) {
         $srDens = [math]::Round(([double]$total) / ($srArea / 100000.0), 2)
         $readLabel = " readability=$srDens lines per 100k px2 (area=$srArea px2, warn-below=$($srPolicy.Threshold), band=$($srPolicy.Band))"
+      }
+      if (-not $script:Json) {
+        if ($fileResult) { $uiaRead = @{ State = 'not-probed'; Walked = 0; Truncated = $false; Source = 'file-mode' } }
+        elseif ($null -eq $region.Win) { $uiaRead = @{ State = 'not-probed'; Walked = 0; Truncated = $false; Source = 'region-unbound' } }
+        else { $uiaRead = Get-ReadTextUiaHint ([int64]$region.Win.Handle) }
+        $hintState = 'no-low-readability-signal'
+        if ($total -eq 0 -or ($srArea -gt 0 -and ([double]$total / ($srArea / 100000.0)) -lt 0.1)) { $hintState = 'suspected-low-readability' }
+        if ($uiaRead.State -eq 'available') {
+          $uiaEcho = "uia=available walked=$($uiaRead.Walked) truncated=$($uiaRead.Truncated.ToString().ToLowerInvariant()) source=$($uiaRead.Source)"
+        } elseif ($uiaRead.State -eq 'not-probed') {
+          $uiaEcho = "uia=not-probed walked=not-probed truncated=not-probed source=$($uiaRead.Source)"
+        } else {
+          $uiaWalked = if ([int](Get-OptValue $uiaRead 'Walked') -gt 0) { [int](Get-OptValue $uiaRead 'Walked') } else { 'unknown' }
+          $uiaEcho = "uia=unknown walked=$uiaWalked truncated=unknown source=$($uiaRead.Source)"
+        }
+        $readHint = "OCR suitability: $hintState; total-lines=$total area=$srArea px2$(if ($srArea -gt 0) { ' density=' + [math]::Round(([double]$total / ($srArea / 100000.0)), 3) + ' lines/100kpx2' }) $uiaEcho; filtered-matches=$filteredCount output-cut=$cut. If the target looks graphical, try zoom, tpl-find, or re-capture/reposition. Hint only; it does not identify icons or change the exit code."
       }
       if (-not $script:Json -and (Test-SparseReadability $boxW $boxH $total $minLineDensity)) {
         $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity $sparseSubject
@@ -460,7 +499,45 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
         foreach ($e in $shown) { "L{0:D2} rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         }
         if ($sparseWarn) { Write-Output $sparseWarn }
+        if ($readHint) { Write-Output $readHint }
       }
+}
+
+# PT-4: count a bounded ControlView walk on the same bound target. A missing root, failed provider,
+# timeout or capped walk is never reported as zero UIA nodes. This only informs the text hint.
+function Get-ReadTextUiaHint([int64]$hwnd) {
+  $probeText = @'
+param([string]$ArgsFile, [string]$OutFile)
+$ErrorActionPreference = 'Stop'
+function Write-Result($o) { $j = $o | ConvertTo-Json -Depth 4 -Compress; [System.IO.File]::WriteAllText($OutFile, $j, (New-Object System.Text.UTF8Encoding($false))) }
+try {
+  $a = [System.IO.File]::ReadAllText($ArgsFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $el = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]([int64]$a.hwnd))
+  if ($null -eq $el) { Write-Result @{ status = 'no-uia-root'; value = ''; detail = ''; scanned = 0 }; exit 0 }
+  $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+  $q = New-Object System.Collections.Queue
+  $q.Enqueue($el)
+  $n = 0; $truncated = $false
+  while ($q.Count -gt 0 -and $n -lt 256) {
+    $cur = $q.Dequeue(); $n++
+    $child = $walker.GetFirstChild($cur)
+    while ($null -ne $child) {
+      if ($q.Count -ge 256) { $truncated = $true; break }
+      $q.Enqueue($child); $child = $walker.GetNextSibling($child)
+    }
+    if ($truncated) { break }
+  }
+  if ($q.Count -gt 0) { $truncated = $true }
+  Write-Result @{ status = 'ok'; value = ('nodes=' + $n + ';truncated=' + $truncated.ToString().ToLowerInvariant()); detail = ''; scanned = $n }
+} catch { Write-Result @{ status = 'error'; value = ''; detail = ''; scanned = 0 } }
+'@
+  $probe = Invoke-BoundedUiaProbe $hwnd '' 1000 $probeText
+  if ([string]$probe.Status -ne 'ok' -or [string]$probe.Value -notmatch '^nodes=(\d+);truncated=(true|false)$') {
+    return @{ State = 'unknown'; Walked = [int](Get-OptValue $probe 'Scanned'); Truncated = $null; Source = 'uia-' + [string]$probe.Status }
+  }
+  return @{ State = 'available'; Walked = [int]$Matches[1]; Truncated = ($Matches[2] -eq 'true'); Source = 'uia-control-view' }
 }
 
 # v4.4.0 (A-15): focus - the case body, verbatim
@@ -568,7 +645,9 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
       if ($fRegion) {
         $fRect = Parse-FindRegionSpec $fRegion
         $hit = Get-HitWindow ([int]($fRect.X + [int]($fRect.W / 2))) ([int]($fRect.Y + [int]($fRect.H / 2)))
-        if ($hit) { $fWin = [pscustomobject]@{ Handle = $hit.Hwnd; Pid = $hit.Pid }; $fWinHow = 'region-hit' }
+        # Three-state contract: only a real hit names the region's owner window. 'none' and
+        # 'unknown' leave the region unbound instead of inventing a handle of zero.
+        if ($null -ne $hit -and [string](Get-OptValue $hit 'State') -eq 'hit') { $fWin = [pscustomobject]@{ Handle = $hit.Hwnd; Pid = $hit.Pid }; $fWinHow = 'region-hit' }
       }
       if ($fTarget) {
         $fWin = Resolve-Window $fTarget
@@ -1375,10 +1454,31 @@ function Invoke-Handler-tpl-find([string]$Cmd, [string[]]$Rest) {
       $space = if ($spaceArg) { Test-PointSpaceArg $spaceArg } elseif ($p.Sel) { 'window' } else { 'screen' }
       $created = [string]$own.Values['--created']
       if ($space -ne 'screen' -and -not $p.Sel) { throw "tpl-find: --space $space needs --to <sel> (a relative region has no origin without a named window); nothing was read" }
+      $refusedOverrides = @()
+      if ($p.Force) { $refusedOverrides += '--force' }
+      if ($p.AlwaysActivate) { $refusedOverrides += '--always-activate' }
+      if ($refusedOverrides.Count -gt 0) {
+        # The refusal is machine-readable as well as human: `reason=read-only-override`
+        # with the exact flag(s) that were passed, so a caller or a test never has to
+        # match prose. The check sits before Resolve-Window/capture, so zero windows
+        # are resolved, zero captured and zero activated by this path.
+        throw ('tpl-find is read-only: ' + ($refusedOverrides -join ' and ') + ' refused (reason=read-only-override flag=' + ($refusedOverrides -join ',') + '); no window was activated')
+      }
       $regionText = [string]$own.Values['--region']
       $tgt = $null
       if ($p.Sel) {
-        $tgt = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle $created
+        # A locator must not raise a window or disturb an open popup just to read pixels.
+        # Resolve the selected handle without Activate-Win; a caller who needs it raised
+        # must do so as a separate, explicit command before taking the measurement.
+        $tgt = Resolve-Window $p.Sel
+        if (-not $tgt) { throw (Format-WindowMissMessage $p.Sel) }
+        $pin = Test-HandlePin $p.ExpectHandle $tgt.Handle
+        if (-not $pin.Ok) { throw "tpl-find: handle pin refused $($pin.Expected) vs $($pin.Actual) - no window was activated" }
+        if ($created) {
+          $identity = Test-ProcIdentity ([int]$tgt.Pid) $created
+          if (-not $identity.Ok) { throw "tpl-find: --created '$created' does not match the selected process ($($identity.Why)) - no window was activated" }
+        }
+        if ([DT]::IsIconic($tgt.Handle)) { throw "tpl-find: target '$($tgt.Title)' is minimized; it will not be restored or activated for a read" }
         Emit-ResolveNote
       }
       $origin = Get-PointSpaceOrigin $space $tgt
@@ -1414,10 +1514,6 @@ function Invoke-Handler-tpl-find([string]$Cmd, [string[]]$Rest) {
       # activation failed, the identical second call matched. The settle is only paid
       # when activation actually happened, and it is printed in the receipt.
       $settleMs = 0
-      if ($null -ne $tgt -and [bool]$tgt.Activated) {
-        $settleMs = 300
-        Start-Sleep -Milliseconds $settleMs
-      }
       $sw = [System.Diagnostics.Stopwatch]::StartNew()
       try {
         $tplNorm = ConvertTo-Bitmap32 $tplSrc
