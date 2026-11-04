@@ -927,6 +927,21 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     (@($b2Missing).Count -eq 0) -and ($b2Sites -ge 13))
   if (@($b2Missing).Count -gt 0) { Write-Output ('      B2: block guard missing from ' + (@($b2Missing) -join ', ')) }
   Write-Output ('      B2 block-guard live call sites: ' + $b2Sites + ' across ' + @($b2ClickCmds).Count + ' commands')
+  # X-04: the keyboard family has no landing observation, so a disabled target swallows the
+  # payload with a green receipt unless the same guard runs before the send. Counted LIVE
+  # lines, like the click census above, so a commented-out call reads as missing.
+  $b2KeyCmds = @('type', 'keys', 'paste', 'paste-file')
+  $b2KeyMissing = @()
+  $b2KeySites = 0
+  foreach ($b2k in $b2KeyCmds) {
+    $b2kt = Get-CommandCodeText $codeLines $b2k
+    $b2klive = @(@($b2kt -split "`n") | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('Invoke-TargetBlockGuard') })
+    $b2KeySites += $b2klive.Count
+    if ($b2klive.Count -eq 0) { $b2KeyMissing += $b2k }
+  }
+  ST-Check 'lint (X-04): every keyboard-send command that can carry an explicit window identity calls the shared block guard' (
+    (@($b2KeyMissing).Count -eq 0) -and ($b2KeySites -ge 4))
+  if (@($b2KeyMissing).Count -gt 0) { Write-Output ('      X-04: block guard missing from ' + (@($b2KeyMissing) -join ', ')) }
   $b2Plant = ('  # Invoke-TargetBlockGuard 1' + "`n" + '  Invoke-TargetBlockGuard 2')
   $b2PlantLive = @(@($b2Plant -split "`n") | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains('Invoke-TargetBlockGuard') })
   ST-Check 'unit (B2): the census refuses a commented-out call and still sees the live one (the scan has teeth)' (
@@ -1159,6 +1174,37 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
   ST-Check 'unit: D-7 note is silent when the main window is the one picked' ($d7NoteMain -ceq '')
   $d7NoteSolo = Format-NonMainPickNote $d7Picked[2] $d7Picked 'fg'
   ST-Check 'unit: D-7 note is silent for a single-window process (no ambiguity to report)' ($d7NoteSolo -ceq '')
+  # unit: X-04 the numeric-PID pick must not be shadowed by a dialog that a
+  # DISABLED main window owns. Every shape is pure rows, so the negative controls (an
+  # ENABLED main window, an unowned foreground popup, the main window itself) are pinned
+  # without a live fixture - the historical foreground-first rule must survive all three.
+  $x04Main = [pscustomobject]@{ Handle = [IntPtr]2169450; Pid = 526132; Owner = [int64]0; Enabled = $false; Main = 'yes'; W = 608; H = 499; Title = 'DTX-XMain' }
+  $x04Modal = [pscustomobject]@{ Handle = [IntPtr]4198918; Pid = 526132; Owner = [int64]2169450; Enabled = $true; Main = 'no'; W = 488; H = 229; Title = 'Connection Error' }
+  $x04Rows = @($x04Main, $x04Modal)
+  $x04Shadow = Get-DisabledMainShadow $x04Modal $x04Rows
+  ST-Check 'unit (X-04): a foreground dialog owned by the DISABLED main window resolves the pid to that main window' (
+    $null -ne $x04Shadow -and [int64]$x04Shadow.Handle -eq 2169450 -and $x04Shadow.Main -eq 'yes')
+  $x04Chain = @($x04Main, [pscustomobject]@{ Handle = [IntPtr]5000000; Pid = 526132; Owner = [int64]2169450; Enabled = $true; Main = 'no'; W = 10; H = 10; Title = 'middle' }, $x04Modal)
+  $x04ShadowChain = Get-DisabledMainShadow $x04Modal $x04Chain
+  ST-Check 'unit (X-04): the owned relationship is followed through an owner chain, not only one hop' (
+    $null -ne $x04ShadowChain -and [int64]$x04ShadowChain.Handle -eq 2169450)
+  $x04EnabledMain = [pscustomobject]@{ Handle = [IntPtr]2169450; Pid = 526132; Owner = [int64]0; Enabled = $true; Main = 'yes'; W = 608; H = 499; Title = 'DTX-XMain' }
+  $x04NegEnabled = Get-DisabledMainShadow $x04Modal @($x04EnabledMain, $x04Modal)
+  ST-Check 'unit (X-04 negative control): an ENABLED main window keeps foreground-first (no override)' ($null -eq $x04NegEnabled)
+  $x04NegUnowned = Get-DisabledMainShadow ([pscustomobject]@{ Handle = [IntPtr]6000000; Pid = 526132; Owner = [int64]0; Enabled = $true; Main = 'no'; W = 20; H = 20; Title = 'promo' }) $x04Rows
+  ST-Check 'unit (X-04 negative control): an unowned foreground popup beside a disabled main stays foreground-first' ($null -eq $x04NegUnowned)
+  $x04NegMain = Get-DisabledMainShadow $x04Main $x04Rows
+  ST-Check 'unit (X-04 negative control): a main window that IS the foreground pick is never re-picked' ($null -eq $x04NegMain)
+  $x04NegOtherPid = Get-DisabledMainShadow ([pscustomobject]@{ Handle = [IntPtr]7000000; Pid = 900; Owner = [int64]2169450; Enabled = $true; Main = 'no'; W = 20; H = 20; Title = 'other-pid' }) $x04Rows
+  ST-Check 'unit (X-04 negative control): an owned window of a DIFFERENT pid is not judged against this pid' ($null -eq $x04NegOtherPid)
+  $x04Note = Format-DisabledMainShadowNote $x04Modal $x04Shadow
+  $x04ShadowParked = $x04Shadow | Select-Object -Property * | Add-Member -NotePropertyName Pick -NotePropertyValue 'parked' -Force -PassThru
+  $x04NoteParked = Format-DisabledMainShadowNote $x04Modal $x04ShadowParked
+  ST-Check 'unit (X-04): the override note names the dialog, the disabled main window, its pick (main and parked) and why the pick changed' (
+    $x04Note.Contains('foreground window handle=4198918') -and $x04Note.Contains('DISABLED main window handle=2169450') -and
+    $x04Note.Contains('pick=main') -and $x04NoteParked.Contains('pick=parked') -and $x04Note.Contains('select the dialog itself'))
+  ST-Check 'unit (X-04): the note is silent when no override happened (no unconditional noise)' (
+    (Format-DisabledMainShadowNote $x04Modal $null) -ceq '')
   # ---------- v2.1.0 (plan doc 1.3): the take-a-coordinate ladder lives IN the tool ----------
   # The ladder existed only as memory in whoever happened to have paid for it, so every
   # new session re-derived it wrong (four eyeballed clicks in one session, each one

@@ -55,6 +55,7 @@ Each entry: command — what it does — minimal example.
 
 ### Windows
 
+- Numeric-PID selection is **foreground-first** by default (`pick=fg`), else largest (`pick=largest`). ONE exception (v4.9.0, X-04): a same-pid main window that is DISABLED and owns the foreground dialog via its Owner chain is picked instead (`pick=main`, or `pick=parked` when minimized), with a `note:` stating why. Every other shape keeps foreground-first. To act on a dialog itself, select it explicitly by title or `hwnd:`.
 - `focus <sel>` — bring a window to the front, then RE-READ the same handle (foreground / minimized / visible / rect on screen); echoes both readings with `fg_ok=` and exits 1 when the window is not actually usable; e.g. `focus "Notepad"`
 - `win-move <sel> <x> <y>` / `win-resize <sel> <w> <h>` — place / size a window; e.g. `win-move "Notepad" 0 0`
 - `win-max` / `win-min` / `win-restore` / `win-close <sel>` — window state changes; e.g. `win-restore "Notepad"`

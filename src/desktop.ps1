@@ -521,7 +521,7 @@ Set-StrictMode -Version Latest
 # four-source identity resolver legs with their order ruler). The other nine emitter lines the
 # live suite gained are inside the ladder and cannot be emitted offline, so they do not enter
 # this total (1166 -> 1183). v4.8.0 B-round (CU-REMAINDER-FINAL-20261029-01): the B-1 calibration fixture is rebuilt (labels measured CAL-A/B/C, geometry 1100x800, bands on the measured box quantization), B-2 adds the origin-resolver and archive-walk criteria (+6 emitters), B-3 adds the grid-proximity criteria (+7), and every A-14 registration moves with the measured tallies (1183 -> 1240).
-$script:DeclaredCheckTotal = 1305
+$script:DeclaredCheckTotal = 1314
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2443,7 +2443,10 @@ $script:StFamilyCounts = @{
   # v4.8.0 (C) single-file guards (stitched-gate3): the A-22 skip guards over the B-1/C lint
   # sections add 5 lines here and 13 to capture-ocr; the A-14b AST counter counts the 8+1
   # ST-Skip emitters the guards hold (170/263), in BOTH modes - the stitch is line-identical.
-  'window-targeting' = 'banners=16,lines=3213'
+  # X-04 (2026-11-03): the disabled-main-window override block adds 9 checks (one override,
+  # one owner-chain, four negative controls, two note producers, one keyboard-family guard
+  # census) and 44 lines to this family (git diff --numstat on lib/selftest-window-targeting.ps1).
+  'window-targeting' = 'banners=16,lines=3259'
   'expect-family' = 'banners=9,lines=705'
   # v4.7.0 (CU-REMAINDER-FINAL-20261029-01 INC-01): the companion-content resolver block - eight
   # offline legs, the wiring ruler and its swap witness, and the fixture-shape fix in the
@@ -2501,8 +2504,12 @@ $script:StFamilyCounts = @{
   # the ladder, so the declared total moves by the offline nine only (A-14b rows say which).
   # U12 (2026-11-03): the live-suite family gained the T-1 fixture hold/teeth control and the
   # one-snapshot PT-5 reconciliation (+76 -> 4034), then the tooltip fixture's WS_EX_NOACTIVATE
-  # fix and its foreground-integrity check (+22 -> 4056; measured by the gate, not summed here).
-  'live-suite' = 'banners=21,lines=4056'
+  # fix and its foreground-integrity check (+22 -> 4056), then D's closed dwell ruler (+47 -> 4103)
+  # and A's X-04 modal fixture (+94 -> 4197), then D2's Process-object ruler (family-span tally 4197
+  # -> 4210; the pin takes the gate's own measurement, not the file's raw line count), then A2's
+  # explicit uia-tree path token for the modal Cancel and the phantom-window target exclusion
+  # (+16 -> 4226).
+  'live-suite' = 'banners=21,lines=4226'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -2600,7 +2607,11 @@ $script:StFamilyCheckCounts = @(
   'Invoke-SelfTest=29',
   'Invoke-SelftestFamily-CaptureOcr=188',
   'Invoke-SelftestFamily-FlagsGrammar=92',
-  'Invoke-SelftestFamily-WindowTargeting=292',
+  # X-04 (2026-11-03): the disabled-main-window override block adds nine emitters (override,
+  # owner chain, four negative controls, two note producers, one keyboard-family guard census),
+  # 292 -> 301, measured by the same A-14b AST counter over lib/selftest-window-targeting.ps1
+  # (ST-Check=301, ST-Skip=0), not by adding the block's lines by hand.
+  'Invoke-SelftestFamily-WindowTargeting=301',
   'Invoke-SelftestFamily-DocsContract=62',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
@@ -2625,7 +2636,7 @@ $script:StFamilyCheckCounts = @(
   # and the four 'environment blocked' ST-Skip lines in the receipt catch; the nine offline ones are
   # six unit (INC-02) legs + contract (INC-02), unit (INC-03) + contract (INC-03). Only the offline
   # nine can enter the declared total.
-  'Invoke-SelftestFamily-LiveSuite=188',
+  'Invoke-SelftestFamily-LiveSuite=191',
   'Invoke-SelftestFamily-GateMeta=168'
 )
 
@@ -3889,6 +3900,55 @@ function Format-NonMainPickNote($pick, $rows, [string]$basis) {
   return "note: pid=$($pick.Pid) has a main window handle=$([int64]$m.Handle) '$($m.Title)' ($($m.W)x$($m.H)) but this pick is handle=$([int64]$pick.Handle) '$($pick.Title)' ($($pick.W)x$($pick.H)) because $why - if you meant the main window select it by title / proc: / class: (or by the handle above); --index-style selectors do not exist here"
 }
 
+# X-04 (2026-11-03): a numeric PID is an identity for the PROCESS, and the foreground-first
+# rule exists so `type --to <pid>` reaches the dialog the user is looking at. When the
+# process's own main window is DISABLED, though, its owned dialog is the thing that disabled
+# it: routing input to that dialog silently bypasses the disabled main window the caller
+# named, and the keyboard handlers have no hit-test to catch the swap. This returns the
+# DISABLED main window when the foreground pick is its owned descendant (owner chain, bounded),
+# and $null in every other shape - so a modeless popup, an enabled main window, or an owned
+# window belonging to somebody else keeps the historical foreground-first pick (the negative
+# control the offline check pins). Pure over rows: Enabled/Main/Owner are already stamped by
+# Get-WinList, so the whole judgement is provable without a desktop.
+function Get-DisabledMainShadow($pick, $rows) {
+  if ($null -eq $pick) { return $null }
+  if ([string](Get-OptValue $pick 'Main') -eq 'yes') { return $null }
+  $pickPid = [int](Get-OptValue $pick 'Pid')
+  $mainByHandle = @{}
+  $ownerByHandle = @{}
+  foreach ($r in @($rows)) {
+    $hKey = ([Int64]$r.Handle).ToString()
+    $ownerByHandle[$hKey] = [int64](Get-OptValue $r 'Owner')
+    if ([int](Get-OptValue $r 'Pid') -eq $pickPid -and [string](Get-OptValue $r 'Main') -eq 'yes' -and -not [bool](Get-OptValue $r 'Enabled')) {
+      $mainByHandle[$hKey] = $r
+    }
+  }
+  if ($mainByHandle.Count -eq 0) { return $null }
+  $h = [int64](Get-OptValue $pick 'Owner')
+  $seen = @{}
+  for ($i = 0; $i -lt 16; $i++) {
+    if ($h -eq 0) { return $null }
+    $key = "$h"
+    if ($seen.ContainsKey($key)) { return $null }
+    $seen[$key] = $true
+    if ($mainByHandle.ContainsKey($key)) { return $mainByHandle[$key] }
+    if (-not $ownerByHandle.ContainsKey($key)) { return $null }
+    $h = [int64]$ownerByHandle[$key]
+    if ($h -eq [int64](Get-OptValue $pick 'Handle')) { return $null }
+  }
+  return $null
+}
+
+# The note that keeps this pick auditable. Same one-producer rule as Format-NonMainPickNote:
+# an unconditional sentence would be noise, so this fires only when the override actually
+# changed which window the numeric PID resolves to.
+function Format-DisabledMainShadowNote($pick, $shadow) {
+  if ($null -eq $pick -or $null -eq $shadow) { return '' }
+  $shadowPick = [string](Get-OptValue $shadow 'Pick')
+  if ($shadowPick -eq '') { $shadowPick = 'main' }
+  return "note: pid=$($pick.Pid) foreground window handle=$([int64]$pick.Handle) '$($pick.Title)' ($($pick.W)x$($pick.H)) is owned by the DISABLED main window handle=$([int64]$shadow.Handle) '$($shadow.Title)' ($($shadow.W)x$($shadow.H)); pick=$shadowPick because it is the window the pid names, the foreground dialog is only an owned popup of a disabled main window, and input routed to its dialog would bypass a disabled main window - select the dialog itself by title / hwnd: if that is really the target"
+}
+
 # The wins text row, in exactly one place: the selftest pins both this line's columns and
 # the JSON key set, so "the print gained a column but the machine view did not" cannot
 # happen quietly (that split is how two views of the same fact start lying to each other).
@@ -4139,6 +4199,18 @@ function Resolve-Window([string]$sel) {
     $fgWin = @($selHits | Where-Object { $_.Handle -eq $fgH })
     if ($fgWin) {
       $pick = $fgWin[0]
+      # X-04: the foreground window of a pid can be the dialog its DISABLED main window owns.
+      # Foreground-first would then hand input to the dialog and silently skip the disabled
+      # window the caller named by pid; the keyboard family has no hit-test to notice. Pick
+      # the main window instead and let the shared block guard refuse, before any input.
+      $shadowMain = Get-DisabledMainShadow $pick $all
+      if ($null -ne $shadowMain) {
+        $shadowIconic = Test-WindowIconic $shadowMain
+        $shadowMain | Add-Member -NotePropertyName Iconic -NotePropertyValue $shadowIconic -Force
+        $shadowMain | Add-Member -NotePropertyName Pick -NotePropertyValue (Get-WindowPickLabel 'main' $shadowIconic) -Force
+        $script:ResolveNote = Format-DisabledMainShadowNote $pick $shadowMain
+        return $shadowMain
+      }
       # v4.2.0 (feedback item 6): a minimized window CAN still be the foreground one (a
       # programmatic minimize hands the foreground to nobody), so the label has to tell
       # "picked while parked" apart from a trustworthy foreground hit.

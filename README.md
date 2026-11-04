@@ -138,7 +138,7 @@ After an action, do not treat exit code 0 as the business result. Use `read-text
 
 ## Window selector `<sel>`
 
-- A **numeric PID** matches windows by process id only. If several of that process's windows exist (main window + modal dialog), the one currently in the **foreground wins** (`pick=fg`); otherwise the largest non-minimized one (`pick=largest`).
+- A **numeric PID** matches windows by process id only. If several of that process's windows exist (main window + modal dialog), the one currently in the **foreground wins** (`pick=fg`); otherwise the largest non-minimized one (`pick=largest`). **One exception (v4.9.0, X-04):** when the pid's main window is DISABLED and the foreground window's Owner chain (≤16 hops, cycle-guarded) reaches it, the main window is picked instead (`pick=main`, or `pick=parked` when minimized) and the `note:` states why — the foreground window is only an owned popup of a disabled main window, so input to it would bypass the disabled main. Every other shape keeps foreground-first. To act on the dialog itself, select it explicitly by title or `hwnd:`; that path is never re-routed.
 - Any other string is a **case-insensitive title substring**; `proc:<name>` matches the process name exactly, `class:<substr>` matches the window class as a substring.
 - Prefix with `t:` / `title:` to force title matching (needed when the substring itself is all digits).
 - When a title/proc/class selector matches **several** windows the tool *refuses* and prints every candidate — it will not silently pick the largest one. Disambiguate with a pid, `proc:` or `class:`.

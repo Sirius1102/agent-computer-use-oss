@@ -18,13 +18,15 @@ Anywhere a `<sel>` appears:
 
 | form | meaning |
 |---|---|
-| `<number>` | pid (prefers the pid's foreground window, else its largest) |
+| `<number>` | pid (prefers the pid's foreground window, else its largest; the one exception is a DISABLED same-pid main window whose owned dialog holds the foreground — see below) |
 | `<text>` | title substring (case-insensitive) |
 | `proc:<name>` | process name |
 | `class:<substr>` | window class substring |
 | `t:<digits>` | force title matching for digit-only strings |
 
 If a title/proc/class selector matches several windows, resolution **refuses and lists every candidate** — disambiguate with pid / proc: / class: / a longer title.
+
+Numeric-PID selection stays **foreground-first** by default. The ONE exception (v4.9.0, X-04): when the pid's main window is disabled and the foreground window's Owner chain (≤16 hops, cycle-guarded) reaches it, the main window is picked instead and the receipt prints `pick=main` (`pick=parked` when the main is minimized) plus a `note:` stating the reason. Every other shape keeps foreground-first. To act on a dialog itself, select it explicitly by title or `hwnd:` — that path is never re-routed by this exception.
 
 ## Screenshots And Reading
 

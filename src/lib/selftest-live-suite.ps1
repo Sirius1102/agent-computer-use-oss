@@ -224,9 +224,12 @@ function Invoke-SelftestFamily-LiveSuite($Ctx) {
 
     # Skip full-screen phantom windows (the IME host window, Program Manager,
     # the NVIDIA overlay): they are the biggest by area but hold no text of
-    # their own, so OCR'ing them proves nothing about a real target.
+    # their own, so OCR'ing them proves nothing about a real target.  The size
+    # test runs in this (DPI-unaware) process' virtual 3840x2160 space while
+    # $wins reports physical 3839x2160, so the overlay slips past it by one
+    # pixel; name it explicitly rather than pick a live FPS surface as "target".
     $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
-    $real = @($wins | Where-Object { $_.Title -and -not ($_.W -ge $vs.Width -and $_.H -ge $vs.Height) })
+    $real = @($wins | Where-Object { $_.Title -and $_.Proc -ne 'NVIDIA Overlay' -and -not ($_.W -ge $vs.Width -and $_.H -ge $vs.Height) })
     $tgt = if ($real.Count -gt 0) { $real | Sort-Object -Property Area -Descending | Select-Object -First 1 } else { $w0 }
     $ocrOk = $true
     try { $null = Get-OcrEngine } catch { $ocrOk = $false }
@@ -2192,19 +2195,186 @@ $lblB.Add_MouseDown({ [System.IO.File]::WriteAllText(($env:TEMP + '\dtx-flagprob
           return @{ Out = $oF; Code = $cF; Sec = $swF.Elapsed.TotalSeconds }
         }
 
-        $hvDef = & $fpCmd 'hover 60 60'
-        $hvLong = & $fpCmd 'hover 60 60 --dwell 2200'
+        # the dwell ruler is closed on ONE call: park the pointer, start the child, mark
+        # the moment the pointer ACTUALLY arrives, and stop at that child's exit. Startup,
+        # parsing and hit-testing all sit BEFORE the arrival mark, so each call cancels
+        # its own overhead instead of two whole-process totals cancelling each other -
+        # the number under test is the wait the product itself performed.
+        # v4.9.0 (U12-D2): the child is started as a Process with redirected streams and
+        # EXIT CODE read off that same object. The v1 form used Start-Process -PassThru
+        # with redirect FILES; in this host its ExitCode came back null while the output
+        # arrived, so the two echo checks failed while the timing checks passed (measured
+        # on the bench, 2026-11-04). Both the text the product printed and its exit code
+        # now come from one call, so an echo assertion can never silently skip.
+        $fpDwell = {
+          param([string]$fpArgs, [int]$px, [int]$py)
+          $arrived = -1.0
+          $endSec = 0.0
+          $code = -1
+          $outTxt = ''
+          $pD = $null
+          try {
+            [void][DT]::SetCursorPos(5, 5)
+            Start-Sleep -Milliseconds 150
+            $psiD = New-Object System.Diagnostics.ProcessStartInfo
+            $psiD.FileName = 'powershell.exe'
+            $psiD.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $script:ToolEntryPath + '" ' + $fpArgs
+            $psiD.UseShellExecute = $false
+            $psiD.CreateNoWindow = $true
+            $psiD.RedirectStandardOutput = $true
+            $psiD.RedirectStandardError = $true
+            $swD = [System.Diagnostics.Stopwatch]::StartNew()
+            $pD = [System.Diagnostics.Process]::Start($psiD)
+            $outTask = $pD.StandardOutput.ReadToEndAsync()
+            $errTask = $pD.StandardError.ReadToEndAsync()
+            $wpt = New-Object DT+POINT
+            while ($swD.Elapsed.TotalSeconds -lt 25) {
+              [void][DT]::GetCursorPos([ref]$wpt)
+              if ($wpt.X -eq $px -and $wpt.Y -eq $py) { $arrived = $swD.Elapsed.TotalSeconds; break }
+              if ($pD.HasExited) { break }
+              Start-Sleep -Milliseconds 8
+            }
+            if (-not $pD.WaitForExit(15000)) {
+              try { Stop-Process -Id $pD.Id -Force -ErrorAction SilentlyContinue } catch { }
+              [void]$pD.WaitForExit(5000)
+            }
+            $swD.Stop()
+            $endSec = $swD.Elapsed.TotalSeconds
+            $code = $pD.ExitCode
+            try { $outTxt = $outTask.Result + $errTask.Result } catch { $outTxt = '' }
+          } finally {
+            if ($null -ne $pD) { try { $pD.Dispose() } catch { } }
+          }
+          $waitSec = -1.0
+          if ($arrived -ge 0) { $waitSec = $endSec - $arrived }
+          return @{ Out = $outTxt; Code = $code; Sec = $endSec; Arrive = $arrived; Wait = $waitSec }
+        }
+
+        $hvDef = & $fpDwell 'hover 60 60' 60 60
+        $hvLong = & $fpDwell 'hover 60 60 --dwell 2200' 60 60
+        $hvShort = & $fpDwell 'hover 60 60 --dwell 100' 60 60
         $hvBad = & $fpCmd 'hover 60 60 --dwell abc'
         ST-Check 'live: hover --dwell reaches the handler through the real CLI and reports the value it used' (
           $hvLong.Code -eq 0 -and $hvLong.Out -match 'for 2200ms' -and $hvLong.Out -notmatch 'unknown flag')
         ST-Check 'live: hover without --dwell still dwells the documented 800ms (default did not drift)' (
           $hvDef.Code -eq 0 -and $hvDef.Out -match 'for 800ms')
         ST-Check 'live: --dwell 2200 bought ~1.4s of real dwell over the default (flag not merely parsed)' (
-          ($hvLong.Sec - $hvDef.Sec) -ge 1.2)
+          $hvLong.Code -eq 0 -and $hvDef.Code -eq 0 -and $hvLong.Arrive -ge 0 -and $hvDef.Arrive -ge 0 -and ($hvLong.Wait - $hvDef.Wait) -ge 1.2)
+        ST-Check 'live: CONTROL - --dwell 100 reads back far under the default on the same arrival-to-exit ruler (a skipped or shortened wait cannot pass)' (
+          $hvShort.Code -eq 0 -and $hvShort.Arrive -ge 0 -and $hvShort.Wait -ge 0 -and $hvShort.Wait -lt 0.6)
         ST-Check 'live: hover --dwell abc is refused by name instead of defaulting or going into the payload' (
           $hvBad.Code -ne 0 -and $hvBad.Out.Contains('--dwell') -and $hvBad.Out.Contains('needs a whole number'))
-        Write-Output ("      dwell: default=" + [math]::Round($hvDef.Sec, 2) + "s set=" + [math]::Round($hvLong.Sec, 2) +
-          "s delta=" + [math]::Round(($hvLong.Sec - $hvDef.Sec), 2) + "s bad-exit=$($hvBad.Code)")
+        Write-Output ("      dwell: default=" + [math]::Round($hvDef.Wait, 2) + "s set=" + [math]::Round($hvLong.Wait, 2) +
+          "s delta=" + [math]::Round(($hvLong.Wait - $hvDef.Wait), 2) + "s short=" + [math]::Round($hvShort.Wait, 2) +
+          "s exits=" + $hvDef.Code + '/' + $hvLong.Code + '/' + $hvShort.Code + '/' + $hvBad.Code +
+          " outlen=" + $hvDef.Out.Length + '/' + $hvLong.Out.Length + " (arrival->exit per call; startup before arrival is excluded)")
+
+        # X-04 positive control: a fixture main window opens its own modal dialog, and the
+        # dialog's ONLY action is Cancel (it writes a marker then closes). The dialog is
+        # selected explicitly by its handle, so nothing here drives a real application.
+        $x04Marker = Join-Path $env:TEMP 'dtx-x04-cancel.txt'
+        $x04Script = Join-Path $env:TEMP ('dtx-x04-modal-' + [guid]::NewGuid().ToString('N') + '.ps1')
+        $x04Src = @'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class HX04 {
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern IntPtr GetConsoleWindow();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+}
+"@
+[void][HX04]::SetProcessDPIAware()
+$hc = [HX04]::GetConsoleWindow()
+if ($hc -ne [IntPtr]::Zero) { [void][HX04]::ShowWindow($hc, 0) }
+$main = New-Object System.Windows.Forms.Form
+$main.Text = 'DTX-X04-M'
+$main.ClientSize = New-Object System.Drawing.Size(520, 360)
+$main.StartPosition = 'Manual'
+$main.Location = New-Object System.Drawing.Point(360, 260)
+$main.TopMost = $true
+$main.BackColor = [System.Drawing.Color]::White
+$note = New-Object System.Windows.Forms.Label
+$note.Text = 'X-04 modal fixture - select the dialog explicitly'
+$note.AutoSize = $true
+$note.Location = New-Object System.Drawing.Point(24, 24)
+[void]$main.Controls.Add($note)
+$modal = New-Object System.Windows.Forms.Form
+$modal.Text = 'DTX-X04-D'
+$modal.ClientSize = New-Object System.Drawing.Size(380, 200)
+$modal.StartPosition = 'CenterParent'
+$modal.TopMost = $true
+$modal.BackColor = [System.Drawing.Color]::White
+$cancel = New-Object System.Windows.Forms.Button
+$cancel.Text = 'Cancel'
+$cancel.Size = New-Object System.Drawing.Size(100, 36)
+$cancel.Location = New-Object System.Drawing.Point(140, 150)
+$cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+$cancel.Add_Click({ [System.IO.File]::WriteAllText(($env:TEMP + '\dtx-x04-cancel.txt'), 'CANCEL'); $modal.Close() })
+[void]$modal.Controls.Add($cancel)
+$tm = New-Object System.Windows.Forms.Timer
+$tm.Interval = 1800
+$tm.Add_Tick({ $tm.Stop(); [void]$modal.ShowDialog($main) })
+$tm.Start()
+[void]$main.Show()
+[System.Windows.Forms.Application]::Run($main)
+'@
+        $x04Proc = $null; $x04Main = $null; $x04Modal = $null; $x04MainH = 0; $x04H = 0
+        $x04Info = @{ Out = ''; Code = -1 }; $x04Click = @{ Out = ''; Code = -1 }
+        $x04Tree = @{ Out = ''; Code = -1 }
+        $x04MarkerTxt = ''; $x04MarkerBefore = $true; $x04Gone = $false; $x04MainAlive = $false; $x04Err = ''
+        try {
+          $x04Stale = Resolve-Window 'DTX-X04-M'
+          if ($null -ne $x04Stale) { try { Stop-Process -Id $x04Stale.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 400 }
+          if (Test-Path -LiteralPath $x04Marker) { Remove-Item -LiteralPath $x04Marker -Force }
+          [System.IO.File]::WriteAllText($x04Script, $x04Src, (New-Object System.Text.UTF8Encoding($false)))
+          $x04Proc = Start-Process powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $x04Script) -PassThru
+          $x04Sw = [System.Diagnostics.Stopwatch]::StartNew()
+          while ($x04Sw.Elapsed.TotalSeconds -lt 15) { $x04Main = Resolve-Window 'DTX-X04-M'; if ($null -ne $x04Main) { break }; Start-Sleep -Milliseconds 250 }
+          while ($x04Sw.Elapsed.TotalSeconds -lt 15) { $x04Modal = Resolve-Window 'DTX-X04-D'; if ($null -ne $x04Modal) { break }; Start-Sleep -Milliseconds 250 }
+          if ($null -eq $x04Main -or $null -eq $x04Modal) { throw 'fixture did not stage main+dialog within 15s' }
+          $x04MainH = [int64]([IntPtr](Get-OptValue $x04Main 'Handle'))
+          $x04H = [int64]([IntPtr](Get-OptValue $x04Modal 'Handle'))
+          $x04Focus = & $fpCmd ('focus hwnd:' + $x04H)
+          $x04Info = & $fpCmd ('info ' + [string]$x04Proc.Id)
+          $x04MarkerBefore = Test-Path -LiteralPath $x04Marker
+          # the fixture's Cancel is a bare WinForms button that UIA reports as a Pane;
+          # name-only matching refuses it by design, so select it explicitly by the
+          # path+token copied from uia-tree (still hwnd:<dialog>, no real business input)
+          $x04Tree = & $fpCmd ('uia-tree hwnd:' + $x04H)
+          $x04Path = ''; $x04Token = ''
+          $x04Re = [regex]::Match([string]$x04Tree.Out, "(?m)^[ \t]*([A-Za-z]+) \| name='Cancel' \| id='[^']*' \| ([0-9]+,[0-9]+,[0-9]+x[0-9]+) \| [^|]*\| path=(/[0-9/]+)\s*$")
+          if ($x04Re.Success) {
+            $x04Token = $x04Re.Groups[1].Value + '|Cancel|' + $x04Re.Groups[2].Value
+            $x04Path = $x04Re.Groups[3].Value
+            $x04Click = & $fpCmd ('uia-click hwnd:' + $x04H + ' ' + $x04Path + ' ' + $x04Token)
+          } else {
+            $x04Err = 'uia-tree did not expose a Cancel token for the dialog'
+          }
+          $x04Sw2 = [System.Diagnostics.Stopwatch]::StartNew()
+          while ($x04Sw2.Elapsed.TotalSeconds -lt 5) {
+            if ($null -eq (Resolve-Window 'DTX-X04-D')) { $x04Gone = $true; break }
+            Start-Sleep -Milliseconds 200
+          }
+          if (Test-Path -LiteralPath $x04Marker) { $x04MarkerTxt = ([System.IO.File]::ReadAllText($x04Marker)).Trim() }
+          $x04MainNow = Resolve-Window 'DTX-X04-M'
+          $x04MainAlive = ($null -ne $x04MainNow) -and ([int64]([IntPtr](Get-OptValue $x04MainNow 'Handle')) -eq $x04MainH)
+        } catch { $x04Err = $_.Exception.Message } finally {
+          if ($null -ne $x04Proc) { try { Stop-Process -Id $x04Proc.Id -Force -ErrorAction SilentlyContinue } catch { } }
+          if (Test-Path -LiteralPath $x04Script) { Remove-Item -LiteralPath $x04Script -Force -ErrorAction SilentlyContinue }
+          if (Test-Path -LiteralPath $x04Marker) { Remove-Item -LiteralPath $x04Marker -Force -ErrorAction SilentlyContinue }
+          Start-Sleep -Milliseconds 300
+        }
+        ST-Check 'live (X-04 contract): with the dialog up, a numeric-PID info receipt names pick=main and the reason (the exception is never silent)' (
+          $x04Info.Code -eq 0 -and $x04Info.Out -match 'pick=main' -and $x04Info.Out -match 'DISABLED main window' -and
+          $x04Info.Out -match 'select the dialog itself')
+        ST-Check 'live (X-04 positive): an explicit hwnd:<dialog> uia-click invokes the dialog Cancel button only (marker CANCEL, dialog gone, main alive)' (
+          $x04Click.Code -eq 0 -and $x04Click.Out -match 'Cancel' -and (-not $x04MarkerBefore) -and $x04MarkerTxt -eq 'CANCEL' -and
+          $x04Gone -and $x04MainAlive)
+        Write-Output ("      x04 modal: pid=" + [string]$x04Proc.Id + " dialog-hwnd=" + [string]$x04H + " info-exit=" + $x04Info.Code +
+          " click-exit=" + $x04Click.Code + " marker='" + $x04MarkerTxt + "' dialog-gone=" + $x04Gone + " main-alive=" + $x04MainAlive + " err='" + $x04Err + "'")
 
         # drag points are measured from THIS window's own visible rect and land in its
         # empty client area (labels sit top-left, x<340 / y<160): a press-drag-release

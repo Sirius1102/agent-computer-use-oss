@@ -172,8 +172,8 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   $p6EchoNeedle = 'iconic=' + [char]36 + '(Get-OptValue'
   $p6IconicSites = @($codeLines | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains($p6IconNeedle) })
   $p6EchoSites = @($codeLines | Where-Object { $_ -notmatch '^\s*#' -and $_.Contains($p6EchoNeedle) })
-  ST-Check 'lint: both Resolve-Window branches stamp Iconic, and assert-window echoes it (one site each)' (
-    (@($p6IconicSites).Count -eq 2) -and (@($p6EchoSites).Count -eq 1))
+  ST-Check 'lint: every Resolve-Window branch stamps Iconic, and assert-window echoes it (one echo site)' (
+    (@($p6IconicSites).Count -eq 3) -and (@($p6EchoSites).Count -eq 1))
   $d7RowNoOwner = Format-WinRowText ([pscustomobject]@{ Pid = 1; Proc = 'p'; Class = 'c'; Popup = $false; Owner = [int64]0; Main = 'yes'; Left = 0; Top = 0; Right = 8; Bottom = 6; W = 8; H = 6; Title = 'T' })
   ST-Check 'unit: wins text row prints owner=- for an unowned window and carries main=' ($d7RowNoOwner.Contains('owner=- main=yes'))
   $d7RowOwner = Format-WinRowText ([pscustomobject]@{ Pid = 1; Proc = 'p'; Class = 'c'; Popup = $false; Owner = [int64]42; Main = 'no'; Left = 0; Top = 0; Right = 8; Bottom = 6; W = 8; H = 6; Title = 'T' })

@@ -791,6 +791,10 @@ function Invoke-Handler-type([string]$Cmd, [string[]]$Rest) {
       $text = ($p.Words -join ' ')
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      # X-04: the keyboard family sends to whatever holds focus, so the same pre-input block
+      # guard the pointer family already runs must run here too - a disabled target window
+      # would otherwise swallow the payload with a green receipt.
+      Invoke-TargetBlockGuard $target
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       Log-Action (Get-RedactedLogArgs $Rest $p.Words $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)'" $Cmd
       $err = [DT]::SendUnicodeText($text)
@@ -883,6 +887,8 @@ function Invoke-Handler-keys([string]$Cmd, [string[]]$Rest) {
       $spec = $p.Words[0]
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      # X-04: same pre-input block guard as type - keys go to the focused window.
+      Invoke-TargetBlockGuard $target
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       Log-Action (Get-RedactedLogArgs $Rest @($spec) $p.LogPayload) "pid=$($target.Pid) title='$($target.Title)'" $Cmd
       [System.Windows.Forms.SendKeys]::SendWait($spec)
@@ -1567,6 +1573,9 @@ function Invoke-Handler-paste([string]$Cmd, [string[]]$Rest) {
       if (-not (Test-Path $file)) { throw "file not found: $file" }
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      # X-04: refuse a blocked target BEFORE the clipboard is touched, for the same reason
+      # the content guard runs here: a refusal must leave the user's clipboard untouched.
+      Invoke-TargetBlockGuard $target
       # Guard BEFORE touching the clipboard: a failed guard must leave the
       # user's clipboard and the target both untouched.
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
@@ -1669,6 +1678,8 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
       $fi = Get-Item -LiteralPath $srcPath
       $target = Resolve-Target $p.Sel $p.Force $p.AlwaysActivate $p.ExpectHandle
       Emit-ResolveNote
+      # X-04: same pre-input block guard as paste, before the clipboard is replaced.
+      Invoke-TargetBlockGuard $target
       Invoke-ContentGuard $target $p.GuardText $p.GuardRegion $p.Scale $p.MaxTiles $p.NoTile $p.Occlude $p.AllowOccluded $p.OcclGrid
       $clip = Save-ClipboardState
       Assert-ClipboardReplaceable $clip ([bool]$p.ReplaceClipboard) 'paste-file'
