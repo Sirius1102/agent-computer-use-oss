@@ -1,3 +1,3 @@
-38bd2378796d49270d81e762af3162c89b95cf977b1b9e31035fca54f97cc32a *agent-computer-use-v4.9.0-portable.zip
+499fb539d4327b73db683ccbf4d26d8ef751c7e8154340bf41aefa0c8e7a9d22 *agent-computer-use-v4.9.0-portable.zip
 829204eeb188d575359da8b17f0e3e0c6dae3994213ad9e6206f4d0691d64d70 *desktop.ps1
-dbc34a275c5c851ac0fccb324b2b13fb19c9032e1d1c211e3a382ea371fd6dd2 *members-v4.9.0.txt
+f9284e3350fb7cf47620c72a0c1dab67263e852e635a6df6456fdef140ea56cc *members-v4.9.0.txt
