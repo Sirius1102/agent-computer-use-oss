@@ -2508,8 +2508,10 @@ $script:StFamilyCounts = @{
   # and A's X-04 modal fixture (+94 -> 4197), then D2's Process-object ruler (family-span tally 4197
   # -> 4210; the pin takes the gate's own measurement, not the file's raw line count), then A2's
   # explicit uia-tree path token for the modal Cancel and the phantom-window target exclusion
-  # (+16 -> 4226).
-  'live-suite' = 'banners=21,lines=4226'
+  # (+16 -> 4226), then A3's quoted token (the Cancel token carries '|', which the cmd
+  # line splits unless it arrives as one double-quoted argument) plus the click-output
+  # diagnostic (+5 -> 4231).
+  'live-suite' = 'banners=21,lines=4231'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
@@ -34365,7 +34367,10 @@ $tm.Start()
           if ($x04Re.Success) {
             $x04Token = $x04Re.Groups[1].Value + '|Cancel|' + $x04Re.Groups[2].Value
             $x04Path = $x04Re.Groups[3].Value
-            $x04Click = & $fpCmd ('uia-click hwnd:' + $x04H + ' ' + $x04Path + ' ' + $x04Token)
+            # the token carries '|' by design; cmd would split it into a pipeline unless the
+            # whole token reaches the child as ONE quoted argument (measured: single quotes
+            # do not protect a pipe in the cmd line, double quotes do).
+            $x04Click = & $fpCmd ('uia-click hwnd:' + $x04H + ' @' + $x04Path + ' "' + $x04Token + '"')
           } else {
             $x04Err = 'uia-tree did not expose a Cancel token for the dialog'
           }
@@ -34389,8 +34394,10 @@ $tm.Start()
         ST-Check 'live (X-04 positive): an explicit hwnd:<dialog> uia-click invokes the dialog Cancel button only (marker CANCEL, dialog gone, main alive)' (
           $x04Click.Code -eq 0 -and $x04Click.Out -match 'Cancel' -and (-not $x04MarkerBefore) -and $x04MarkerTxt -eq 'CANCEL' -and
           $x04Gone -and $x04MainAlive)
+        $x04ClickTxt = [string]$x04Click.Out
+        if ($x04ClickTxt.Length -gt 160) { $x04ClickTxt = $x04ClickTxt.Substring(0, 160) }
         Write-Output ("      x04 modal: pid=" + [string]$x04Proc.Id + " dialog-hwnd=" + [string]$x04H + " info-exit=" + $x04Info.Code +
-          " click-exit=" + $x04Click.Code + " marker='" + $x04MarkerTxt + "' dialog-gone=" + $x04Gone + " main-alive=" + $x04MainAlive + " err='" + $x04Err + "'")
+          " click-exit=" + $x04Click.Code + " marker='" + $x04MarkerTxt + "' dialog-gone=" + $x04Gone + " main-alive=" + $x04MainAlive + " err='" + $x04Err + "' click-out='" + ($x04ClickTxt.Trim() -replace "`r?`n", ' | ') + "'")
 
         # drag points are measured from THIS window's own visible rect and land in its
         # empty client area (labels sit top-left, x<340 / y<160): a press-drag-release

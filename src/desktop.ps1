@@ -2508,8 +2508,10 @@ $script:StFamilyCounts = @{
   # and A's X-04 modal fixture (+94 -> 4197), then D2's Process-object ruler (family-span tally 4197
   # -> 4210; the pin takes the gate's own measurement, not the file's raw line count), then A2's
   # explicit uia-tree path token for the modal Cancel and the phantom-window target exclusion
-  # (+16 -> 4226).
-  'live-suite' = 'banners=21,lines=4226'
+  # (+16 -> 4226), then A3's quoted token (the Cancel token carries '|', which the cmd
+  # line splits unless it arrives as one double-quoted argument) plus the click-output
+  # diagnostic (+5 -> 4231).
+  'live-suite' = 'banners=21,lines=4231'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
