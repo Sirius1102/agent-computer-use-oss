@@ -1,1 +1,1 @@
-3ac509aa1751a5f868455aa6d09804abffa74675f019be4f9514434b5eabb484 *agent-computer-use-v4.8.0-portable.zip
+499fb539d4327b73db683ccbf4d26d8ef751c7e8154340bf41aefa0c8e7a9d22 *agent-computer-use-v4.9.0-portable.zip

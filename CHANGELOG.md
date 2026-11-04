@@ -27,8 +27,9 @@ All notable changes to this project are documented in this file.
 - **Selftest and contract fixes.** The offline gate now declares 1305 checks, matching the actual
   plan; registered family line/emitter counts, dispatcher counts, JSON key contracts and the
   PowerShell 5.1 list-return/language traps are reconciled. No assertion was relaxed to reach green.
-- **No tag or release in this change.** The v4.8.0 single-file, portable ZIP and SHA assets are
-  untouched; this entry tracks the source tree.
+- **Released as v4.9.0.** Tag `v4.9.0` and the GitHub release carry the four assets (single-file,
+  portable ZIP, members, SHA256SUMS); the v4.8.0 single-file, portable ZIP and SHA assets are
+  untouched.
 
 ## v4.8.0 - 2026-10-31
 
