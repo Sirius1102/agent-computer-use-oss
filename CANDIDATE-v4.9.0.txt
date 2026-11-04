@@ -1,11 +1,11 @@
 agent-computer-use v4.9.0 portable candidate
 state: CANDIDATE - not released, not pushed, no tag; v4.8.0 assets untouched
 private-source-commit: 09b6c04f7e86940c932e361d6b536a5d80e09b26
-public-artifact-commit: 6db55b7de94e076632b4e93cd67d8cc1ac6fcd6f
+public-artifact-commit: 6523f5048f857982164c867a0bb2ee80b4da16e1
 candidate-note-commit: this commit (its only difference from the artifact commit is this file)
 stitched-desktop.ps1 sha256: 829204eeb188d575359da8b17f0e3e0c6dae3994213ad9e6206f4d0691d64d70
-portable-zip sha256: 38bd2378796d49270d81e762af3162c89b95cf977b1b9e31035fca54f97cc32a
-members-v4.9.0.txt sha256: dbc34a275c5c851ac0fccb324b2b13fb19c9032e1d1c211e3a382ea371fd6dd2
-SHA256SUMS-v4.9.0.txt sha256: b1bd22f2b111ac764fba381360675bc83042cdc44572933c4ec980f2cd5a5497
+portable-zip sha256: 499fb539d4327b73db683ccbf4d26d8ef751c7e8154340bf41aefa0c8e7a9d22
+members-v4.9.0.txt sha256: f9284e3350fb7cf47620c72a0c1dab67263e852e635a6df6456fdef140ea56cc
+SHA256SUMS-v4.9.0.txt sha256: 229641cbbc2d96649d4e4e344ff26245d5f8eccba86dafc2e56365a39b3fe924
 isolated-install: install.ps1 -TargetDir <fresh dir>; installed desktop.ps1 must hash to 829204... above
 verification: checkout the artifact commit (or this commit), hash desktop.ps1 / the zip / members-v4.9.0.txt, and compare with the values above; gate and installed-state readings are recorded in the private acceptance receipt with absolute paths and SHA256
