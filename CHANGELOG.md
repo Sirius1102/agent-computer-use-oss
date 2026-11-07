@@ -12,8 +12,8 @@ All notable changes to this project are documented in this file.
   edge, instead of silently returning a plausible-looking rectangle. The screen-edge contract is
   documented and pinned (schemaVersion 3 → 4).
 - **The messaging red line is explicit (DOC-MSG).** The docs and the help entry state the rule —
-  the tool never sends a message by itself; the caller decides whether to press send — and the
-  landing receipt distinguishes a drafted message from a sent one.
+  the tool proves where the input landed and which window took it; it never sends by itself, and
+  whether to press send is the caller's decision.
 - **Probe inputs pass an AST allowlist (L1).** `challenge-probe` rejects anything that is not a
   literal or a simple variable reference before it is evaluated; the check is a lint over the
   parser tree, not a string blacklist.
