@@ -566,6 +566,9 @@ Set-StrictMode -Version Latest
 # set instead of the removed string runner: refusal happens before the body runs (one unit with a
 # plant that would leave a marker), the whitelist hash and the zero-occurrence scan are pinned
 # (one lint), and all three call sites gate before executing via a scriptblock in this scope (one lint).
+# M4 (2026-11-06): +2 - the command-coverage lint and its teeth block: every capabilities command
+# has its own SKILL anchor, a reference mention, and an Example whose flags `help <name>` lists;
+# the planted missing anchor and the planted invented flag both have to be named (1366 -> 1368).
 $script:DeclaredCheckTotal = 1368
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
@@ -2456,7 +2459,10 @@ $script:StFamilyCounts = @{
   # 2026-11-07 (public gate): F-01c's name goes back to a static literal (the PS5.1-safe binding
   # keeps the index extractor able to read it), and the bad list moved to its own detail line:
   # repo-contract body 386 -> 387, banners unchanged at 5.
-  'repo-contract' = 'banners=5,lines=387'
+  # R3 (2026-11-07): F-01c reads the CHANGELOG's newest version block only (a planted two-block
+  # sample proves the extractor still matches), and its prose regex now covers "declares N checks":
+  # 387 -> 406, banners unchanged at 5 (measured: span start line 14, end 420).
+  'repo-contract' = 'banners=5,lines=406'
   'gate-meta' = 'banners=30,lines=3073'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
@@ -2521,7 +2527,9 @@ $script:StFamilyCounts = @{
   'clipboard-input' = 'banners=4,lines=403'
   # M4 (v4.9.1): the coverage lint and its teeth block add 43 lines to the same banner family, so the
   # span moves 646 -> 689 (banners unchanged at 12, measured by the A-14a banner walk).
-  'docs-contract' = 'banners=12,lines=689'
+  # L6 (2026-11-07): the installer's dangerous-target needles + order probe add 8 lines to TB-6, so the
+  # span moves 689 -> 697 (banners unchanged at 12, measured: span start line 18, end 715).
+  'docs-contract' = 'banners=12,lines=697'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'

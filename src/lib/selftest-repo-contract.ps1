@@ -368,6 +368,20 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   # those files exist, every such declaration must equal the same source. Internal trees do not
   # carry them, so that leg is a NAMED skip there - the count source check above stays mandatory
   # in every tree.
+  # R3 (2026-11-07): a changelog keeps every historical entry, so its "declares N checks" prose is
+  # read from the NEWEST version block only - scanning the whole file would compare old releases
+  # against today's declaration. The extractor is exercised on a planted two-block sample in the
+  # same check, so a regex that silently stops matching cannot pass by returning zero hits.
+  $ocTopNewest = {
+    param([string[]]$Lines)
+    $top = $false
+    $kept = @()
+    foreach ($l in @($Lines)) {
+      if ("$l" -match '^##\s+v[0-9]') { if ($top) { break } else { $top = $true; continue } }
+      if ($top) { $kept += [string]$l }
+    }
+    return ,@($kept)
+  }
   $ocPubName = 'README.zh-CN.md'
   $ocPubDocs = @('README.md', $ocPubName, 'CHANGELOG.md')
   $ocPubHere = Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ocPubName)
@@ -379,18 +393,23 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
     foreach ($ocDoc in $ocPubDocs) {
       $ocDocPath = Join-Path $script:ToolRootPath $ocDoc
       if (-not (Test-Path -LiteralPath $ocDocPath)) { continue }
-      foreach ($ocL in @(Get-Content -LiteralPath $ocDocPath -Encoding UTF8)) {
+      $ocLines = @(Get-Content -LiteralPath $ocDocPath -Encoding UTF8)
+      if ($ocDoc -eq 'CHANGELOG.md') { $ocLines = & $ocTopNewest $ocLines }
+      foreach ($ocL in $ocLines) {
         $ocNums = @()
         if ("$ocL" -match 'message=([0-9]+)%20checks') { $ocNums += [int]$Matches[1] }
         if ("$ocL" -match "$ocCurrent\s*([0-9]+)\s*$ocTiao") { $ocNums += [int]$Matches[1] }
+        if ("$ocL" -match 'declares\s+([0-9]+)\s+checks') { $ocNums += [int]$Matches[1] }
         foreach ($ocN in $ocNums) {
           $ocDocHits++
           if ($ocN -ne [int]$script:DeclaredCheckTotal) { [void]$ocDocBad.Add("$ocDoc=$ocN") }
         }
       }
     }
+    $ocProbe = & $ocTopNewest @('## v9.9.9', 'declares 42 checks', '## v9.9.8', 'declares 7 checks')
+    $ocProbeOk = (@($ocProbe).Count -eq 1) -and ("$($ocProbe[0])" -match 'declares 42 checks')
     ST-Check 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' (
-      ($ocDocHits -ge 1) -and (@($ocDocBad).Count -eq 0))
+      ($ocDocHits -ge 1) -and (@($ocDocBad).Count -eq 0) -and $ocProbeOk)
     if (@($ocDocBad).Count -gt 0) { Write-Output ('      published doc totals off: ' + (@($ocDocBad) -join ',')) }
     Write-Output ("      published doc totals: hits=$ocDocHits bad=$(@($ocDocBad).Count) declared=$($script:DeclaredCheckTotal)")
   } else {

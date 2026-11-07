@@ -9,7 +9,7 @@ Tool version: v4.9.1.
 
 首次使用先阅读[电脑操控快速上手](快速上手指南.md)。这份文档随技能包一起交付（仓库根目录与本目录各一份，两份逐字节相同由离线判据钉死，改一处必改两处），它把截图、定位、动作和回读串成一条标准流程，并说明中文输入法下 `type`、`uia-settext`、`paste` 的选择。
 
-A **single-file, stateless Windows desktop automation CLI**. One short-lived `powershell` process per invocation: no daemon, no HTTP server, no installer, no third-party dependencies.
+A **single-file, stateless Windows desktop automation CLI**. One short-lived `powershell` process per invocation: no daemon, no HTTP server, no third-party dependencies. The repository ships an `install.ps1` that stitches that single file and copies this skill into an agent skill directory; the installed artifact itself installs nothing at run time.
 
 ## When to Use This Skill
 

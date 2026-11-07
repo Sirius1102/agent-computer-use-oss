@@ -119,6 +119,8 @@ These three read a surface and compare readings. None of them clicks, types, act
 
 Clipboard write-back is verified; a clipboard that cannot be confirmed is reported, never silently assumed.
 
+When `copy-file --replace-clipboard` runs without `--clipboard-backup`, the previous readable text is written to `%TEMP%\desktop-clipboard-backup-<stamp>.txt` before the overwrite. That file is a plaintext snapshot and the tool does not delete it: pass `--clipboard-backup <file>` to choose the location, and remove the snapshot yourself once it is no longer needed.
+
 ## Windows
 
 - `focus <sel>` — restore + front, then re-read the SAME handle: prints the at-select and after-activate readings (`fg=` faces) plus the `fg_ok=` contract token, and exits 1 unless the window really is foreground, not minimized, visible and on-screen.

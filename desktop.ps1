@@ -566,6 +566,9 @@ Set-StrictMode -Version Latest
 # set instead of the removed string runner: refusal happens before the body runs (one unit with a
 # plant that would leave a marker), the whitelist hash and the zero-occurrence scan are pinned
 # (one lint), and all three call sites gate before executing via a scriptblock in this scope (one lint).
+# M4 (2026-11-06): +2 - the command-coverage lint and its teeth block: every capabilities command
+# has its own SKILL anchor, a reference mention, and an Example whose flags `help <name>` lists;
+# the planted missing anchor and the planted invented flag both have to be named (1366 -> 1368).
 $script:DeclaredCheckTotal = 1368
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
@@ -2456,7 +2459,10 @@ $script:StFamilyCounts = @{
   # 2026-11-07 (public gate): F-01c's name goes back to a static literal (the PS5.1-safe binding
   # keeps the index extractor able to read it), and the bad list moved to its own detail line:
   # repo-contract body 386 -> 387, banners unchanged at 5.
-  'repo-contract' = 'banners=5,lines=387'
+  # R3 (2026-11-07): F-01c reads the CHANGELOG's newest version block only (a planted two-block
+  # sample proves the extractor still matches), and its prose regex now covers "declares N checks":
+  # 387 -> 406, banners unchanged at 5 (measured: span start line 14, end 420).
+  'repo-contract' = 'banners=5,lines=406'
   'gate-meta' = 'banners=30,lines=3073'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
@@ -2521,7 +2527,9 @@ $script:StFamilyCounts = @{
   'clipboard-input' = 'banners=4,lines=403'
   # M4 (v4.9.1): the coverage lint and its teeth block add 43 lines to the same banner family, so the
   # span moves 646 -> 689 (banners unchanged at 12, measured by the A-14a banner walk).
-  'docs-contract' = 'banners=12,lines=689'
+  # L6 (2026-11-07): the installer's dangerous-target needles + order probe add 8 lines to TB-6, so the
+  # span moves 689 -> 697 (banners unchanged at 12, measured: span start line 18, end 715).
+  'docs-contract' = 'banners=12,lines=697'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
@@ -22023,6 +22031,20 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   # those files exist, every such declaration must equal the same source. Internal trees do not
   # carry them, so that leg is a NAMED skip there - the count source check above stays mandatory
   # in every tree.
+  # R3 (2026-11-07): a changelog keeps every historical entry, so its "declares N checks" prose is
+  # read from the NEWEST version block only - scanning the whole file would compare old releases
+  # against today's declaration. The extractor is exercised on a planted two-block sample in the
+  # same check, so a regex that silently stops matching cannot pass by returning zero hits.
+  $ocTopNewest = {
+    param([string[]]$Lines)
+    $top = $false
+    $kept = @()
+    foreach ($l in @($Lines)) {
+      if ("$l" -match '^##\s+v[0-9]') { if ($top) { break } else { $top = $true; continue } }
+      if ($top) { $kept += [string]$l }
+    }
+    return ,@($kept)
+  }
   $ocPubName = 'README.zh-CN.md'
   $ocPubDocs = @('README.md', $ocPubName, 'CHANGELOG.md')
   $ocPubHere = Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ocPubName)
@@ -22034,18 +22056,23 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
     foreach ($ocDoc in $ocPubDocs) {
       $ocDocPath = Join-Path $script:ToolRootPath $ocDoc
       if (-not (Test-Path -LiteralPath $ocDocPath)) { continue }
-      foreach ($ocL in @(Get-Content -LiteralPath $ocDocPath -Encoding UTF8)) {
+      $ocLines = @(Get-Content -LiteralPath $ocDocPath -Encoding UTF8)
+      if ($ocDoc -eq 'CHANGELOG.md') { $ocLines = & $ocTopNewest $ocLines }
+      foreach ($ocL in $ocLines) {
         $ocNums = @()
         if ("$ocL" -match 'message=([0-9]+)%20checks') { $ocNums += [int]$Matches[1] }
         if ("$ocL" -match "$ocCurrent\s*([0-9]+)\s*$ocTiao") { $ocNums += [int]$Matches[1] }
+        if ("$ocL" -match 'declares\s+([0-9]+)\s+checks') { $ocNums += [int]$Matches[1] }
         foreach ($ocN in $ocNums) {
           $ocDocHits++
           if ($ocN -ne [int]$script:DeclaredCheckTotal) { [void]$ocDocBad.Add("$ocDoc=$ocN") }
         }
       }
     }
+    $ocProbe = & $ocTopNewest @('## v9.9.9', 'declares 42 checks', '## v9.9.8', 'declares 7 checks')
+    $ocProbeOk = (@($ocProbe).Count -eq 1) -and ("$($ocProbe[0])" -match 'declares 42 checks')
     ST-Check 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' (
-      ($ocDocHits -ge 1) -and (@($ocDocBad).Count -eq 0))
+      ($ocDocHits -ge 1) -and (@($ocDocBad).Count -eq 0) -and $ocProbeOk)
     if (@($ocDocBad).Count -gt 0) { Write-Output ('      published doc totals off: ' + (@($ocDocBad) -join ',')) }
     Write-Output ("      published doc totals: hits=$ocDocHits bad=$(@($ocDocBad).Count) declared=$($script:DeclaredCheckTotal)")
   } else {
@@ -30443,6 +30470,9 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
   # raw bytes, and the installer is pinned on both shapes it has to keep: it resolves the guide from the
   # package directory (not from the repository root, which is absent by then) and it REFUSES the install
   # when the carrier is missing instead of shipping a package whose entry document links at nothing.
+  # L6 (2026-11-07): the same installer must also refuse a dangerous resolved root (the uninstall.ps1
+  # list: repository / source-tree / volume / profile containers / reparse points) BEFORE its first
+  # write, so the two loader scripts cannot disagree about what a safe skill root is.
   $tb6PkgDir = Join-Path $script:ToolRootPath (Join-Path 'skill' 'agent-computer-use')
   $tb6RootQs = Join-Path $script:ToolRootPath $tb6Qs
   $tb6PkgQs = Join-Path $tb6PkgDir $tb6Qs
@@ -30453,9 +30483,9 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
     $tb6ShaRoot = [System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([byte[]]$tb6RootB)).Replace('-', '')
     $tb6ShaPkg = [System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([byte[]]$tb6PkgB)).Replace('-', '')
     $tb6InstText = [string]([System.IO.File]::ReadAllText($tb6InstPath, [System.Text.Encoding]::UTF8))
-    $tb6InstNeedles = @('$srcQuickStart = Join-Path $PSScriptRoot', 'if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'Copy-Item -LiteralPath $srcQuickStart', 'exit 3')
+    $tb6InstNeedles = @('$srcQuickStart = Join-Path $PSScriptRoot', 'if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'Copy-Item -LiteralPath $srcQuickStart', 'exit 3', 'function Get-InstallRefusalReason', 'REFUSED: the resolved target carries dangerous-target features; nothing was installed.', 'exit 5')
     $tb6Bad2 = @()
-    if (@($tb6InstNeedles).Count -ne 4) { $tb6Bad2 += ('the installer needle list lost its own shape: ' + @($tb6InstNeedles).Count) }
+    if (@($tb6InstNeedles).Count -ne 7) { $tb6Bad2 += ('the installer needle list lost its own shape: ' + @($tb6InstNeedles).Count) }
     if ($tb6RootB.Length -lt 2000) { $tb6Bad2 += ('repository-root guide is only ' + $tb6RootB.Length + ' bytes') }
     if ($tb6RootB.Length -ne $tb6PkgB.Length) { $tb6Bad2 += ('carrier is ' + $tb6PkgB.Length + ' bytes, root guide is ' + $tb6RootB.Length) }
     if ($tb6ShaRoot -cne $tb6ShaPkg) { $tb6Bad2 += ('carrier differs from the repository-root guide: root=' + $tb6ShaRoot + ' carrier=' + $tb6ShaPkg) }
@@ -30468,28 +30498,33 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
     $tb6FirstWriteAt = $tb6InstText.IndexOf('New-Item -ItemType Directory -Path $scriptsDir')
     $tb6OrderOk = (($tb6RefusalAt -ge 0) -and ($tb6FirstWriteAt -ge 0) -and ($tb6RefusalAt -lt $tb6FirstWriteAt))
     if (-not $tb6OrderOk) { $tb6Bad2 += ('the carrier is not refused before the first write: refusal at ' + $tb6RefusalAt + ', first write at ' + $tb6FirstWriteAt) }
-    ST-Check 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write) and copies it beside the entry doc' (
+    # L6: presence is not position here either - the dangerous-target refusal has to run before the
+    # first New-Item, or a refused root has already been written into by the time it says no.
+    $tb6TargetRefusalAt = $tb6InstText.IndexOf('Get-InstallRefusalReason -rootFull')
+    $tb6TargetOrderOk = (($tb6TargetRefusalAt -ge 0) -and ($tb6FirstWriteAt -ge 0) -and ($tb6TargetRefusalAt -lt $tb6FirstWriteAt))
+    if (-not $tb6TargetOrderOk) { $tb6Bad2 += ('the dangerous-target refusal is not before the first write: refusal at ' + $tb6TargetRefusalAt + ', first write at ' + $tb6FirstWriteAt) }
+    ST-Check 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write), refuses a dangerous resolved target before that same first write, and copies the guide beside the entry doc' (
       (@($tb6Bad2).Count -eq 0))
     foreach ($tb6B2 in @($tb6Bad2)) { Write-Output ('      TB-6 delivery: ' + [string]$tb6B2) }
     Write-Output ('      TB-6 copies sha256: root=' + $tb6ShaRoot + ' carrier=' + $tb6ShaPkg + ' bytes=' + $tb6RootB.Length + '/' + $tb6PkgB.Length)
-    Write-Output ('      TB-6 installer order: refusal char ' + $tb6RefusalAt + ' < first write char ' + $tb6FirstWriteAt)
+    Write-Output ('      TB-6 installer order: carrier refusal char ' + $tb6RefusalAt + ' < first write char ' + $tb6FirstWriteAt + '; target refusal char ' + $tb6TargetRefusalAt)
     # Teeth, both arms: rub the refusal and the copy step out of an in-memory installer and re-run the
     # SAME needles - they must come back missing AND the refusal-before-write test must stop holding.
     # Then flip ONE byte at the end of the carrier and re-hash - the identity comparison must be able
     # to say 'different', or the check above is a length test wearing a hash costume.
-    $tb6MutInst = $tb6InstText.Replace('if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'if ($false) {').Replace('Copy-Item -LiteralPath $srcQuickStart', 'Set-Content -Value 1')
+    $tb6MutInst = $tb6InstText.Replace('if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'if ($false) {').Replace('Copy-Item -LiteralPath $srcQuickStart', 'Set-Content -Value 1').Replace('exit 5', 'exit 0')
     $tb6MutLack = @($tb6InstNeedles | Where-Object { -not $tb6MutInst.Contains([string]$_) })
     $tb6MutRefusalAt = $tb6MutInst.IndexOf('$missing += $srcQuickStart')
     $tb6MutOrderOk = (($tb6MutRefusalAt -ge 0) -and ($tb6MutRefusalAt -lt $tb6MutInst.IndexOf('New-Item -ItemType Directory -Path $scriptsDir')))
     $tb6PlantB = [byte[]]$tb6PkgB.Clone()
     $tb6PlantB[($tb6PlantB.Length - 1)] = [byte]((([int]$tb6PlantB[($tb6PlantB.Length - 1)]) + 1) -band 255)
     $tb6ShaPlant = [System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([byte[]]$tb6PlantB)).Replace('-', '')
-    ST-Check 'lint (TB-6): the delivery predicate flags the planted installer copy that drops both the refusal and the copy step, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' (
-      (@($tb6MutLack).Count -ge 2) -and (-not $tb6MutOrderOk) -and ($tb6ShaPlant -cne $tb6ShaPkg) -and ($tb6ShaRoot -ceq $tb6ShaPkg) -and ($tb6PlantB.Length -eq $tb6PkgB.Length))
+    ST-Check 'lint (TB-6): the delivery predicate flags the planted installer copy that drops the carrier refusal, the copy step and the dangerous-target refusal, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' (
+      (@($tb6MutLack).Count -ge 3) -and (-not $tb6MutOrderOk) -and ($tb6ShaPlant -cne $tb6ShaPkg) -and ($tb6ShaRoot -ceq $tb6ShaPkg) -and ($tb6PlantB.Length -eq $tb6PkgB.Length))
     Write-Output ('      TB-6 planted installer flags: ' + (@($tb6MutLack).Count) + ' | refusal-before-write on the plant: ' + $tb6MutOrderOk + ' | planted carrier sha: ' + $tb6ShaPlant)
   } else {
-    ST-Skip 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write) and copies it beside the entry doc' 'no skill package / installer in this tree - the loader scripts and the root document ship with the repository, never beside the stitched artifact'
-    ST-Skip 'lint (TB-6): the delivery predicate flags the planted installer copy that drops both the refusal and the copy step, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' 'no skill package / installer in this tree - nothing to plant into'
+    ST-Skip 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write), refuses a dangerous resolved target before that same first write, and copies the guide beside the entry doc' 'no skill package / installer in this tree - the loader scripts and the root document ship with the repository, never beside the stitched artifact'
+    ST-Skip 'lint (TB-6): the delivery predicate flags the planted installer copy that drops the carrier refusal, the copy step and the dangerous-target refusal, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' 'no skill package / installer in this tree - nothing to plant into'
   }
 
   # M4: every capabilities command is documented, anchored and exemplified (same banner family as TB-6)

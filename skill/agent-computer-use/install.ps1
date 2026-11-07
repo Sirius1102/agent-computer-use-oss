@@ -35,6 +35,13 @@
 # output verbatim. Any non-zero exit -> "installed, but the smoke test did not
 # pass" and exit 1. (-SkipSelftest skips it.)
 #
+# Refused (exit 5, nothing created and nothing copied): the resolved root is a volume root, holds
+#   .git / desktop.ps1 / lib\*.ps1 (a repository, this tool's own tree, or a split source tree), is
+#   at or above the directory that holds user profiles, is the profile / roaming or local appdata /
+#   OneDrive / Desktop container, is the installer's own tree or an ancestor of it, or is itself
+#   (or its agent-computer-use child) a reparse point (junction / symlink). The same list uninstall.ps1
+#   refuses, checked before the first write.
+#
 # Exit codes:
 #   0  installed (and smoke test passed, unless skipped)
 #   1  installed, but the smoke test did NOT pass
@@ -43,6 +50,7 @@
 #   4  the stitcher refused (a declared lib file is missing, a marker path is not lib/<name>.ps1, the
 #      marker accounting does not close, a dot-import still executes in the artifact, the artifact is not
 #      pure ASCII or does not parse, or the marker set does not converge) - desktop.ps1 was not installed
+#   5  the resolved target was refused as dangerous - nothing was installed
 
 param(
   [string]$TargetDir = '',
@@ -63,6 +71,73 @@ $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 
 function Say([string]$m) { Write-Host $m }
+
+function Get-FullPath([string]$p) {
+  # Normalize without touching the disk: trailing separators, dot segments and drive-relative
+  # spellings all resolve here, so the comparisons below cannot be slipped past by spelling.
+  # 'D:\' must survive as 'D:\': trimming it to 'D:' hands back the process's current directory
+  # on that drive, which is some other folder entirely - measured, not assumed.
+  if ([string]::IsNullOrWhiteSpace($p)) { return '' }
+  $q = $p.TrimEnd(' ')
+  if ($q -match '^[A-Za-z]:\\?$') { $q = $q.Substring(0, 2) + '\' }
+  try {
+    $full = [System.IO.Path]::GetFullPath($q)
+    $rootPart = [System.IO.Path]::GetPathRoot($full)
+    if ($full.Equals($rootPart, [System.StringComparison]::OrdinalIgnoreCase)) { return $rootPart }
+    return $full.TrimEnd('\')
+  } catch { return '' }
+}
+
+function Test-ReparsePoint([string]$p) {
+  # Resolving where a reparse point leads needs an engine-specific API (.NET 6+ on one side,
+  # nothing on the other), so this guard does not resolve it - it refuses it.
+  if (-not (Test-Path -LiteralPath $p)) { return $false }
+  try {
+    $attr = (Get-Item -LiteralPath $p -Force -ErrorAction Stop).Attributes
+    return (([int]$attr -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0)
+  } catch { return $false }
+}
+
+function Get-InstallRefusalReason([string]$rootFull, [string]$selfFull) {
+  # L6: install WRITES under the resolved root, so it refuses the same dangerous shapes that
+  # uninstall.ps1 refuses before it deletes. Both loader scripts must agree on what a safe
+  # skill root is; a target that carries repository / source-tree / broad-container features is
+  # refused outright, and so is any root or child reached through a reparse point. Metadata only.
+  $out = New-Object 'System.Collections.Generic.List[string]'
+  if ([string]::IsNullOrWhiteSpace($rootFull)) {
+    $out.Add('the named root does not resolve to a full path'); return $out.ToArray()
+  }
+  if ($rootFull -eq [System.IO.Path]::GetPathRoot($rootFull)) { $out.Add("the named root is a volume root: $rootFull") }
+  if (Test-Path -LiteralPath (Join-Path $rootFull '.git')) { $out.Add("the named root holds .git (a repository or worktree): $rootFull") }
+  if (Test-Path -LiteralPath (Join-Path $rootFull 'desktop.ps1')) { $out.Add("the named root holds desktop.ps1 (this tool owns that tree): $rootFull") }
+  $libDir = Join-Path $rootFull 'lib'
+  if ((Test-Path -LiteralPath $libDir -PathType Container) -and
+      (@(Get-ChildItem -LiteralPath $libDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue).Count -gt 0)) {
+    $out.Add("the named root holds a lib\ source directory with .ps1 files in it: $rootFull")
+  }
+  if ($selfFull.Length -gt 0 -and $selfFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $out.Add("the named root is the installer's own tree or an ancestor of it: $rootFull")
+  }
+  $profileDir = Get-FullPath $env:USERPROFILE
+  $profilesContainer = Get-FullPath (Split-Path -Parent $profileDir)
+  if ($profilesContainer.Length -gt 0 -and
+      ($profileDir.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase) -or
+       $rootFull.Equals($profilesContainer, [System.StringComparison]::OrdinalIgnoreCase))) {
+    $out.Add("the named root is at or above the directory that holds user profiles: $rootFull")
+  }
+  $broad = @($profileDir, [Environment]::GetEnvironmentVariable('APPDATA'),
+             [Environment]::GetEnvironmentVariable('LOCALAPPDATA'),
+             [Environment]::GetEnvironmentVariable('OneDrive'),
+             (Get-FullPath ([Environment]::GetFolderPath('Desktop'))))
+  foreach ($b in $broad) {
+    if ($b.Length -gt 0 -and $rootFull.Equals($b, [System.StringComparison]::OrdinalIgnoreCase)) {
+      $out.Add("the named root is a broad container that a skill install does not own: $rootFull")
+      break
+    }
+  }
+  if (Test-ReparsePoint $rootFull) { $out.Add("the named root is itself a reparse point (junction / symlink): $rootFull") }
+  $out.ToArray()
+}
 
 #
 # A-21 (v6 3.4): the single-file deliverable is BUILT, not copied. The split tree loads its lib files by
@@ -208,7 +283,20 @@ if ([string]::IsNullOrWhiteSpace($root)) {
 Say ('skill root : ' + $root)
 Say ('resolved by: ' + $resolvedBy)
 
-$skillDir = Join-Path $root 'agent-computer-use'
+# L6: the guard runs on whatever got resolved, before the first New-Item and long before any copy,
+# so a refused target is reported the same way whether or not it already holds an install.
+$rootFull = Get-FullPath $root
+$skillFull = Get-FullPath (Join-Path $root 'agent-computer-use')
+$selfFull = Get-FullPath $PSScriptRoot
+$reasons = @(Get-InstallRefusalReason -rootFull $rootFull -selfFull $selfFull)
+if (Test-ReparsePoint $skillFull) { $reasons += "the skill directory is a reparse point (junction / symlink): $skillFull" }
+if (@($reasons).Count -gt 0) {
+  Say 'REFUSED: the resolved target carries dangerous-target features; nothing was installed.'
+  foreach ($r in $reasons) { Say ('  - ' + $r) }
+  exit 5
+}
+
+$skillDir = Join-Path $rootFull 'agent-computer-use'
 $scriptsDir = Join-Path $skillDir 'scripts'
 New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
 
@@ -230,7 +318,7 @@ Say ('stitched : desktop.ps1 from the split tree (' + (@($stitched -split "`n").
 Say ('installed  : ' + $skillDir)
 
 # ---------- optional registration in skills.config.json ----------
-$cfgPath = Join-Path $root 'skills.config.json'
+$cfgPath = Join-Path $rootFull 'skills.config.json'
 if (Test-Path -LiteralPath $cfgPath) {
   try {
     $cfg = [System.IO.File]::ReadAllText($cfgPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json

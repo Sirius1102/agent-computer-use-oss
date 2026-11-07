@@ -611,6 +611,9 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
   # raw bytes, and the installer is pinned on both shapes it has to keep: it resolves the guide from the
   # package directory (not from the repository root, which is absent by then) and it REFUSES the install
   # when the carrier is missing instead of shipping a package whose entry document links at nothing.
+  # L6 (2026-11-07): the same installer must also refuse a dangerous resolved root (the uninstall.ps1
+  # list: repository / source-tree / volume / profile containers / reparse points) BEFORE its first
+  # write, so the two loader scripts cannot disagree about what a safe skill root is.
   $tb6PkgDir = Join-Path $script:ToolRootPath (Join-Path 'skill' 'agent-computer-use')
   $tb6RootQs = Join-Path $script:ToolRootPath $tb6Qs
   $tb6PkgQs = Join-Path $tb6PkgDir $tb6Qs
@@ -621,9 +624,9 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
     $tb6ShaRoot = [System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([byte[]]$tb6RootB)).Replace('-', '')
     $tb6ShaPkg = [System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([byte[]]$tb6PkgB)).Replace('-', '')
     $tb6InstText = [string]([System.IO.File]::ReadAllText($tb6InstPath, [System.Text.Encoding]::UTF8))
-    $tb6InstNeedles = @('$srcQuickStart = Join-Path $PSScriptRoot', 'if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'Copy-Item -LiteralPath $srcQuickStart', 'exit 3')
+    $tb6InstNeedles = @('$srcQuickStart = Join-Path $PSScriptRoot', 'if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'Copy-Item -LiteralPath $srcQuickStart', 'exit 3', 'function Get-InstallRefusalReason', 'REFUSED: the resolved target carries dangerous-target features; nothing was installed.', 'exit 5')
     $tb6Bad2 = @()
-    if (@($tb6InstNeedles).Count -ne 4) { $tb6Bad2 += ('the installer needle list lost its own shape: ' + @($tb6InstNeedles).Count) }
+    if (@($tb6InstNeedles).Count -ne 7) { $tb6Bad2 += ('the installer needle list lost its own shape: ' + @($tb6InstNeedles).Count) }
     if ($tb6RootB.Length -lt 2000) { $tb6Bad2 += ('repository-root guide is only ' + $tb6RootB.Length + ' bytes') }
     if ($tb6RootB.Length -ne $tb6PkgB.Length) { $tb6Bad2 += ('carrier is ' + $tb6PkgB.Length + ' bytes, root guide is ' + $tb6RootB.Length) }
     if ($tb6ShaRoot -cne $tb6ShaPkg) { $tb6Bad2 += ('carrier differs from the repository-root guide: root=' + $tb6ShaRoot + ' carrier=' + $tb6ShaPkg) }
@@ -636,28 +639,33 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
     $tb6FirstWriteAt = $tb6InstText.IndexOf('New-Item -ItemType Directory -Path $scriptsDir')
     $tb6OrderOk = (($tb6RefusalAt -ge 0) -and ($tb6FirstWriteAt -ge 0) -and ($tb6RefusalAt -lt $tb6FirstWriteAt))
     if (-not $tb6OrderOk) { $tb6Bad2 += ('the carrier is not refused before the first write: refusal at ' + $tb6RefusalAt + ', first write at ' + $tb6FirstWriteAt) }
-    ST-Check 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write) and copies it beside the entry doc' (
+    # L6: presence is not position here either - the dangerous-target refusal has to run before the
+    # first New-Item, or a refused root has already been written into by the time it says no.
+    $tb6TargetRefusalAt = $tb6InstText.IndexOf('Get-InstallRefusalReason -rootFull')
+    $tb6TargetOrderOk = (($tb6TargetRefusalAt -ge 0) -and ($tb6FirstWriteAt -ge 0) -and ($tb6TargetRefusalAt -lt $tb6FirstWriteAt))
+    if (-not $tb6TargetOrderOk) { $tb6Bad2 += ('the dangerous-target refusal is not before the first write: refusal at ' + $tb6TargetRefusalAt + ', first write at ' + $tb6FirstWriteAt) }
+    ST-Check 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write), refuses a dangerous resolved target before that same first write, and copies the guide beside the entry doc' (
       (@($tb6Bad2).Count -eq 0))
     foreach ($tb6B2 in @($tb6Bad2)) { Write-Output ('      TB-6 delivery: ' + [string]$tb6B2) }
     Write-Output ('      TB-6 copies sha256: root=' + $tb6ShaRoot + ' carrier=' + $tb6ShaPkg + ' bytes=' + $tb6RootB.Length + '/' + $tb6PkgB.Length)
-    Write-Output ('      TB-6 installer order: refusal char ' + $tb6RefusalAt + ' < first write char ' + $tb6FirstWriteAt)
+    Write-Output ('      TB-6 installer order: carrier refusal char ' + $tb6RefusalAt + ' < first write char ' + $tb6FirstWriteAt + '; target refusal char ' + $tb6TargetRefusalAt)
     # Teeth, both arms: rub the refusal and the copy step out of an in-memory installer and re-run the
     # SAME needles - they must come back missing AND the refusal-before-write test must stop holding.
     # Then flip ONE byte at the end of the carrier and re-hash - the identity comparison must be able
     # to say 'different', or the check above is a length test wearing a hash costume.
-    $tb6MutInst = $tb6InstText.Replace('if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'if ($false) {').Replace('Copy-Item -LiteralPath $srcQuickStart', 'Set-Content -Value 1')
+    $tb6MutInst = $tb6InstText.Replace('if (-not (Test-Path -LiteralPath $srcQuickStart -PathType Leaf)) { $missing += $srcQuickStart }', 'if ($false) {').Replace('Copy-Item -LiteralPath $srcQuickStart', 'Set-Content -Value 1').Replace('exit 5', 'exit 0')
     $tb6MutLack = @($tb6InstNeedles | Where-Object { -not $tb6MutInst.Contains([string]$_) })
     $tb6MutRefusalAt = $tb6MutInst.IndexOf('$missing += $srcQuickStart')
     $tb6MutOrderOk = (($tb6MutRefusalAt -ge 0) -and ($tb6MutRefusalAt -lt $tb6MutInst.IndexOf('New-Item -ItemType Directory -Path $scriptsDir')))
     $tb6PlantB = [byte[]]$tb6PkgB.Clone()
     $tb6PlantB[($tb6PlantB.Length - 1)] = [byte]((([int]$tb6PlantB[($tb6PlantB.Length - 1)]) + 1) -band 255)
     $tb6ShaPlant = [System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([byte[]]$tb6PlantB)).Replace('-', '')
-    ST-Check 'lint (TB-6): the delivery predicate flags the planted installer copy that drops both the refusal and the copy step, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' (
-      (@($tb6MutLack).Count -ge 2) -and (-not $tb6MutOrderOk) -and ($tb6ShaPlant -cne $tb6ShaPkg) -and ($tb6ShaRoot -ceq $tb6ShaPkg) -and ($tb6PlantB.Length -eq $tb6PkgB.Length))
+    ST-Check 'lint (TB-6): the delivery predicate flags the planted installer copy that drops the carrier refusal, the copy step and the dangerous-target refusal, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' (
+      (@($tb6MutLack).Count -ge 3) -and (-not $tb6MutOrderOk) -and ($tb6ShaPlant -cne $tb6ShaPkg) -and ($tb6ShaRoot -ceq $tb6ShaPkg) -and ($tb6PlantB.Length -eq $tb6PkgB.Length))
     Write-Output ('      TB-6 planted installer flags: ' + (@($tb6MutLack).Count) + ' | refusal-before-write on the plant: ' + $tb6MutOrderOk + ' | planted carrier sha: ' + $tb6ShaPlant)
   } else {
-    ST-Skip 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write) and copies it beside the entry doc' 'no skill package / installer in this tree - the loader scripts and the root document ship with the repository, never beside the stitched artifact'
-    ST-Skip 'lint (TB-6): the delivery predicate flags the planted installer copy that drops both the refusal and the copy step, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' 'no skill package / installer in this tree - nothing to plant into'
+    ST-Skip 'lint (TB-6): the quick-start guide ships inside the skill package as a byte-for-byte copy of the repository-root document, and the installer resolves it from the package, refuses the install when it is absent (before its first write), refuses a dangerous resolved target before that same first write, and copies the guide beside the entry doc' 'no skill package / installer in this tree - the loader scripts and the root document ship with the repository, never beside the stitched artifact'
+    ST-Skip 'lint (TB-6): the delivery predicate flags the planted installer copy that drops the carrier refusal, the copy step and the dangerous-target refusal, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' 'no skill package / installer in this tree - nothing to plant into'
   }
 
   # M4: every capabilities command is documented, anchored and exemplified (same banner family as TB-6)
