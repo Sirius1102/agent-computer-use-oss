@@ -73,6 +73,20 @@ function Invoke-SelftestFamily-LiveSuite($Ctx) {
     return '' + (& $g.RestoreFn $g.Snapshot)
   }
 
+  # L10: Start-Process joins -ArgumentList with single spaces and adds no quotes of its own, so
+  # a '-File', $path element under a profile/TEMP that carries a space reaches the child as two
+  # arguments and the child silently never runs. Quote any element that carries whitespace or a
+  # literal quote, so one element stays one argument.
+  function Format-StProcArgs([object[]]$Items) {
+    $out = @()
+    foreach ($it in @($Items)) {
+      $s = [string]$it
+      if ($s -match '[\s"]') { $s = '"' + $s.Replace('"', '\"') + '"' }
+      $out += $s
+    }
+    return ,$out
+  }
+
   # ---------- live: real OCR against a real window ----------
   if ($live) {
     # ---------- live: workshop self-report (printed first, every round) ----------
@@ -474,7 +488,7 @@ $f.Controls.Add($lbl)
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($probeScript, $pSrc.Replace('LABELTEXT', $labelText), (New-Object System.Text.UTF8Encoding($false)))
-        $probeProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $probeScript -PassThru
+        $probeProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $probeScript)) -PassThru
         $pw2 = $null
         $swP = [System.Diagnostics.Stopwatch]::StartNew()
         while ($swP.Elapsed.TotalSeconds -lt 15) {
@@ -645,7 +659,7 @@ $main.Add_MouseClick({
           $pgPopupTitle = 'DTXP-P-' + $tag
           $pgFlag = Join-Path $env:TEMP ('dtx-pg-' + [guid]::NewGuid().ToString('N') + '.close')
           [void]$pgTmp.Add($pgFlag)
-          $pgArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode, $pgMainTitle, $pgPopupTitle, $pgFlag, [string]$holdTicks)
+          $pgArgs = Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $pgScript, $mode, $pgMainTitle, $pgPopupTitle, $pgFlag, [string]$holdTicks)
           $script:pgProc = Start-Process powershell -ArgumentList $pgArgs -PassThru
           $pgWantPid = $script:pgProc.Id
           $pgMain = $null
@@ -855,7 +869,7 @@ $f.Add_MouseUp({
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($p3Script, $p3Src, (New-Object System.Text.UTF8Encoding($false)))
-        $p3Proc = Start-Process -FilePath powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $p3Script) -PassThru
+        $p3Proc = Start-Process -FilePath powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $p3Script)) -PassThru
         $p3Sw = [System.Diagnostics.Stopwatch]::StartNew()
         $p3Win = $null
         while ($p3Sw.Elapsed.TotalSeconds -lt 15) { $p3Win = Resolve-Window 'DTX-PressProbe'; if ($p3Win) { break }; Start-Sleep -Milliseconds 400 }
@@ -933,8 +947,7 @@ $f.Add_MouseUp({
         $p3eWin = Resolve-Window 'DTX-PressProbe'
         $p3eX = [int]($p3eWin.Left + $p3eWin.W / 2)
         $p3eY = [int]($p3eWin.Top + [int]($p3eWin.H / 2))
-        $p3Child = Start-Process -FilePath powershell -PassThru -WindowStyle Hidden -ArgumentList @(
-          '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:ToolEntryPath, 'press-down', "$p3eX", "$p3eY", '--to', 'DTX-PressProbe', '--max-hold', '60000')
+        $p3Child = Start-Process -FilePath powershell -PassThru -WindowStyle Hidden -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:ToolEntryPath, 'press-down', "$p3eX", "$p3eY", '--to', 'DTX-PressProbe', '--max-hold', '60000'))
         $p3eDown = $false
         $p3eSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($p3eSw.Elapsed.TotalSeconds -lt 10) { if (Get-LeftButtonDown) { $p3eDown = $true; break }; Start-Sleep -Milliseconds 100 }
@@ -1052,7 +1065,7 @@ $form.Add_Paint({
 [System.Windows.Forms.Application]::Run($form)
 '@
         [System.IO.File]::WriteAllText($fFixScript, $fSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $fFindProc = Start-Process powershell -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $fFixScript)
+        $fFindProc = Start-Process powershell -PassThru -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $fFixScript))
         $fWin = $null
         $fSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($fSw.Elapsed.TotalSeconds -lt 15) { $fWin = Resolve-Window 'DTX-FindProbe'; if ($fWin) { break }; Start-Sleep -Milliseconds 400 }
@@ -1194,7 +1207,7 @@ $form.Add_MouseClick({
         [System.IO.File]::WriteAllText($chScript, $chSrc, (New-Object System.Text.UTF8Encoding($false)))
         $chSpawn = {
           param($mode)
-          $chArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $chScript, $mode)
+          $chArgs = Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $chScript, $mode)
           $script:chProc = Start-Process powershell -ArgumentList $chArgs -PassThru
           $chw = $null
           $swCh = [System.Diagnostics.Stopwatch]::StartNew()
@@ -1419,7 +1432,7 @@ $fxTimer.Start()
 '@
         [System.IO.File]::WriteAllText($sScript, $sSrc, (New-Object System.Text.UTF8Encoding($false)))
         [System.IO.File]::WriteAllText($sFile, $payFile, (New-Object System.Text.UTF8Encoding($false)))
-        $stepProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sScript, $sReport -PassThru
+        $stepProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sScript, $sReport)) -PassThru
         $swp = $null
         $swS = [System.Diagnostics.Stopwatch]::StartNew()
         while ($swS.Elapsed.TotalSeconds -lt 15) { $swp = Resolve-Window 'DTX-StepProbe'; if ($swp) { break }; Start-Sleep -Milliseconds 400 }
@@ -1635,7 +1648,7 @@ $f.Location = New-Object System.Drawing.Point(120, 1150)
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($menuScript, $moSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $menuProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $menuScript -PassThru
+        $menuProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $menuScript)) -PassThru
         $mwin = $null
         $mSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($mSw.Elapsed.TotalSeconds -lt 15) { $mwin = Resolve-Window 'DTX-MenuProbe'; if ($mwin) { break }; Start-Sleep -Milliseconds 400 }
@@ -1788,7 +1801,7 @@ $tb.Size = New-Object System.Drawing.Size(620, 180)
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($verScript, $voSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $verProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $verScript -PassThru
+        $verProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $verScript)) -PassThru
         $vwin = $null
         $vSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($vSw.Elapsed.TotalSeconds -lt 15) { $vwin = Resolve-Window 'DTX-VerifyProbe'; if ($vwin) { break }; Start-Sleep -Milliseconds 400 }
@@ -1886,7 +1899,7 @@ $lbl.ForeColor = [System.Drawing.Color]::Black
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($mpScript, $moSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $mpProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $mpScript -PassThru
+        $mpProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $mpScript)) -PassThru
         $mwin = $null
         $mSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($mSw.Elapsed.TotalSeconds -lt 15) { $mwin = Resolve-Window 'DTX-MaskProbe'; if ($mwin) { break }; Start-Sleep -Milliseconds 400 }
@@ -2178,7 +2191,7 @@ $lblB.Add_MouseDown({ [System.IO.File]::WriteAllText(($env:TEMP + '\dtx-flagprob
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($fpScript, $fpSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $fpProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $fpScript -PassThru
+        $fpProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $fpScript)) -PassThru
         $fwin = $null
         $fpSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($fpSw.Elapsed.TotalSeconds -lt 15) { $fwin = Resolve-Window 'DTX-FlagProbe'; if ($fwin) { break }; Start-Sleep -Milliseconds 400 }
@@ -2330,7 +2343,7 @@ $tm.Start()
           if ($null -ne $x04Stale) { try { Stop-Process -Id $x04Stale.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 400 }
           if (Test-Path -LiteralPath $x04Marker) { Remove-Item -LiteralPath $x04Marker -Force }
           [System.IO.File]::WriteAllText($x04Script, $x04Src, (New-Object System.Text.UTF8Encoding($false)))
-          $x04Proc = Start-Process powershell -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $x04Script) -PassThru
+          $x04Proc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $x04Script)) -PassThru
           $x04Sw = [System.Diagnostics.Stopwatch]::StartNew()
           while ($x04Sw.Elapsed.TotalSeconds -lt 15) { $x04Main = Resolve-Window 'DTX-X04-M'; if ($null -ne $x04Main) { break }; Start-Sleep -Milliseconds 250 }
           while ($x04Sw.Elapsed.TotalSeconds -lt 15) { $x04Modal = Resolve-Window 'DTX-X04-D'; if ($null -ne $x04Modal) { break }; Start-Sleep -Milliseconds 250 }
@@ -2446,7 +2459,7 @@ $f2.BackColor = [System.Drawing.Color]::RosyBrown
 [System.Windows.Forms.Application]::Run($f2)
 '@
         [System.IO.File]::WriteAllText($anScript, $anSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $anProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $anScript -PassThru
+        $anProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $anScript)) -PassThru
         $anSeen = $false
         $anOut = $null
         for ($anTry = 0; $anTry -lt 4 -and -not $anSeen; $anTry++) {
@@ -2566,7 +2579,7 @@ $staged = & $stageLoop
         # launched WITH its console (see the fixture): the new console owns foreground at
         # spawn, which is what lets the fixture hand foreground to its own form. The
         # fixture hides the console itself once staged.
-        $apProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $apScript -PassThru
+        $apProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $apScript)) -PassThru
         $awin = $null
         $apSw = [System.Diagnostics.Stopwatch]::StartNew()
         while ($apSw.Elapsed.TotalSeconds -lt 15) { $awin = Resolve-Window 'DTX-ActA'; if ($awin) { break }; Start-Sleep -Milliseconds 400 }
@@ -2897,7 +2910,7 @@ $f.TopMost = $true
 [System.Windows.Forms.Application]::Run($f)
 '@
         [System.IO.File]::WriteAllText($gfxScript, $gSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $gfxProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $gfxScript -PassThru
+        $gfxProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $gfxScript)) -PassThru
         $gWin = $null
         $gSw0 = [System.Diagnostics.Stopwatch]::StartNew()
         while ($gSw0.Elapsed.TotalSeconds -lt 15) { $gWin = Resolve-Window 'DTX-GfxProbe'; if ($gWin) { break }; Start-Sleep -Milliseconds 300 }
@@ -3019,7 +3032,7 @@ $Main.Add_Activated({
         foreach ($mode in @('transparent', 'opaque')) {
           $stale = Resolve-Window 'DTX-PopupProbe'
           if ($stale) { try { Stop-Process -Id $stale.Pid -Force -ErrorAction SilentlyContinue } catch { }; Start-Sleep -Milliseconds 500 }
-          $popProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $popPathT, '-Mode', $mode -WindowStyle Hidden -PassThru
+          $popProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $popPathT, '-Mode', $mode)) -WindowStyle Hidden -PassThru
           $pwin = $null
           $pSw = [System.Diagnostics.Stopwatch]::StartNew()
           while ($pSw.Elapsed.TotalSeconds -lt 15) { $pwin = Resolve-Window 'DTX-PopupProbe'; if ($pwin) { break }; Start-Sleep -Milliseconds 300 }
@@ -3136,7 +3149,7 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
 '@
         [System.IO.File]::WriteAllText($tScript, $tSrc, (New-Object System.Text.UTF8Encoding($false)))
         [System.IO.File]::WriteAllText($cScript, $cSrc, (New-Object System.Text.UTF8Encoding($false)))
-        $tProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tScript -PassThru -WindowStyle Hidden
+        $tProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tScript)) -PassThru -WindowStyle Hidden
         [void]$occTProcs.Add($tProc)
         $tW = $null
         $swT = [System.Diagnostics.Stopwatch]::StartNew()
@@ -3221,7 +3234,7 @@ while ($true) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Mil
         }
 
         # item 5 (true positive): a spawned coverer moved over the centre
-        $cProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $cScript -PassThru -WindowStyle Hidden
+        $cProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $cScript)) -PassThru -WindowStyle Hidden
         [void]$occTProcs.Add($cProc)
         $cW = $null
         $swC = [System.Diagnostics.Stopwatch]::StartNew()
@@ -3505,7 +3518,7 @@ $b2.SetBounds(20, 100, 150, 60)
         [System.IO.File]::WriteAllText($uFixScript, $uFixSrc, (New-Object System.Text.UTF8Encoding($false)))
         $uFixProc = $null
         try {
-          $uFixProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $uFixScript -PassThru
+          $uFixProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $uFixScript)) -PassThru
           $uFixW = $null
           $uSw = [System.Diagnostics.Stopwatch]::StartNew()
           while ($uSw.ElapsedMilliseconds -lt 15000) {
@@ -3710,9 +3723,9 @@ $f.Add_Shown({ [void]$tb.Focus() })
       if ($frTail.Length -ne 20) { throw "fold fixture tail must be exactly 20 chars (autoexpect cap is 24, payload floor is the fold threshold): got $frTail.Length" }
       if ($frBody.Length -lt (Get-PasteFoldThreshold)) { throw "fold fixture payload ($($frBody.Length) chars) is below fold-threshold ($(Get-PasteFoldThreshold)) - the fold leg could not fold: $frTail" }
       [System.IO.File]::WriteAllText($frPayload, $frBody, (New-Object System.Text.UTF8Encoding($false)))
-      $frProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $frScript -PassThru
-      $nfProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $nfScript -PassThru
-      $shProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $shScript -PassThru
+      $frProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $frScript)) -PassThru
+      $nfProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $nfScript)) -PassThru
+      $shProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $shScript)) -PassThru
       $frWin = $null; $nfWin = $null; $shWin = $null
       $frWait = [System.Diagnostics.Stopwatch]::StartNew()
       while ($frWait.Elapsed.TotalSeconds -lt 15) {
@@ -3898,8 +3911,8 @@ $gaTimer.Start()
       # this case asserts a REFUSAL, never a verbatim read).
       $gateBody = ('C' * 100) + "`r`n" + ('D' * 100)
       [System.IO.File]::WriteAllText($gatePayload, $gateBody, (New-Object System.Text.UTF8Encoding($false)))
-      $gnProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $gnScript -PassThru
-      $gaProc = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $gaScript -PassThru
+      $gnProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $gnScript)) -PassThru
+      $gaProc = Start-Process powershell -ArgumentList (Format-StProcArgs @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $gaScript)) -PassThru
       $gnWin = $null; $gaWin = $null
       $gateWait = [System.Diagnostics.Stopwatch]::StartNew()
       while ($gateWait.Elapsed.TotalSeconds -lt 15) {

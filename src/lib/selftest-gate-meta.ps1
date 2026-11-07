@@ -763,8 +763,29 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     if ($e20s.Contains($bareJsonMark)) { $jBare++ }
     if ($e20s.Contains($cmdScriptMark)) { $dryLine = $e20s.Trim() }
   }
-  ST-Check 'lint: the live suite hands cmd a quoted temp step path and merges the JSON captures through cmd (no bare 2>&1 left on those two cases)' (
-    ($dryLine.Contains($quoteMark)) -and ($jBare -eq 0))
+  ST-Check 'lint: the live suite hands cmd a quoted temp step path and merges the JSON captures through cmd (no bare 2>&1 left on those two cases, and every array-form -File argument is wrapped by the quoting helper)' (
+    ($dryLine.Contains($quoteMark)) -and ($jBare -eq 0) -and ($stqSites -eq 24) -and ($stqBare -eq 0) -and $stqPlantCaught)
+  # L10 (2026-11-07): the same quoting rule has to hold at EVERY array-form Start-Process in the
+  # live suite, not just the cmd dry-run above. Start-Process joins -ArgumentList with single spaces
+  # and adds no quotes of its own, so a '-File', $path element under a profile/TEMP that carries a
+  # space arrives at the child as two arguments and the child silently never runs. Format-StProcArgs
+  # is the only wrapper; the scan reads raw source, one site per line with the helper named on it,
+  # and the planted bare site proves the predicate can go red.
+  $stqFileTok = ([string][char]39) + '-File' + ([string][char]39) + ', $'
+  $stqWrap = 'Format-St' + 'ProcArgs'
+  $stqSites = 0
+  $stqBare = 0
+  foreach ($sq10 in $srcLines) {
+    $sq10s = [string]$sq10
+    if ($sq10s -match '^\s*#') { continue }
+    if ($sq10s.Contains($stqFileTok)) {
+      $stqSites++
+      if (-not $sq10s.Contains($stqWrap)) { $stqBare++ }
+    }
+  }
+  $stqPlantLine = 'Start-Process x -ArgumentList ' + $stqFileTok + 'p'
+  $stqPlantCaught = ([string]$stqPlantLine).Contains($stqFileTok) -and (-not ([string]$stqPlantLine).Contains($stqWrap))
+  Write-Output ("      launch quoting: array-form -File sites=" + $stqSites + " unwrapped=" + $stqBare)
   Write-Output ("      env-robustness: dry-run line found=" + ($dryLine.Length -gt 0) + " quoted=" + $dryLine.Contains($quoteMark) + " bare-json-captures=$jBare")
   ST-Check 'lint: the BOM introduction anchor SKIPs when there is no git binary instead of reporting the history as broken' (
     ($bomGate -ge 3) -and ($bomAnchorSkip -eq 1))

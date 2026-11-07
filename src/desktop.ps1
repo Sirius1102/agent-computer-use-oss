@@ -2463,7 +2463,9 @@ $script:StFamilyCounts = @{
   # sample proves the extractor still matches), and its prose regex now covers "declares N checks":
   # 387 -> 406, banners unchanged at 5 (measured: span start line 14, end 420).
   'repo-contract' = 'banners=5,lines=406'
-  'gate-meta' = 'banners=30,lines=3073'
+  # L10 (2026-11-07): the quoting lint gains a static scan over every array-form -File launch
+  # site (24 of them) plus a planted bare line (+21 -> 3094); banners unchanged at 30.
+  'gate-meta' = 'banners=30,lines=3094'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
   # D-5 (v4.6.13): the same prose names the new 97/100/111 and which round moved them (+1 -> 889).
@@ -2585,7 +2587,9 @@ $script:StFamilyCounts = @{
   # (+16 -> 4226), then A3's quoted token (the Cancel token carries '|', which the cmd
   # line splits unless it arrives as one double-quoted argument) plus the click-output
   # diagnostic (+5 -> 4231).
-  'live-suite' = 'banners=21,lines=4231'
+  # L10 (2026-11-07): every array-form child launch is quoted by Format-StProcArgs (placed above
+  # the first banner, so it adds no span), and the 936-937 array collapse is -1 -> 4230.
+  'live-suite' = 'banners=21,lines=4230'
 }
 
 # The families whose bodies have actually been lifted into lib/selftest-<key>.ps1 (A-14b onwards).
