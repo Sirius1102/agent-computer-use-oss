@@ -1,10 +1,10 @@
-﻿# Agent Computer Use (Open Source Edition) v4.9.0
+﻿# Agent Computer Use (Open Source Edition) v4.9.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1305%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1368%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -48,9 +48,9 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Stateless by choice.** Each call spawns a fresh PowerShell process (~1.7–2.0 s, measured on Windows 11 / PowerShell 5.1, 2026-10). Slower than a resident host, but there is no background process to leak, crash, or debug. When something goes wrong, the failure is fully contained in one command's stdout and exit code.
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. The foreground is re-checked *after* sending, so a mid-flight focus steal is a loud failure too. (`--force` opts out, legacy behavior.)
 - **It says how it knows what it knows.** This is the design rule the whole feature set grew around: a number or a "not found" is worthless unless the command also prints the measurement it came from. So `find` reports `source=uia|ocr`; a miss names what *both* roads measured; `hit-window:` prints the window your click actually landed on; capture echoes print the image→screen mapping they used; `--expect` verdicts name the patience and polling interval that were really applied; `paste` names which receipt leg accepted a folded payload. **Zero is never evidence of absence**, and a check that can only pass is not a check.
-- **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives, and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
-- **Self-testing.** `selftest` runs the offline gate (currently 1305 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
-- **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; falls back to System-aware on older builds), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
+- **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives beside it and moving older ones into a quarantine folder with a manifest (never deleting them), and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
+- **Self-testing.** `selftest` runs the offline gate (currently 1368 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
+- **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; on older builds it falls back to System-aware and says so once in the output), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
 ## How a call flows
@@ -432,7 +432,7 @@ The CDP route only ever talks to `127.0.0.1`; `0.0.0.0`, LAN addresses, bare por
 
 Every action appends one line to `shots/actions.log` (`2026-10-27 16:56:46 UTC | relclick | ...`).
 At 512 KiB the file rolls to `shots/actions_<UTC timestamp>.log` and the five newest rolls stay
-alongside it, so "today's file has no line from that session" does **not** mean the session was
+alongside it while older rolls move into `quarantine\` with a manifest (never deleted), so "today's file has no line from that session" does **not** mean the session was
 never logged — read the rolls before concluding anything was lost. Timestamps are **UTC**; Beijing
 time is UTC+8, so local date 2026-10-26 covers UTC lines from `2026-10-25 16:00` through
 `2026-10-26 16:00`. Nothing scans the rolls for you; name them explicitly:
@@ -527,7 +527,7 @@ shots/                 # runtime dir (gitignored): default screenshots + actions
 .cowork-temp/          # runtime dir (gitignored): --live logs
 ```
 
-The tracked-file inventory of this repository is 47 files (`tracked=47`, asserted against `git ls-files`).
+The tracked-file inventory of this repository is 53 files (`tracked=53`, asserted against `git ls-files`).
 
 **Build from source:** from the repository root run
 `powershell -NoProfile -ExecutionPolicy Bypass -File skill/agent-computer-use/install.ps1 -StitchTo desktop.ps1`.

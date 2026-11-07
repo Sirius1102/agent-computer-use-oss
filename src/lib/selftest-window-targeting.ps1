@@ -1,4 +1,4 @@
-# lib/selftest-window-targeting.ps1 - family window-targeting of the selftest section, lifted out
+﻿# lib/selftest-window-targeting.ps1 - family window-targeting of the selftest section, lifted out
 # of lib/selftest.ps1 by A-14j (A-beta). Bodies are byte-identical to what the section carried.
 # Eleven banners in ten gathered pieces: idempotent activation and --expect-change, the anonymous window
 # label, the main-window rule as a pure function, the take-a-coordinate ladder, open-and-pick, the
@@ -3272,5 +3272,315 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     try { if (Test-Path -LiteralPath $d5Dir) { Remove-Item -LiteralPath $d5Dir -Recurse -Force } } catch { }
     $d5Residual = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Filter 'dtx-d5-*' -Force -ErrorAction SilentlyContinue).Count
     if ($d5Residual -gt 0) { Write-Output ('      D-5 cleanup: ' + $d5Residual + ' temp dir(s) left behind') }
+  }
+  # ---------- D-1 (2026-11-06): GetNewClosure bodies must carry the function, not its name ----------
+  # GetNewClosure() builds a dynamic module that copies VARIABLES but resolves FUNCTION names in
+  # its own session state. Under -File the script's functions land in the session table; under
+  # `& <entry>` from a parent scope they live only in the caller's child scope, so a bare name
+  # inside the closure answers "term not recognized". Both map publishers (rect in the entry,
+  # zoom in handlers-batch) hit exactly that. The repair is a capture: resolve the function once
+  # in script scope and carry ${function:...} into the closure. This lint makes the capture the
+  # rule for every future closure, and the planted sources below prove the detector can say both
+  # yes and no.
+  $d1Parsed = Parse-SourceForInventory ($codeLines -join "`n")
+  $d1FnNames = @($d1Parsed.Root.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object { [string]$_.Name })
+  $d1Scan = {
+    param([string]$Text, [string[]]$Names)
+    $p = Parse-SourceForInventory $Text
+    if (($null -eq $p) -or ($null -eq $p.Root)) { return 'no-parse' }
+    $bad = @()
+    $found = @($p.Root.FindAll({
+      param($n)
+      ($n -is [System.Management.Automation.Language.InvokeMemberExpressionAst]) -and
+      ($n.Member -is [System.Management.Automation.Language.StringConstantExpressionAst]) -and
+      ([string]$n.Member.Value -ceq 'GetNewClosure')
+    }, $true))
+    foreach ($c in $found) {
+      if (-not ($c.Expression -is [System.Management.Automation.Language.ScriptBlockExpressionAst])) {
+        $bad += ('opaque-receiver@' + [string]$c.Extent.StartLineNumber)
+        continue
+      }
+      foreach ($cmd in @($c.Expression.ScriptBlock.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))) {
+        $nm = [string]$cmd.GetCommandName()
+        if (($nm -ne '') -and (@($Names) -contains $nm)) { $bad += ($nm + '@' + [string]$cmd.Extent.StartLineNumber) }
+      }
+    }
+    return ($bad -join ',')
+  }
+  $d1LiveBad = & $d1Scan ($codeLines -join "`n") $d1FnNames
+  $d1PlantBad = 'function Write-MapSidecar { param($a) return $a }' + "`n" + '$pub = { Write-MapSidecar 1 2 }.GetNewClosure()'
+  $d1PlantGood = 'function Write-MapSidecar { param($a) return $a }' + "`n" + '$fn = ${function:Write-MapSidecar}' + "`n" + '$pub = { & $fn 1 2 }.GetNewClosure()'
+  $d1PlantOpaque = '$sb = { 1 }' + "`n" + '$pub = $sb.GetNewClosure()'
+  $d1BadFlag = & $d1Scan $d1PlantBad $d1FnNames
+  $d1GoodFlag = & $d1Scan $d1PlantGood $d1FnNames
+  $d1OpaqueFlag = & $d1Scan $d1PlantOpaque $d1FnNames
+  ST-Check 'lint (D-1): no GetNewClosure body calls a function this tree declares by bare name, a variable receiver is refused as opaque, and planted bare/good/opaque sources are each judged the way their shape deserves' (
+    ($d1LiveBad -ceq '') -and ($d1BadFlag -like 'Write-MapSidecar@*') -and ($d1GoodFlag -ceq '') -and ($d1OpaqueFlag -like 'opaque-receiver@*'))
+  if ($d1LiveBad -ne '') { Write-Output ('      D-1 closure lint: live violations=' + $d1LiveBad) }
+  # The outcome half: the SAME command must publish its sidecar under both invocation poses -
+  # -File (script at the session top) and & from a parent scope (script in a child scope). The
+  # check runs the real entry twice per command and compares the pair it writes, not the pixels:
+  # map presence, kind, and png_sha256 against the file actually on disk. A child that cannot
+  # spawn is a named SKIP; a child that runs and misses the map is RED.
+  $d1Dir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-d1-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($d1Dir)
+  try {
+    $d1Run = {
+      param([string]$ArgLine, [string]$OutName)
+      $o = Join-Path $d1Dir $OutName
+      try {
+        $pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $ArgLine -RedirectStandardOutput $o -RedirectStandardError "$o.err" -Wait -PassThru -NoNewWindow
+        $txt = ''
+        if (Test-Path -LiteralPath $o) { $txt += [IO.File]::ReadAllText($o) }
+        if (Test-Path -LiteralPath "$o.err") { $txt += [IO.File]::ReadAllText("$o.err") }
+        return @{ Ok = $true; Exit = [int]$pr.ExitCode; Txt = $txt }
+      } catch { return @{ Ok = $false; Why = [string]$_.Exception.Message; Exit = -1; Txt = '' } }
+    }
+    $d1Map = {
+      param([string]$Png)
+      $mp = $Png + '.map.txt'
+      if (-not (Test-Path -LiteralPath $mp)) { return $null }
+      $kv = @{}
+      foreach ($ln in @([IO.File]::ReadAllLines($mp))) { if ($ln -match '^([A-Za-z0-9_]+)=(.*)$') { $kv[$Matches[1]] = $Matches[2] } }
+      return $kv
+    }
+    $d1Sha = {
+      param([string]$P)
+      $h = [System.Security.Cryptography.SHA256]::Create()
+      try { $s = [System.IO.File]::OpenRead($P); try { ([BitConverter]::ToString($h.ComputeHash($s)) -replace '-','').ToLower() } finally { $s.Dispose() } } finally { $h.Dispose() }
+    }
+    $d1FilePng = Join-Path $d1Dir 'rect-file.png'
+    $d1AmpPng = Join-Path $d1Dir 'rect-amp.png'
+    $d1FileRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect 0 0 400 300 "' + $d1FilePng + '" --fit 0') 'rect-file.txt'
+    $d1AmpRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -Command "& ''' + $self + ''' rect 0 0 400 300 ''' + $d1AmpPng + ''' --fit 0"') 'rect-amp.txt'
+    if (-not ($d1FileRun.Ok -and $d1AmpRun.Ok)) {
+      ST-Skip 'e2e (D-1): rect publishes its map sidecar under -File AND under & from a parent scope' ($d1FileRun.Why + ' / ' + $d1AmpRun.Why + ' - the check spawns a child process')
+    } else {
+      $d1FileMap = & $d1Map $d1FilePng
+      $d1AmpMap = & $d1Map $d1AmpPng
+      $d1FileSha = ''
+      if (Test-Path -LiteralPath $d1FilePng) { $d1FileSha = & $d1Sha $d1FilePng }
+      $d1AmpSha = ''
+      if (Test-Path -LiteralPath $d1AmpPng) { $d1AmpSha = & $d1Sha $d1AmpPng }
+      $d1RectOk = ($d1FileRun.Exit -eq 0) -and ($d1AmpRun.Exit -eq 0) -and
+        (Test-Path -LiteralPath $d1FilePng) -and (Test-Path -LiteralPath $d1AmpPng) -and
+        ($null -ne $d1FileMap) -and ($null -ne $d1AmpMap) -and
+        ($d1FileMap['kind'] -ceq 'rect') -and ($d1AmpMap['kind'] -ceq 'rect') -and
+        ($d1FileMap['png_sha256'] -ceq $d1FileSha) -and ($d1AmpMap['png_sha256'] -ceq $d1AmpSha)
+      ST-Check 'e2e (D-1): rect publishes its map sidecar under -File AND under & from a parent scope, both sides carry kind=rect and a hash equal to the PNG they describe' $d1RectOk
+      if (-not $d1RectOk) {
+        Write-Output ('      D-1 rect poses: file exit=' + $d1FileRun.Exit + ' map=' + ($null -ne $d1FileMap) + ' amp exit=' + $d1AmpRun.Exit + ' map=' + ($null -ne $d1AmpMap) +
+          ' file-out=[' + $d1FileRun.Txt.Replace("`n", ' | ') + '] amp-out=[' + $d1AmpRun.Txt.Replace("`n", ' | ') + ']')
+      }
+    }
+    $d1ZFilePng = Join-Path $d1Dir 'zoom-file.png'
+    $d1ZAmpPng = Join-Path $d1Dir 'zoom-amp.png'
+    $d1ZFileRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" zoom 0 0 400 300 2 "' + $d1ZFilePng + '"') 'zoom-file.txt'
+    $d1ZAmpRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -Command "& ''' + $self + ''' zoom 0 0 400 300 2 ''' + $d1ZAmpPng + '''"') 'zoom-amp.txt'
+    if (-not ($d1ZFileRun.Ok -and $d1ZAmpRun.Ok)) {
+      ST-Skip 'e2e (D-1): zoom publishes its map sidecar under -File AND under & from a parent scope' ($d1ZFileRun.Why + ' / ' + $d1ZAmpRun.Why + ' - the check spawns a child process')
+    } else {
+      $d1ZFileMap = & $d1Map $d1ZFilePng
+      $d1ZAmpMap = & $d1Map $d1ZAmpPng
+      $d1ZFileSha = ''
+      if (Test-Path -LiteralPath $d1ZFilePng) { $d1ZFileSha = & $d1Sha $d1ZFilePng }
+      $d1ZAmpSha = ''
+      if (Test-Path -LiteralPath $d1ZAmpPng) { $d1ZAmpSha = & $d1Sha $d1ZAmpPng }
+      $d1ZoomOk = ($d1ZFileRun.Exit -eq 0) -and ($d1ZAmpRun.Exit -eq 0) -and
+        (Test-Path -LiteralPath $d1ZFilePng) -and (Test-Path -LiteralPath $d1ZAmpPng) -and
+        ($null -ne $d1ZFileMap) -and ($null -ne $d1ZAmpMap) -and
+        ($d1ZFileMap['kind'] -ceq 'zoom') -and ($d1ZAmpMap['kind'] -ceq 'zoom') -and
+        ($d1ZFileMap['scale'] -ceq '2') -and ($d1ZAmpMap['scale'] -ceq '2') -and
+        ($d1ZFileMap['png_sha256'] -ceq $d1ZFileSha) -and ($d1ZAmpMap['png_sha256'] -ceq $d1ZAmpSha)
+      ST-Check 'e2e (D-1): zoom publishes its map sidecar under -File AND under & from a parent scope, both sides carry kind=zoom, scale=2 and a hash equal to the PNG they describe' $d1ZoomOk
+      if (-not $d1ZoomOk) {
+        Write-Output ('      D-1 zoom poses: file exit=' + $d1ZFileRun.Exit + ' map=' + ($null -ne $d1ZFileMap) + ' amp exit=' + $d1ZAmpRun.Exit + ' map=' + ($null -ne $d1ZAmpMap) +
+          ' file-out=[' + $d1ZFileRun.Txt.Replace("`n", ' | ') + '] amp-out=[' + $d1ZAmpRun.Txt.Replace("`n", ' | ') + ']')
+      }
+    }
+    # The mapping half: both poses must describe the SAME geometry. imgclick --dry reads the
+    # sidecar the pose wrote and maps one image point back; rect (origin 0,0 scale 1) and zoom
+    # (origin 0,0 scale 2) both land on (100,100), so a pose whose sidecar went missing, stale
+    # or mis-scaled cannot hide behind a present PNG.
+    $d1Pairs = @()
+    $d1DrySpawn = $true
+    foreach ($d1c in @(
+      @($d1FilePng, 100, 'dry-rect-file'),
+      @($d1AmpPng, 100, 'dry-rect-amp'),
+      @($d1ZFilePng, 200, 'dry-zoom-file'),
+      @($d1ZAmpPng, 200, 'dry-zoom-amp')
+    )) {
+      $d1dr = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" imgclick "' + $d1c[0] + '" ' + $d1c[1] + ' ' + $d1c[1] + ' --dry') $d1c[2]
+      if (-not $d1dr.Ok) { $d1DrySpawn = $false }
+      $d1sm = [regex]::Match([string]$d1dr.Txt, 'screen \((-?\d+),(-?\d+)\)')
+      if (($d1dr.Exit -eq 0) -and $d1sm.Success) { $d1Pairs += ($d1c[2] + '=' + $d1sm.Groups[1].Value + ',' + $d1sm.Groups[2].Value) }
+      else { $d1Pairs += ($d1c[2] + '=UNPARSED(exit=' + $d1dr.Exit + ')') }
+    }
+    $d1DryOk = ($d1Pairs.Count -eq 4) -and
+      ($d1Pairs[0] -ceq 'dry-rect-file=100,100') -and ($d1Pairs[1] -ceq 'dry-rect-amp=100,100') -and
+      ($d1Pairs[2] -ceq 'dry-zoom-file=100,100') -and ($d1Pairs[3] -ceq 'dry-zoom-amp=100,100')
+    if (-not $d1DrySpawn) {
+      ST-Skip 'e2e (D-1): imgclick --dry maps the same image point through BOTH poses of both commands, and every sidecar resolves it to the same screen point (no pose may pass on a present PNG alone)' 'a child PowerShell could not be spawned for the dry legs'
+    } else {
+      ST-Check 'e2e (D-1): imgclick --dry maps the same image point through BOTH poses of both commands, and every sidecar resolves it to the same screen point (no pose may pass on a present PNG alone)' $d1DryOk
+    }
+    Write-Output ('      D-1 sidecar pairs: ' + ($d1Pairs -join ' / '))
+  } finally {
+    try { if (Test-Path -LiteralPath $d1Dir) { Remove-Item -LiteralPath $d1Dir -Recurse -Force } } catch { }
+  }
+
+  # X-07 (v4.9.1): the VISIBILITY CONTRACT. Screen-edge clipping is a first-class answer,
+  # not a pixel side effect: a region is clamped to the visible intersection, the receipt
+  # names the cut edge, a fully off-screen read is REFUSED (REGION_CLIPPED), a clipped
+  # region's miss is NOT evidence of absence, and an off-screen mapped point is refused
+  # (HIT_OFFSCREEN). These legs use only geometry + real captures, so they run offline.
+  $x7Dir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-x7-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($x7Dir)
+  try {
+    $x7Run = {
+      param([string]$ArgLine, [string]$OutName)
+      $o = Join-Path $x7Dir $OutName
+      try {
+        $pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $ArgLine -RedirectStandardOutput $o -RedirectStandardError "$o.err" -Wait -PassThru -NoNewWindow
+        $txt = ''
+        if (Test-Path -LiteralPath $o) { $txt += [IO.File]::ReadAllText($o) }
+        if (Test-Path -LiteralPath "$o.err") { $txt += [IO.File]::ReadAllText("$o.err") }
+        return @{ Ok = $true; Exit = [int]$pr.ExitCode; Txt = $txt }
+      } catch { return @{ Ok = $false; Why = [string]$_.Exception.Message; Exit = -1; Txt = '' } }
+    }
+    $x7Map = {
+      param([string]$Png)
+      $mp = $Png + '.map.txt'
+      if (-not (Test-Path -LiteralPath $mp)) { return $null }
+      $kv = @{}
+      foreach ($ln in @([IO.File]::ReadAllLines($mp))) { if ($ln -match '^([A-Za-z0-9_]+)=(.*)$') { $kv[$Matches[1]] = $Matches[2] } }
+      return $kv
+    }
+    $x7Dim = {
+      param([string]$P)
+      if (-not (Test-Path -LiteralPath $P)) { return @{ W = -1; H = -1 } }
+      $img = [System.Drawing.Image]::FromFile($P)
+      try { return @{ W = [int]$img.Width; H = [int]$img.Height } } finally { $img.Dispose() }
+    }
+    $x7Sha = {
+      param([string]$P)
+      $h = [System.Security.Cryptography.SHA256]::Create()
+      try { $s = [System.IO.File]::OpenRead($P); try { ([BitConverter]::ToString($h.ComputeHash($s)) -replace '-','').ToLower() } finally { $s.Dispose() } } finally { $h.Dispose() }
+    }
+    $x7V = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $x7VX = [int]$x7V.X; $x7VY = [int]$x7V.Y; $x7VW = [int]$x7V.Width; $x7VH = [int]$x7V.Height
+    # (1..3) unit legs: the one producer of the intersection, judged on its three shapes.
+    $x7VisIn = Get-VisibleRegion 10 20 30 40
+    $x7VisHalf = Get-VisibleRegion ($x7VX - 50) ($x7VY + 20) 200 60
+    $x7VisOut = Get-VisibleRegion ($x7VX - 4000) ($x7VY + 20) 200 60
+    ST-Check 'unit (X-07): an in-screen region reports clipped=false, zero off-screen pixels and the request as the visible rect (no clip bookkeeping leaks into the normal path)' (
+      (-not [bool]$x7VisIn.Clipped) -and (-not [bool]$x7VisIn.FullyOffscreen) -and
+      ([int]$x7VisIn.ClipLeft -eq 0) -and ([int]$x7VisIn.ClipTop -eq 0) -and
+      ([int]$x7VisIn.ClipRight -eq 0) -and ([int]$x7VisIn.ClipBottom -eq 0) -and
+      ([int]$x7VisIn.CX -eq 10) -and ([int]$x7VisIn.CY -eq 20) -and
+      ([int]$x7VisIn.CW -eq 30) -and ([int]$x7VisIn.CH -eq 40))
+    ST-Check 'unit (X-07): a region 50px past the left edge reports clipped=true, clip_left=50, the visible width (not the requested one), and the left edge by name' (
+      ([bool]$x7VisHalf.Clipped) -and (-not [bool]$x7VisHalf.FullyOffscreen) -and
+      ([int]$x7VisHalf.ClipLeft -eq 50) -and ([int]$x7VisHalf.CW -eq 150) -and
+      ([int]$x7VisHalf.CH -eq 60) -and ([string]$x7VisHalf.Edges -ceq 'left') -and
+      ([int]$x7VisHalf.CX -eq $x7VX))
+    ST-Check 'unit (X-07): a region entirely outside the screen is fully off-screen with zero visible pixels (the refusal case, not a black frame)' (
+      ([bool]$x7VisOut.FullyOffscreen) -and ([int]$x7VisOut.CW -eq 0))
+
+    # (4..6) e2e legs through the real entry: a clipped rect/zoom and a fully off-screen refusal.
+    $x7RectPng = Join-Path $x7Dir 'clip-rect.png'
+    $x7RectRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 "' + $x7RectPng + '" --fit 0') 'clip-rect.txt'
+    $x7RectMap = & $x7Map $x7RectPng
+    $x7RectDim = & $x7Dim $x7RectPng
+    if (-not $x7RectRun.Ok) {
+      ST-Skip 'e2e (X-07): a clipped rect captures only the visible intersection, receipt names the cut edge, sidecar carries the request' $x7RectRun.Why
+    } else {
+      ST-Check 'e2e (X-07): a clipped rect captures only the visible intersection (PNG width 150 not 200, no black bar), receipt says clipped=left:50px, sidecar carries req_w=200 and clip_left=50' (
+        ($x7RectRun.Exit -eq 0) -and (Test-Path -LiteralPath $x7RectPng) -and
+        ([int]$x7RectDim.W -eq 150) -and ([int]$x7RectDim.H -eq 60) -and
+        ([string]$x7RectRun.Txt -match 'clipped=left:50px') -and
+        ($null -ne $x7RectMap) -and ([string]$x7RectMap['clipped'] -ceq 'left') -and
+        ([int]$x7RectMap['req_w'] -eq 200) -and ([int]$x7RectMap['clip_left'] -eq 50) -and
+        ([int]$x7RectMap['origin_x'] -eq $x7VX))
+      if (-not ($x7RectRun.Exit -eq 0)) { Write-Output ('      X-07 clipped rect out=[' + $x7RectRun.Txt.Replace("`n", ' | ') + ']') }
+    }
+    $x7OutPng = Join-Path $x7Dir 'offscreen-rect.png'
+    $x7OutRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect ' + ($x7VX - 4000) + ' ' + ($x7VY + 20) + ' 200 60 "' + $x7OutPng + '" --fit 0') 'offscreen-rect.txt'
+    if (-not $x7OutRun.Ok) {
+      ST-Skip 'e2e (X-07): a fully off-screen rect is refused with REGION_CLIPPED and writes no image' $x7OutRun.Why
+    } else {
+      ST-Check 'e2e (X-07): a fully off-screen rect is refused with REGION_CLIPPED, and NOTHING is written - no black PNG is invented' (
+        ($x7OutRun.Exit -ne 0) -and ([string]$x7OutRun.Txt -match 'REGION_CLIPPED') -and
+        (-not (Test-Path -LiteralPath $x7OutPng)))
+    }
+    $x7ZoomPng = Join-Path $x7Dir 'clip-zoom.png'
+    $x7ZoomRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" zoom ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 2 "' + $x7ZoomPng + '"') 'clip-zoom.txt'
+    $x7ZoomMap = & $x7Map $x7ZoomPng
+    $x7ZoomDim = & $x7Dim $x7ZoomPng
+    if (-not $x7ZoomRun.Ok) {
+      ST-Skip 'e2e (X-07): a clipped zoom enlarges only the visible intersection and says so in the receipt' $x7ZoomRun.Why
+    } else {
+      ST-Check 'e2e (X-07): a clipped zoom enlarges only the visible intersection (300x120 at 2x, not 400x120), receipt says clipped=left:50px, sidecar keeps req_w=200' (
+        ($x7ZoomRun.Exit -eq 0) -and (Test-Path -LiteralPath $x7ZoomPng) -and
+        ([int]$x7ZoomDim.W -eq 300) -and ([int]$x7ZoomDim.H -eq 120) -and
+        ([string]$x7ZoomRun.Txt -match 'clipped=left:50px') -and
+        ($null -ne $x7ZoomMap) -and ([int]$x7ZoomMap['req_w'] -eq 200) -and ([string]$x7ZoomMap['clipped'] -ceq 'left'))
+    }
+
+    # (7) an old/edge map whose point lands outside the virtual screen must be refused.
+    $x7HitPng = Join-Path $x7Dir 'edge-map.png'
+    $x7Bmp = New-Object System.Drawing.Bitmap(2, 2)
+    try { $x7Bmp.Save($x7HitPng, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $x7Bmp.Dispose() }
+    $x7HitSha = & $x7Sha $x7HitPng
+    [void](Write-MapSidecar $x7HitPng ($x7VX + $x7VW) ($x7VY + 20) 1.0 2 2 'rect' $null 0 $null $x7HitSha)
+    $x7DryRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" imgclick "' + $x7HitPng + '" 1 1 --dry') 'edge-dry.txt'
+    if (-not $x7DryRun.Ok) {
+      ST-Skip 'e2e (X-07): imgclick refuses a point that maps outside the virtual screen' $x7DryRun.Why
+    } else {
+      ST-Check 'e2e (X-07): imgclick refuses a mapped point outside the virtual screen with HIT_OFFSCREEN, in dry mode too' (
+        ($x7DryRun.Exit -ne 0) -and ([string]$x7DryRun.Txt -match 'HIT_OFFSCREEN'))
+    }
+
+    # (8) in-screen regression: nothing about the old receipt shape may move.
+    $x7InPng = Join-Path $x7Dir 'in-screen.png'
+    $x7InRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect ' + ($x7VX + 10) + ' ' + ($x7VY + 10) + ' 40 40 "' + $x7InPng + '" --fit 0') 'in-screen.txt'
+    $x7InDim = & $x7Dim $x7InPng
+    if (-not $x7InRun.Ok) {
+      ST-Skip 'e2e (X-07): an in-screen capture keeps the old receipt shape and the requested size' $x7InRun.Why
+    } else {
+      ST-Check 'e2e (X-07): an in-screen capture is byte-for-shape unchanged - 40x40 image, receipt carries NO clipped= marker, sidecar carries NO req_ fields' (
+        ($x7InRun.Exit -eq 0) -and ([int]$x7InDim.W -eq 40) -and ([int]$x7InDim.H -eq 40) -and
+        ([string]$x7InRun.Txt -notmatch 'clipped=') -and
+        ($null -ne (& $x7Map $x7InPng)) -and (-not (& $x7Map $x7InPng).ContainsKey('req_x')))
+    }
+
+    # (9..10) the read side, where OCR is required: clipped JSON says clipped+visibleRect,
+    # and a clipped miss is REFUSED instead of claiming absence. No OCR pack = named SKIP.
+    $x7ReadRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" read-text ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 --json') 'clip-read.txt'
+    $x7ReadNoOcr = ([string]$x7ReadRun.Txt -match 'OCR unavailable')
+    if (-not $x7ReadRun.Ok) {
+      ST-Skip 'e2e (X-07): read-text --json on a clipped region reports clipped/visibleRect/offscreenPx' $x7ReadRun.Why
+      ST-Skip 'e2e (X-07): find-text refuses to call a clipped miss absence' $x7ReadRun.Why
+    } elseif ($x7ReadNoOcr) {
+      ST-Skip 'e2e (X-07): read-text --json on a clipped region reports clipped/visibleRect/offscreenPx' 'no OCR language pack - the read road is unavailable, so this is not a regression'
+      ST-Skip 'e2e (X-07): find-text refuses to call a clipped miss absence' 'no OCR language pack - the read road is unavailable, so this is not a regression'
+    } else {
+      $x7JsonObj = $null
+      $x7JsonLine = @([string]$x7ReadRun.Txt -split "`r?`n" | Where-Object { $_.TrimStart().StartsWith('{') }) | Select-Object -Last 1
+      try { $x7JsonObj = [string]$x7JsonLine | ConvertFrom-Json } catch { }
+      ST-Check 'e2e (X-07): read-text --json on a clipped region reports schemaVersion 4 with clipped=true, visibleRect.w=150 at the visible edge and offscreenPx.left=50' (
+        ($x7ReadRun.Exit -eq 0) -and ($null -ne $x7JsonObj) -and
+        ([int]$x7JsonObj.schemaVersion -eq 4) -and ([bool]$x7JsonObj.clipped) -and
+        ([int]$x7JsonObj.visibleRect.w -eq 150) -and ([int]$x7JsonObj.visibleRect.x -eq $x7VX) -and
+        ([int]$x7JsonObj.offscreenPx.left -eq 50))
+      $x7MissRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" find-text ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 ZZQX07NO_SUCH_TOKEN_QZ') 'clip-miss.txt'
+      ST-Check 'e2e (X-07): a miss on a clipped region is refused with REGION_CLIPPED and edge-clipped - absence is NOT claimed from pixels the screen never showed' (
+        ($x7MissRun.Exit -ne 0) -and ([string]$x7MissRun.Txt -match 'REGION_CLIPPED') -and
+        ([string]$x7MissRun.Txt -match 'edge-clipped'))
+    }
+    Write-Output ('      X-07 visibility: virtual screen=(' + $x7VX + ',' + $x7VY + ') ' + $x7VW + 'x' + $x7VH +
+      ' half-clip visible=' + $x7VisHalf.CW + 'x' + $x7VisHalf.CH + ' edges=' + $x7VisHalf.Edges)
+  } finally {
+    try { if (Test-Path -LiteralPath $x7Dir) { Remove-Item -LiteralPath $x7Dir -Recurse -Force } } catch { }
   }
 }

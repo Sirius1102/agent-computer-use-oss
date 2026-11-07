@@ -1,4 +1,4 @@
-# CU-CALL (v4.5.0): per-invocation caller history and overlap warnings.
+﻿# CU-CALL (v4.5.0): per-invocation caller history and overlap warnings.
 # State is local to one Windows logon session and input desktop; it never lives under the repo.
 
 if (-not ('DtxCallProcessNative' -as [type])) {
@@ -245,6 +245,18 @@ function Get-DtxCallInternalParent($ActiveById, $ParentInfo, [string]$Root) {
   return $parentRecord
 }
 
+# N-4 (2026-11-06): the unlabeled-caller sentence is a CONTRACT line - the live identity legs
+# read `caller identity=unknown` - not a per-call narration. Keep the pinned words, shorten the
+# tail, and emit at most once per process: an in-process round may start tracking many times,
+# and repeating the same sentence adds noise without adding a fact. The guard variable is set
+# lazily (Get/Set-Variable at run time) so the load-time $script: inventory does not grow.
+function Write-DtxCallIdentityWarning {
+  $shown = [bool](Get-Variable -Name 'DtxIdentityWarningShown' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  if ($shown) { return }
+  Set-Variable -Name 'DtxIdentityWarningShown' -Scope Script -Value $true
+  [Console]::Error.WriteLine('WARNING: desktop tool caller identity=unknown (tracked separately; desktop exclusivity not established).')
+}
+
 function Start-DtxCallTracking([string]$Command, [string[]]$Arguments, $Context = $null) {
   $lock = $null
   try {
@@ -371,7 +383,7 @@ function Start-DtxCallTracking([string]$Command, [string[]]$Arguments, $Context 
     $lock = $null
     if ($stateUnknown) { [Console]::Error.WriteLine('WARNING: desktop tool call-state=unknown; one or more state records could not be verified. This run is not reported as idle.') }
     if (([string]$identity.CallerLabel -ceq 'unknown') -or ([string]$identity.CallerSessionId -ceq 'unknown')) {
-      [Console]::Error.WriteLine('WARNING: desktop tool caller identity=unknown; this invocation remains separately tracked and does not establish desktop exclusivity.')
+      Write-DtxCallIdentityWarning
     }
     foreach ($otherEntry in @($overlapGroups.GetEnumerator())) {
       $otherRoot = [string]$otherEntry.Key

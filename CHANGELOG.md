@@ -2,6 +2,54 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.9.1 - 2026-11-07
+
+- **Failure paths speak JSON too (M9).** A failing command now emits the same structured
+  `{ok:false,...}` envelope as a successful one, so callers can branch on the result instead of
+  parsing prose. `schemaVersion` is present on both legs.
+- **Clipped and off-screen targets are named (X-07).** `rect` publishes its map sidecar on every
+  path, and a window that cannot be fully resolved is reported as clipped with the participating
+  edge, instead of silently returning a plausible-looking rectangle. The screen-edge contract is
+  documented and pinned (schemaVersion 3 → 4).
+- **The messaging red line is explicit (DOC-MSG).** The docs and the help entry state the rule —
+  the tool never sends a message by itself; the caller decides whether to press send — and the
+  landing receipt distinguishes a drafted message from a sent one.
+- **Probe inputs pass an AST allowlist (L1).** `challenge-probe` rejects anything that is not a
+  literal or a simple variable reference before it is evaluated; the check is a lint over the
+  parser tree, not a string blacklist.
+- **`paste-file` landing is three-state (N-1).** A paste that cannot be verified prints
+  `PASTE_LANDED_UNVERIFIED` and exits 0, so "unverifiable" is no longer conflated with "failed".
+- **Guards distinguish window from session (N-2).** The foreground guard answers two separate
+  questions — does the window still own the foreground, and is the interactive session still
+  available — and names which one failed.
+- **Clipboard replacement backs up first (N-3).** `clipboard` snapshots the previous content
+  before replacing it, and refuses to overwrite an empty snapshot.
+- **Smaller contract fixes.** Log rotation quarantines older rolls with a manifest instead of
+  deleting them (M7); a DPI fallback says so once in the output (M8); auto-trim reports what it
+  moved rather than claiming deletion and honors `--no-auto-trim` (M6); every source file carries
+  a UTF-8 BOM and the gate pins it (M2); the unknown-caller identity line prints once (N-4); a
+  parent-scope closure bug in the map sidecar is fixed (D-1).
+- **`CHECK-TOTAL.txt` is the public count source (M1+L8).** The declared check total is one file
+  the tool and CI both read; a missing file is red, not a skip.
+- **`dialog-cancel` activates its own dialog first (F-1).** The Escape fallback brings the target
+  dialog to the foreground before sending Escape and reports `activated=<bool>`, so a dialog that
+  was merely not foreground is no longer misreported as gone.
+- **Two-engine offline CI (L2).** `.github/workflows/offline-selftest.yml` runs the gate on Windows
+  PowerShell 5.1 and PowerShell 7, pins the summary line (`failed=0`, `passed+skipped` equal to
+  `CHECK-TOTAL.txt`, exit 0), and uploads the transcript even on failure. No secrets, no `--live`.
+- **Every command is anchored and exemplified (M4).** `SKILL.md` carries one `### <name>` anchor
+  for each of the 101 help entries (the 98 `capabilities` names plus `script`, `replay`,
+  `selftest`), each with a usage line and a minimal `Example: desktop.ps1 ...` argv; `reference.md`
+  names all of them. The gate checks the anchor, the reference mention, and that every flag in an
+  example appears in `help <name>` — with two planted counterexamples proving it fails when it
+  should.
+- **Counts reconciled at release.** The offline gate declares 1368 checks (1326 passed / 0 failed /
+  42 skipped on the release machine, PowerShell 7.6.9; the PowerShell 5.1 leg runs in CI), the
+  tracked-file inventory is `tracked=53`, and no assertion was relaxed to reach green.
+- **Released as v4.9.1.** Tag `v4.9.1` and the GitHub release carry the four assets (single-file
+  `desktop.ps1`, portable ZIP, `members-v4.9.1.txt`, `SHA256SUMS-v4.9.1.txt`). The v4.8.0 and
+  v4.9.0 tags and their assets are untouched.
+
 ## v4.9.0 - 2026-11-03
 
 - **Shared landing observation for the click family (PT-1).** `click`/`rclick`/`dblclick`/

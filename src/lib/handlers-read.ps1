@@ -469,10 +469,17 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
       if (-not $script:Json -and (Test-SparseReadability $boxW $boxH $total $minLineDensity)) {
         $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity $sparseSubject
       }
+      # X-07: same visibility contract as find-text. A dump from a clipped region is
+      # still a dump, but its header must say which edge was cut and the JSON lines
+      # carry edgeClipped so a consumer can filter them.
+      $rVis = $null
+      if ($null -ne $region) { $rVis = Get-OptValue $region 'Vis' }
+      $rVisTag = ''
+      if ($null -ne $rVis -and [bool]$rVis.Clipped) { $rVisTag = " clipped=$(Format-VisibilityClip $rVis) (visible part ($($rVis.CX),$($rVis.CY)) $($rVis.CW)x$($rVis.CH); a clipped read covers only what the screen can show)" }
       if ($script:Json) {
         # CONTRACT keys: schemaVersion + occluded + coveredBy + lines. Same rule as
         # find-text above - key set changes bump $JsonSchemaVersion and README.
-        $envelope = New-OcrJsonEnvelope 'lines' $gate @($shown | ForEach-Object { [pscustomobject]@{ n = $_.N; text = $_.Line.Text; x = $_.Line.X; y = $_.Line.Y; w = $_.Line.W; h = $_.Line.H } })
+        $envelope = New-OcrJsonEnvelope 'lines' $gate @($shown | ForEach-Object { [pscustomobject]@{ n = $_.N; text = $_.Line.Text; x = $_.Line.X; y = $_.Line.Y; w = $_.Line.W; h = $_.Line.H; edgeClipped = [bool](Get-VisibleRegion ([int]$_.Line.X) ([int]$_.Line.Y) ([int]$_.Line.W) ([int]$_.Line.H)).Clipped } }) $rVis
         $envelope | ConvertTo-Json -Compress -Depth 4
       } else {
         $occSeg = ''
@@ -495,7 +502,7 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
           "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" })$fTileSeg$(if ($fileRetry) { " [$fileRetry]" })$fNoteSeg$readLabel - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
           foreach ($e in $shown) { "L{0:D2} img-rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         } else {
-        "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$readLabel$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
+        "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$readLabel$rVisTag$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
         foreach ($e in $shown) { "L{0:D2} rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         }
         if ($sparseWarn) { Write-Output $sparseWarn }
@@ -623,6 +630,9 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
       # and the echo prints the bound that actually ran.
       $fDepth = [int]$own.Values['--depth']
       $of = Split-OcclusionFlags @($own.Rest)
+      # X-07: filled by the OCR road; null when UIA answered, since UIA rects are
+      # element boxes, not captures. Declared here so StrictMode never sees an unset read.
+      $fVis = $null
       $words = New-Object System.Collections.ArrayList
       $fNeedle = ''
       $fi = 0
@@ -740,6 +750,9 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
           Write-Output "find: uia gave 0 hits after walking $fWalked element(s) at depth $(Format-UiaWalkDepth $fDepth) - $fScanned of them survived the region filter ($fReprobe) - falling back to OCR on the same rect. source=ocr means the rect came from OCR: it folds look-alike glyphs, can merge two controls into one line, and cannot see enabled/offscreen."
         }
         $fReg = @{ X = $fRect.X; Y = $fRect.Y; W = $fRect.W; H = $fRect.H; Win = $(if ($fWinHow -eq 'target') { $fWin } else { $null }) }
+        # X-07: the OCR fallback reads a rect that may be cut by the screen edge. Record
+        # the visibility before reading, so a miss can refuse instead of claiming absence.
+        $fVis = Get-VisibleRegion ([int]$fRect.X) ([int]$fRect.Y) ([int]$fRect.W) ([int]$fRect.H)
         $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
         $fOwners = $null
         if ($null -ne $fReg.Win) { $fGate = Invoke-OcclusionGate $fReg $fReg.Win.Handle $occAct $of.OcclGrid $fReg.Win.Title $fNeedle 'read' }
@@ -752,6 +765,11 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
         if ($null -ne $fGate) { $occTxt = "; occluded=$([int][math]::Round($fGate.Pct))% $($fGate.Echo)" }
         elseif ($null -ne $fOwners -and $fOwners.Ran) { $occTxt = "; owners $($fOwners.Echo)" }
         if ($fDecision.Refuse) {
+          # X-07: a clipped target rect makes every absence claim void. Refuse with the
+          # stable code instead of printing Format-FindMiss as if the whole rect was read.
+          if (($null -ne $fVis) -and [bool]$fVis.Clipped) {
+            throw "REGION_CLIPPED: find: '$fNeedle' not found in the VISIBLE part of $($fVis.X),$($fVis.Y) $($fVis.W)x$($fVis.H) only - clipped=$(Format-VisibilityClip $fVis) edge-clipped: the rest of the target is off-screen, so a not-found here is NOT evidence of absence. Move the window fully on-screen and re-run"
+          }
           # the miss names BOTH roads with what each one measured - never a bare 'not found'
           $fUiaNote = "walks=$(if ($null -ne $fUia) { $fUia.Walks } else { 0 }) walked=$fWalked depth=$(Format-UiaWalkDepth $fDepth) kept=$fScanned after region filter re-contact=$fReprobe"
           throw (Format-FindMiss $fNeedle $fWalked $fUiaNote $fOcrLines $fOcrNote "($($fRect.X),$($fRect.Y)) $($fRect.W)x$($fRect.H)" $occTxt)
@@ -776,7 +794,7 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
         }
       }
       if ($script:Json) {
-        (New-FindJsonEnvelope $fDecision.Source $fDesc $fGate $fHits) | ConvertTo-Json -Compress -Depth 5
+        (New-FindJsonEnvelope $fDecision.Source $fDesc $fGate $fHits $fVis) | ConvertTo-Json -Compress -Depth 5
       }
 }
 
@@ -822,6 +840,14 @@ function Invoke-Handler-find-text([string]$Cmd, [string[]]$Rest) {
       else { $owners = Invoke-OcclusionOwners $region $occAct $of.OcclGrid }
       $f = Find-OcrHitsScaled $region.X $region.Y $region.W $region.H $needle $scaleMode $maxTiles $noTile
       $hits = $f.Hits; $lines = $f.Lines
+      # X-07: the visibility verdict is part of every answer. A clipped region was only
+      # read where the screen could show pixels - so the negative path below stops
+      # claiming absence, and a hit that touches the cut edge is labelled as such.
+      $fVis = Get-OptValue $region 'Vis'
+      $fVisNote = ''
+      if ($null -ne $fVis -and [bool]$fVis.Clipped) {
+        $fVisNote = "; clipped=$(Format-VisibilityClip $fVis) edge-clipped: the region is cut by the screen edge, only the visible part ($($fVis.CX),$($fVis.CY)) $($fVis.CW)x$($fVis.CH) was read, so a not-found here is NOT evidence of absence. Move the target fully on-screen and re-run [REGION_CLIPPED]"
+      }
       if ($hits.Count -eq 0) {
         # quote the retry decision verbatim: a silent skip must never read as
         # "we tried everything" (audit 2026-09-29b #1; three states per v1.5.0 WP-1 2.6)
@@ -847,20 +873,24 @@ function Invoke-Handler-find-text([string]$Cmd, [string[]]$Rest) {
         if (Test-SparseReadability $region.W $region.H @($lines).Count $minLineDensity) {
           Write-Output (Build-SparseReadWarn $region.W $region.H @($lines).Count $minLineDensity)
         }
-        throw "find-text: '$needle' not found in region $missRect ($(Format-OcrRetryNote $f)); $(Format-OcrSampleTail $lines 8 @{ Rect = $missRect; Retry = (Format-OcrRetryNote $f); Occlusion = $occTxt; Needle = $needle })$occNote"
+        throw "find-text: '$needle' not found in region $missRect ($(Format-OcrRetryNote $f)); $(Format-OcrSampleTail $lines 8 @{ Rect = $missRect; Retry = (Format-OcrRetryNote $f); Occlusion = $occTxt; Needle = $needle })$occNote$fVisNote"
       }
       if ($script:Json) {
         # CONTRACT keys: schemaVersion + occluded + coveredBy + hits. Changing this
         # set means bumping $JsonSchemaVersion and README together (see
         # New-OcrJsonEnvelope); selftest asserts the set exactly.
-        $envelope = New-OcrJsonEnvelope 'hits' $gate @($hits | ForEach-Object { [pscustomobject]@{ text = $_.Text; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; cx = ($_.X + [int]($_.W / 2)); cy = ($_.Y + [int]($_.H / 2)); folded = [bool]($_.PSObject.Properties['Folded'] -and $_.Folded) } })
+        $envelope = New-OcrJsonEnvelope 'hits' $gate @($hits | ForEach-Object { [pscustomobject]@{ text = $_.Text; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; cx = ($_.X + [int]($_.W / 2)); cy = ($_.Y + [int]($_.H / 2)); folded = [bool]($_.PSObject.Properties['Folded'] -and $_.Folded); edgeClipped = [bool](Get-VisibleRegion ([int]$_.X) ([int]$_.Y) ([int]$_.W) ([int]$_.H)).Clipped } }) $fVis
         $envelope | ConvertTo-Json -Compress -Depth 5
       } else {
         $show = if ($all) { $hits } else { $hits[0] }
         $foldMark = Get-OcrFoldMarker $hits
         foreach ($h in $show) {
           $cx = $h.X + [int]($h.W / 2); $cy = $h.Y + [int]($h.H / 2)
-          "hit: text='$($h.Text)' rect=($($h.X),$($h.Y),$($h.W)x$($h.H)) centre=($cx,$cy)  -> click $cx $cy"
+          # X-07: a hit's box may straddle the cut edge; say so per hit, not just once
+          # in the header, because a caller acts on the individual rect.
+          $edgeMark = ''
+          if ([bool](Get-VisibleRegion ([int]$h.X) ([int]$h.Y) ([int]$h.W) ([int]$h.H)).Clipped) { $edgeMark = ' [edge-clipped]' }
+          "hit: text='$($h.Text)' rect=($($h.X),$($h.Y),$($h.W)x$($h.H)) centre=($cx,$cy)$edgeMark  -> click $cx $cy"
         }
         if ($foldMark) { Write-Output "needle: $foldMark" }
         # J-05: the hit count a reader is about to act on is line-granular BY RULING; say
@@ -1518,6 +1548,13 @@ function Invoke-Handler-tpl-find([string]$Cmd, [string[]]$Rest) {
       try {
         $tplNorm = ConvertTo-Bitmap32 $tplSrc
         $cap = Get-ScreenBitmap ($origin.X + $rx) ($origin.Y + $ry) $rw $rh 1.0
+        # X-07: template matching is an EXACT pixel test - a partial crop would shift every
+        # match by the clipped amount and could report a "match" from a partial pattern.
+        # Refuse a clipped region outright; no match list is invented from half an image.
+        if ([bool](Get-OptValue $cap 'Clipped')) {
+          $tplClipVis = Get-OptValue $cap 'Vis'
+          throw "REGION_CLIPPED: tpl-find: the requested region is clipped by the screen edge ($(Format-VisibilityClip $tplClipVis)); template matching needs the whole region and only the visible part ($(Get-OptValue $cap 'VisibleW')x$(Get-OptValue $cap 'VisibleH') at $(Get-OptValue $cap 'OriginX'),$(Get-OptValue $cap 'OriginY')) exists. Move the target fully on-screen and re-run"
+        }
         try {
           $hay = Get-Bitmap32Bytes $cap.Bitmap
           foreach ($s in @($scales)) {

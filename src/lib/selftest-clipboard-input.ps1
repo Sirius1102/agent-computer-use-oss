@@ -345,4 +345,74 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
     ' autoConvert-off-sites=' + @($qConvSites).Count + ' call@' + $qCallIdx + ' files-read@' + $qFilesIdx +
     ' swapped=call@' + $qCallSwap + '/files@' + $qFilesSwap + ' flip-detected=' + $qRulerHasTeeth)
 
+  # N-3 (owner real-machine report 2026-11-06): --replace-clipboard destroys the old clipboard by
+  # design and left no recoverable trace; a failed write left the caller guessing. The backup file
+  # is written BEFORE the destructive write, and the failure path must put the old content back and
+  # say whether it actually came back instead of claiming a restore it never performed.
+  $n3Dir = Join-Path $env:TEMP ('n3-clip-' + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $n3Dir -Force | Out-Null
+  try {
+    $n3Path = Join-Path $n3Dir 'text.bak'
+    $n3Text = "old clipboard line1`nold clipboard line2"
+    $n3r = Write-ClipboardBackupFile @{ Kind = 'text'; Text = $n3Text; Files = @(); ImagePath = '' } $n3Path
+    $n3Files = Join-Path $n3Dir 'both.bak'
+    $n3r2 = Write-ClipboardBackupFile @{ Kind = 'both'; Text = 'tail text'; Files = @('C:\a.txt', 'C:\b.txt'); ImagePath = '' } $n3Files
+    $n3None = Join-Path $n3Dir 'none.bak'
+    $n3r3 = Write-ClipboardBackupFile @{ Kind = 'none'; Text = ''; Files = @(); ImagePath = '' } $n3None
+    $n3Bad = Write-ClipboardBackupFile @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = '' } (Join-Path $n3Dir 'other.bak')
+    $n3ImgSrc = Join-Path $n3Dir 'fake.png'
+    [System.IO.File]::WriteAllBytes($n3ImgSrc, [byte[]](1, 2, 3, 4, 5))
+    $n3Img = Join-Path $n3Dir 'image.bak'
+    $n3r4 = Write-ClipboardBackupFile @{ Kind = 'image'; Text = ''; Files = @(); ImagePath = $n3ImgSrc } $n3Img
+    ST-Check 'unit (N-3): backup writes text verbatim, both as file= lines plus the text tail, none as a marker, image as a byte copy, and refuses kinds it cannot serialize' (
+      [bool]$n3r.Ok -and ([System.IO.File]::ReadAllText($n3Path) -ceq $n3Text) -and
+      [bool]$n3r2.Ok -and ([System.IO.File]::ReadAllText($n3Files)).Contains('file=C:\a.txt') -and
+      ([System.IO.File]::ReadAllText($n3Files)).Contains('--- text below ---') -and ([System.IO.File]::ReadAllText($n3Files)).Contains('tail text') -and
+      [bool]$n3r3.Ok -and ([System.IO.File]::ReadAllText($n3None)).Contains('kind=none') -and
+      (-not [bool]$n3Bad.Ok) -and $n3Bad.Reason.Contains('cannot serialize') -and
+      [bool]$n3r4.Ok -and ((Get-Item -LiteralPath $n3Img).Length -eq 5))
+  } finally {
+    Remove-Item -LiteralPath $n3Dir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  $n3CallLog = New-Object System.Collections.ArrayList
+  $n3Src = Join-Path $env:TEMP ('n3-src-' + [Guid]::NewGuid().ToString('N') + '.txt')
+  $n3Bak = Join-Path $env:TEMP ('n3-bak-' + [Guid]::NewGuid().ToString('N') + '.txt')
+  [System.IO.File]::WriteAllText($n3Src, 'payload')
+  $n3SaveReal = ${function:Save-ClipboardState}
+  $n3RestReal = ${function:Restore-ClipboardState}
+  $n3DropReal = ${function:Set-ClipboardFileDrop}
+  $n3GateReal = ${function:Assert-ClipboardReplaceable}
+  $n3LogReal = ${function:Log-Action}
+  try {
+    ${function:Save-ClipboardState} = { return @{ Kind = 'text'; Text = 'the text that was there before'; Files = @(); ImagePath = ''; Formats = @(); Extras = @(); ReadError = '' } }
+    ${function:Set-ClipboardFileDrop} = { param($path) [void]$n3CallLog.Add('write=' + $path); return $false }
+    ${function:Restore-ClipboardState} = { param($st) [void]$n3CallLog.Add('restore=' + $st.Kind); return 'clipboard restored (previous content was text, 32 chars)' }
+    ${function:Assert-ClipboardReplaceable} = { param($st, $replace, $who) [void]$n3CallLog.Add('gate=' + [string]$who) }
+    ${function:Log-Action} = { param($lines, $detail, $cmd) [void]$n3CallLog.Add('log=' + (@($lines) -join ',')) }
+    $n3Threw = ''
+    try { Invoke-Handler-copy-file 'copy-file' @('--replace-clipboard', '--clipboard-backup', $n3Bak, $n3Src) | Out-Null }
+    catch { $n3Threw = $_.Exception.Message }
+    $n3BkIdx = -1; $n3WrIdx = -1; $n3RsIdx = -1
+    for ($n3i = 0; $n3i -lt $n3CallLog.Count; $n3i++) {
+      $n3l = [string]$n3CallLog[$n3i]
+      if ($n3BkIdx -lt 0 -and $n3l -like 'log=*clipboard-backup=*') { $n3BkIdx = $n3i }
+      if ($n3WrIdx -lt 0 -and $n3l -like 'write=*') { $n3WrIdx = $n3i }
+      if ($n3RsIdx -lt 0 -and $n3l -like 'restore=*') { $n3RsIdx = $n3i }
+    }
+    Write-Output ('      N-3 ordering: backup@' + $n3BkIdx + ' write@' + $n3WrIdx + ' restore@' + $n3RsIdx + ' calls=[' + ($n3CallLog -join ' / ') + ']')
+    ST-Check 'e2e (N-3): a failed replace backs up BEFORE the write, puts the old clipboard back exactly once, receipt says restored, and names the backup for recovery' (
+      ($n3Threw.Contains('previous clipboard: restored')) -and
+      ($n3BkIdx -ge 0) -and ($n3WrIdx -gt $n3BkIdx) -and ($n3RsIdx -gt $n3WrIdx) -and
+      (@($n3CallLog | Where-Object { $_ -like 'restore=*' }).Count -eq 1) -and
+      ((Test-Path -LiteralPath $n3Bak) -and ([System.IO.File]::ReadAllText($n3Bak) -ceq 'the text that was there before')) -and
+      $n3Threw.Contains('recoverable from ' + $n3Bak))
+  } finally {
+    ${function:Save-ClipboardState} = $n3SaveReal
+    ${function:Restore-ClipboardState} = $n3RestReal
+    ${function:Set-ClipboardFileDrop} = $n3DropReal
+    ${function:Assert-ClipboardReplaceable} = $n3GateReal
+    ${function:Log-Action} = $n3LogReal
+    Remove-Item -LiteralPath $n3Src, $n3Bak -Force -ErrorAction SilentlyContinue
+  }
+
 }

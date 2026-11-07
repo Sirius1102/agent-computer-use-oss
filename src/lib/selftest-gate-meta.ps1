@@ -1022,11 +1022,133 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     if ($atRun1 -is [System.Collections.IDictionary] -and $atRun1.Contains('Note')) { $atRun1Note = [string]$atRun1['Note'] }
     ST-Check 'e2e: auto-trim states its own bound and the no-deletion promise in the note' (
       ($atRun1Note -match 'keep newest 1') -and ($atRun1Note -match 'nothing was deleted'))
+    # M8 (2026-11-06): a degraded DPI mode writes one dpi-fallback line on the first audited
+    # command of the process, before that command's own line, and never again afterwards.
+    $m8Tmp = Join-Path $env:TEMP ('dtm8_' + [guid]::NewGuid().ToString('N'))
+    $m8SavedMode = [string]$script:DpiMode
+    $m8SavedLog = [string]$ActionLog
+    $m8SavedNoTrim = [bool]$script:NoAutoTrim
+    [void](New-Item -ItemType Directory -Force -Path $m8Tmp)
+    try {
+      # The guard this family leaves ON (line above) is meant for live fixtures; this block's
+      # dirs are throwaway, so the trim has to be re-armed explicitly or both runs return null.
+      $script:NoAutoTrim = $false
+      # The family keeps its own $ActionLog (see the top of this function); the shared file carries
+      # every earlier round's dpi-fallback line, so this block swaps the LOCAL one that the audit
+      # sees through the call chain, and restores it afterwards.
+      $ActionLog = Join-Path $m8Tmp 'actions.log'
+      $m8Shots = Join-Path $m8Tmp 'shots'; $m8Quar = Join-Path $m8Tmp 'quar'
+      [void](New-Item -ItemType Directory -Force -Path $m8Shots); [void](New-Item -ItemType Directory -Force -Path $m8Quar)
+      Set-Variable -Name 'DpiFallbackLogged' -Scope Script -Value $false -Force
+      $script:DpiMode = 'system'
+      $m8Base = (Get-Date).AddMinutes(-10)
+      foreach ($mi in @(1,2)) {
+        $mp = Join-Path $m8Shots ('m' + $mi + '.png'); [System.IO.File]::WriteAllBytes($mp, (New-Object byte[] 50))
+        (Get-Item -LiteralPath $mp).LastWriteTime = $m8Base.AddMinutes($mi * 2)
+      }
+      $m8Run1 = Trim-ShotDir -Dir $m8Shots -why 'selftest-m8' -Keep 1 -QuarOverride $m8Quar -CmdName 'selftest-m8'
+      foreach ($mi in @(3,4)) {
+        $mp = Join-Path $m8Shots ('m' + $mi + '.png'); [System.IO.File]::WriteAllBytes($mp, (New-Object byte[] 50))
+        (Get-Item -LiteralPath $mp).LastWriteTime = $m8Base.AddMinutes($mi * 2)
+      }
+      $m8Run2 = Trim-ShotDir -Dir $m8Shots -why 'selftest-m8' -Keep 1 -QuarOverride $m8Quar -CmdName 'selftest-m8'
+      $m8LogLines = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue)
+      $m8FallbackLines = @($m8LogLines | Where-Object { $_ -match 'dpi-fallback from=per-monitor-v2 to=system' })
+      $m8FirstFallback = -1; $m8LastTrim = -1
+      for ($ml = 0; $ml -lt $m8LogLines.Count; $ml++) {
+        if ($m8LogLines[$ml] -match 'dpi-fallback from=per-monitor-v2 to=system') { if ($m8FirstFallback -lt 0) { $m8FirstFallback = $ml } }
+        if ($m8LogLines[$ml] -match '\| selftest-m8 \| auto-trim --keep 1 selftest-m8 \|') { $m8LastTrim = $ml }
+      }
+      Write-Output ('      M8 audit: log-lines=' + $m8LogLines.Count + ' fallback=' + @($m8FallbackLines).Count + ' first=' + $m8FirstFallback + ' last-trim=' + $m8LastTrim + ' runs=' + ($null -ne $m8Run1) + '/' + ($null -ne $m8Run2))
+      ST-Check 'unit (M8): a degraded DPI mode adds one dpi-fallback line on the first audited command, before its trim, and never repeats it' (
+        ($null -ne $m8Run1) -and ($null -ne $m8Run2) -and (@($m8FallbackLines).Count -eq 1) -and
+        ($m8FirstFallback -ge 0) -and ($m8LastTrim -gt $m8FirstFallback) -and ($null -ne (ConvertFrom-ActionLogLine $m8FallbackLines[0])))
+    } finally {
+      $ActionLog = $m8SavedLog
+      $script:DpiMode = $m8SavedMode
+      $script:NoAutoTrim = $m8SavedNoTrim
+      Remove-Item -LiteralPath $m8Tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
   } finally {
     if ($atHadAutoTrim) { $env:DTX_SHOT_AUTOTRIM = $atSavedAutoTrim }
     else { Remove-Item Env:\DTX_SHOT_AUTOTRIM -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $atTmp) { Remove-Item -LiteralPath $atTmp -Recurse -Force }
   }
+  # M6 (2026-11-06): the automatic trim now AUDITS "moved, deleted nothing", DTX_SHOT_AUTOTRIM=0
+  # writes nothing at all, and --no-auto-trim is a pure global switch the entry wires to the same
+  # script guard this family exercises. A private log keeps earlier rounds out of "no line" evidence.
+  $m6Tmp = Join-Path $env:TEMP ('dtm6_' + [guid]::NewGuid().ToString('N'))
+  $m6SavedLog = [string]$ActionLog
+  $m6SavedNoTrim = [bool]$script:NoAutoTrim
+  $m6HadAutoTrim = Test-Path Env:\DTX_SHOT_AUTOTRIM
+  $m6SavedAutoTrim = ''
+  if ($m6HadAutoTrim) { $m6SavedAutoTrim = [string]$env:DTX_SHOT_AUTOTRIM }
+  [void](New-Item -ItemType Directory -Force -Path $m6Tmp)
+  try {
+    $ActionLog = Join-Path $m6Tmp 'actions.log'
+    $script:NoAutoTrim = $false
+    $m6Shots = Join-Path $m6Tmp 'shots'
+    $m6Quar = Join-Path $m6Tmp 'quarantine'
+    [void](New-Item -ItemType Directory -Force -Path $m6Shots)
+    [void](New-Item -ItemType Directory -Force -Path $m6Quar)
+    $m6Names = @('m6a.png', 'm6b.png', 'm6c.png')
+    $m6Hashes = @{}
+    $m6Sha = [System.Security.Cryptography.SHA256]::Create()
+    for ($mi = 0; $mi -lt $m6Names.Count; $mi++) {
+      $m6Bytes = [byte[]](1..(10 * ($mi + 1)) | ForEach-Object { [byte](($_ + $mi) % 251) })
+      $m6Path = Join-Path $m6Shots $m6Names[$mi]
+      [System.IO.File]::WriteAllBytes($m6Path, $m6Bytes)
+      $m6Hashes[$m6Names[$mi]] = [BitConverter]::ToString($m6Sha.ComputeHash($m6Bytes)).Replace('-', '').ToLower()
+      (Get-Item -LiteralPath $m6Path).LastWriteTime = (Get-Date).AddMinutes(-30 + 2 * $mi)
+    }
+    $env:DTX_SHOT_AUTOTRIM = '1'
+    $m6Run = Trim-ShotDir -Dir $m6Shots -why 'selftest-m6' -Keep 1 -QuarOverride $m6Quar -CmdName 'selftest-m6'
+    $m6Log = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue)
+    $m6Audit = @($m6Log | Where-Object { $_ -match '\| selftest-m6 \| auto-trim --keep 1 selftest-m6 \|' })
+    $m6Moved = @(Get-ChildItem -LiteralPath $m6Quar -File -Filter '*.png' -Recurse)
+    $m6ShaOk = $true
+    foreach ($m6File in $m6Moved) {
+      $m6Hash = [BitConverter]::ToString($m6Sha.ComputeHash([System.IO.File]::ReadAllBytes($m6File.FullName))).Replace('-', '').ToLower()
+      if ((-not $m6Hashes.ContainsKey($m6File.Name)) -or ($m6Hashes[$m6File.Name] -ne $m6Hash)) { $m6ShaOk = $false }
+    }
+    Write-Output ('      M6 audit: moved=' + $m6Moved.Count + ' rows=' + $m6Audit.Count + ' sha-ok=' + $m6ShaOk)
+    ST-Check 'e2e (M6): auto-trim records moved=N and deleted=0 in its audit line, and the quarantined bytes hash the same as the originals' (
+      ($null -ne $m6Run) -and (@($m6Moved).Count -eq 2) -and (@($m6Audit).Count -eq 1) -and
+      (@($m6Audit)[0].Contains('moved=2 ')) -and (@($m6Audit)[0].Contains('deleted=0 ')) -and $m6ShaOk)
+    $m6OffShots = Join-Path $m6Tmp 'shots-off'
+    [void](New-Item -ItemType Directory -Force -Path $m6OffShots)
+    foreach ($m6OffName in @('o1.png', 'o2.png')) {
+      [System.IO.File]::WriteAllBytes((Join-Path $m6OffShots $m6OffName), [byte[]](1..8))
+      (Get-Item -LiteralPath (Join-Path $m6OffShots $m6OffName)).LastWriteTime = (Get-Date).AddMinutes(-20)
+    }
+    $m6LogBefore = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue).Count
+    $env:DTX_SHOT_AUTOTRIM = '0'
+    $m6Off = Trim-ShotDir -Dir $m6OffShots -why 'selftest-m6-off' -Keep 1 -QuarOverride $m6Quar -CmdName 'selftest-m6-off'
+    $m6LogAfter = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue).Count
+    ST-Check 'e2e (M6): DTX_SHOT_AUTOTRIM=0 moves nothing and writes no audit line' (
+      ($null -eq $m6Off) -and (@(Get-ChildItem -LiteralPath $m6OffShots -File).Count -eq 2) -and ($m6LogAfter -eq $m6LogBefore))
+    $m6No = Split-NoAutoTrimFlag @('shots-cleanup', '--keep', '5')
+    $m6Yes = Split-NoAutoTrimFlag @('--no-auto-trim', 'shot', '--no-auto-trim', '--tag', 'x')
+    ST-Check 'unit (M6): Split-NoAutoTrimFlag leaves non-flag tokens in order, removes every occurrence of the value-less switch, and reports presence' (
+      (($m6No.Flag -eq $false) -and ((@($m6No.Args) -join '|') -ceq 'shots-cleanup|--keep|5')) -and
+      (($m6Yes.Flag -eq $true) -and ((@($m6Yes.Args) -join '|') -ceq 'shot|--tag|x')))
+    $m6FlagTok = '(Split-NoAutoTrimF' + 'lag $Rest).Flag'
+    $m6ArmTok = "Set-Variable -Name 'NoAutoT" + "rim' -Scope Script -Value `$true"
+    $m6ArgsTok = '(Split-NoAutoTrimF' + 'lag $Rest).Args'
+    $m6GuardTok = 'if ($script:NoAutoT' + 'rim) { return $null }'
+    ST-Check 'lint (M6): the entry asks the same helper at the boundary, arms the guard Trim-ShotDir honors with the verdict, and rewrites $Rest from the kept list' (
+      (@($codeLines | Where-Object { $_.Contains($m6FlagTok) }).Count -eq 1) -and
+      (@($codeLines | Where-Object { $_.Contains($m6ArmTok) }).Count -eq 1) -and
+      (@($codeLines | Where-Object { $_.Contains($m6ArgsTok) }).Count -eq 1) -and
+      (@($codeLines | Where-Object { $_.Contains($m6GuardTok) }).Count -eq 1))
+  } finally {
+    $ActionLog = $m6SavedLog
+    $script:NoAutoTrim = $m6SavedNoTrim
+    if ($m6HadAutoTrim) { $env:DTX_SHOT_AUTOTRIM = $m6SavedAutoTrim }
+    else { Remove-Item Env:\DTX_SHOT_AUTOTRIM -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $m6Tmp -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
   # Tokens are assembled at runtime so THIS check's own lines never satisfy the shapes it
   # counts - the same evasion the README badge lint uses, and for the same reason.
   $mvTok = '= Move-ShotsTo' + 'Quarantine '
@@ -1604,6 +1726,10 @@ exit 0
     $ccBoundaryParent = [pscustomobject]@{ ParentPid = 0; ParentName = 'unknown'; ParentStartUtc = ''; ParentStartFileTime = ''; Known = $false }
     $ccBoundaryContext = [ordered]@{ RootBase = $ccFullBoundaryRoot; WindowsSessionId = '778'; DesktopName = 'Default'; CallerLabel = 'unknown'; CallerSessionId = 'unknown'; ParentInfo = $ccBoundaryParent; SourcePath = 'D:\synthetic\unknown.ps1'; ToolVersion = '4.5.0' }
     [Console]::SetError($ccBoundaryBuffer)
+    # N-4: the once-per-process guard is reset here on purpose - this block starts its OWN
+    # simulated CLI process boundary, so the unknown-identity line must be observable again
+    # while the second tracking call below still must not repeat it.
+    Set-Variable -Name 'DtxIdentityWarningShown' -Scope Script -Value $false -Force
     $ccTimedOutLease = Start-DtxCallTracking 'info' @() $ccBoundaryContext
     $ccLockWarning = $ccBoundaryBuffer.ToString()
     $ccLockStream.Dispose(); $ccLockStream = $null
@@ -1618,6 +1744,13 @@ exit 0
       $ccCorruptRegistered -and $ccCorruptWarning.Contains('call-state=unknown; one or more state records could not be verified') -and
       $ccCorruptWarning.Contains('caller identity=unknown') -and $ccCorruptKept -and ($ccRemaining -eq 1)
     $ccBoundarySummary = 'lock-timeout=unknown;' + 'corrupt-preserved=' + $ccCorruptKept + ';identity-unknown=' + $ccCorruptWarning.Contains('caller identity=unknown') + ';active-json=' + $ccRemaining
+    # N-4 (2026-11-06): the unlabeled-caller line is a CONTRACT (the live identity legs read its
+    # substring), not a per-call narration. This process started tracking twice with unknown
+    # identity above, so the line must appear exactly once - and its tail is the compact one.
+    $ccIdWarnLines = @(($ccCorruptWarning -split "`r?`n") | Where-Object { $_.Contains('caller identity=unknown') })
+    ST-Check 'unit (N-4): an unknown-caller warning is emitted once per process, keeps the pinned substring and stays a compact single line' (
+      (@($ccIdWarnLines).Count -eq 1) -and (@($ccIdWarnLines)[0].Contains('desktop exclusivity not established')) -and
+      (@($ccIdWarnLines)[0].Length -le 120))
   } catch {
     $ccBoundarySummary = 'state-boundary-error=' + $_.Exception.Message
   } finally {
@@ -1846,11 +1979,14 @@ exit 0
   # production-scoped on purpose: the two literals below are also written into this check's own
   # source, so an unscoped scan counts the scanner (same self-reference the pixel-hash token had
   # to be assembled at runtime to dodge).
-  $aeFive = 0; $aeThree = 0
+  $aeFive = 0; $aeThree = 0; $aeAtt = 0; $aeAttHead = 0; $aeAttTail = 0
   foreach ($aeL in $mvProd) {
     $aeT = "$aeL"
     if ($aeT.Contains($aeProbeTok)) { $aeFive++ }
     if ($aeT.Contains('Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)')) { $aeThree++ }
+    if ($aeT.Contains('Invoke-AttachmentLanding $p $target $fi.Name')) { $aeAtt++ }
+    if ($aeT.Contains('Invoke-AutoPasteExpect $p $target $headArg')) { $aeAttHead++ }
+    if ($aeT.Contains('Invoke-AutoPasteExpect $p $target ([string]$probe.Tail)')) { $aeAttTail++ }
   }
   $aeDoc = ''
   $aeDocsSeen = 0
@@ -1866,8 +2002,8 @@ exit 0
   # (a lint enforces exactly that, and it bit the first draft of this check).
   $aeNeedle = 'paste-file` ' + [string]::Join('', @([char]0x4E0D, [char]0x8D70, [char]0x8FD9, [char]0x6761, [char]0x8DEF))
   if ($aeDocsSeen -gt 0) {
-    ST-Check 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length, paste-file passes neither) and the README still says so - a silent convergence would be a behaviour change' (
-      ($aeFive -eq 1) -and ($aeThree -eq 1) -and ($aeDoc.Contains($aeNeedle)))
+    ST-Check 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length; paste-file routes through the attachment probe pair and passes NEITHER) and the README still says so - a silent convergence would be a behaviour change' (
+      ($aeFive -eq 1) -and ($aeThree -eq 0) -and ($aeAtt -eq 1) -and ($aeAttHead -eq 1) -and ($aeAttTail -eq 1) -and ($aeDoc.Contains($aeNeedle)))
   } else {
     ST-Skip 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length, paste-file passes neither) and the README still says so - a silent convergence would be a behaviour change' 'no README found in this tree - nothing to cross-check the code shape against'
   }
@@ -2165,6 +2301,70 @@ public static class DtxWheelProbe {
   function Get-WheelProbePointObservation([int]$X, [int]$Y, $Target, [string]$Phase, [bool]$RequireForeground = $false) {
     return [pscustomobject]@{ X = $X; Y = $Y; Hit = @{ Hwnd = [IntPtr]77; Pid = 91; Title = 'synthetic-wheel-target' }; Foreground = [IntPtr]::Zero; Rect = $null; TargetVerified = $false; Phase = $Phase }
   }
+  # L1 (2026-11-06): three probe texts were run through the old string runner on the promise that
+  # only known names were ever spliced in. The promise is now a gate: parse, refuse ANY command or
+  # type outside the pinned set (refusal is red and nothing runs), then execute the string as a
+  # scriptblock in THIS scope. The constant set's hash is pinned beside the checks, so a new name
+  # needs both the constant and the fixtures changed at once.
+  function Get-ProbeAllowedCommands {
+    return @(
+      'Add-Member', 'Convert-PointSpace', 'ConvertTo-ExpectChangeRect', 'ConvertTo-WheelProbeExpectRect',
+      'Default-ShotProbeName', 'Emit-ResolveNote', 'Format-ModifierReceipt', 'Get-ExpectChangeBaseline',
+      'Get-ExpectChangeRegion', 'Get-HashKeys', 'Get-OptValue', 'Get-PointSpaceOrigin', 'Get-RegionHash',
+      'Get-ShotProbeVirtualScreen', 'Get-WheelPointObservation-probe', 'Get-WheelProbeBaseline',
+      'Get-WheelProbeExpectRegion', 'Get-WheelProbeHash',
+      'Get-WheelProbeHitWindow', 'Get-WheelProbePointObservation', 'Get-WheelProbeRect',
+      'Get-WheelProbeScrollObservation', 'Get-WheelProbeVisibleTextObservation',
+      'Get-WheelScrollObservation', 'Get-WheelVisibleTextObservation', 'Invoke-ExpectChangeCheck',
+      'Invoke-ModifierGesture', 'Invoke-ShotProbeOwners', 'Invoke-TargetBlockGuard', 'Invoke-WheelProbeClick',
+      'Invoke-WheelProbeEmitResolveNote', 'Invoke-WheelProbeExpectChange', 'Invoke-WheelProbeLog',
+      'Invoke-WheelProbeSleep', 'New-CaptureQualityDefaults', 'New-Object', 'Parse-CaptureFlags-shot-probe',
+      'Read-FlagNumber', 'Resolve-MouseModifiers', 'Resolve-OcclGridArg', 'Resolve-OccludeModeArg',
+      'Resolve-ShotOutputPath', 'Resolve-ShotProbeOcclusionMode', 'Resolve-Target', 'Resolve-WheelProbeTarget',
+      'Resolve-WheelRequest', 'Save-ShotProbeRect', 'Split-OcclusionFlags-shot-probe', 'Split-Target',
+      'Strip-OwnFlags', 'Test-CaptureQualityFlag', 'Test-PointSpaceArg', 'Test-WheelScrollBoundary',
+      'Test-WheelScrollBoundary-probe', 'Test-WheelScrollDirection', 'Test-WheelScrollDirection-probe',
+      'Where-Object', 'Write-Output'
+    )
+  }
+  function Get-ProbeAllowedTypes {
+    return @('DtxWheelProbe', 'Math', 'string', 'System.Diagnostics.Stopwatch', 'System.Runtime.InteropServices.Marshal')
+  }
+  function Test-ProbeTextAllowed([string]$Text, [string]$Label) {
+    $probeTokens = $null; $probeErrors = $null
+    $probeAst = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$probeTokens, [ref]$probeErrors)
+    if (@($probeErrors).Count -gt 0) { throw "probe $Label no longer parses" }
+    # `& $sb` carries no command name, so the whitelist cannot see what it would invoke. The one
+    # shape these texts are allowed to use is a call through a scriptblock literal assigned in the
+    # same text (wheelSend), and the scan below resolves that before the name check runs. The body
+    # of such a literal is itself scanned, so the allowance cannot smuggle an unlisted name in.
+    $probeSbVars = @{}
+    foreach ($probeAssign in $probeAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+      $probeRhs = $probeAssign.Right
+      if ($probeRhs -is [System.Management.Automation.Language.CommandExpressionAst]) { $probeRhs = $probeRhs.Expression }
+      if (($probeAssign.Left -is [System.Management.Automation.Language.VariableExpressionAst]) -and ($probeRhs -is [System.Management.Automation.Language.ScriptBlockExpressionAst])) {
+        $probeSbVars[[string]$probeAssign.Left.VariablePath.UserPath] = $true
+      }
+    }
+    $probeAllowed = Get-ProbeAllowedCommands
+    $probeBad = New-Object System.Collections.ArrayList
+    foreach ($probeCmd in $probeAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+      $probeName = $probeCmd.GetCommandName()
+      if ($null -eq $probeName) {
+        $probeCall = [regex]::Match($probeCmd.Extent.Text.Trim(), '^&\s*\$([A-Za-z0-9_]+)$')
+        if ($probeCall.Success -and $probeSbVars.ContainsKey($probeCall.Groups[1].Value)) { continue }
+        [void]$probeBad.Add(($probeCmd.Extent.Text.Trim() -split "`n")[0])
+        continue
+      }
+      if ($probeAllowed -notcontains $probeName) { [void]$probeBad.Add($probeName) }
+    }
+    if ($probeBad.Count -gt 0) { throw "probe $Label reached an unlisted command: $(@($probeBad) -join ', ')" }
+    $probeTypes = @($probeAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] }, $true) | ForEach-Object { $_.TypeName.FullName })
+    $probeOkTypes = Get-ProbeAllowedTypes
+    $probeBadTypes = @($probeTypes | Where-Object { $probeOkTypes -notcontains $_ })
+    if (@($probeBadTypes).Count -gt 0) { throw "probe $Label reached an unlisted type: $($probeBadTypes -join ',')" }
+    return $true
+  }
   $wheelAllText = $codeLines -join "`n"
   $wheelTokens = $null; $wheelParseErrors = $null
   $wheelAst = [System.Management.Automation.Language.Parser]::ParseInput($wheelAllText, [ref]$wheelTokens, [ref]$wheelParseErrors)
@@ -2175,7 +2375,9 @@ public static class DtxWheelProbe {
   $wheelProbeText = $wheelProbeText.Replace('[DT]', '[DtxWheelProbe]').Replace('DT+POINT', 'DtxWheelProbe+POINT')
   $wheelProbeText = $wheelProbeText.Replace('Start-Sleep -Milliseconds', 'Invoke-WheelProbeSleep -Milliseconds')
   $wheelProbeText = $wheelProbeText.Replace('Log-Action ', 'Invoke-WheelProbeLog ').Replace('Resolve-Window ', 'Resolve-WheelProbeWindow ').Replace('Move-Click ', 'Invoke-WheelProbeClick ')
-  if ($wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) { Invoke-Expression $wheelProbeText }
+  if ($wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) {
+    if (Test-ProbeTextAllowed $wheelProbeText 'wheel-no-target') { . ([scriptblock]::Create($wheelProbeText)) }
+  }
   [DtxWheelProbe]::Reset()
   $wheelProbeOutput = @()
   if ($wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) {
@@ -2354,7 +2556,8 @@ public static class DtxWheelProbe {
     $wheelProbeHandlerText = $wheelProbeHandlerText.Replace([string]$wheelReplacement.Old, [string]$wheelReplacement.New)
   }
   if ($wheelObservationAst -and $wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) {
-    Invoke-Expression ($wheelProbeObservationText + "`n" + $wheelBoundaryText + "`n" + $wheelDirectionText + "`n" + $wheelProbeHandlerText)
+    $wheelObservationCombined = $wheelProbeObservationText + "`n" + $wheelBoundaryText + "`n" + $wheelDirectionText + "`n" + $wheelProbeHandlerText
+    if (Test-ProbeTextAllowed $wheelObservationCombined 'wheel-observation') { . ([scriptblock]::Create($wheelObservationCombined)) }
   }
 
   Reset-WheelProbe
@@ -2637,7 +2840,10 @@ public static class DtxWheelProbe {
   $shotCaptureAst = $wheelAst.Find({ param($node) ($node -is [System.Management.Automation.Language.FunctionDefinitionAst]) -and ($node.Name -ceq 'Parse-CaptureFlags') }, $true)
   $shotOcclusionText = if ($shotOcclusionAst) { $shotOcclusionAst.Extent.Text.Replace('function Split-OcclusionFlags(', 'function Split-OcclusionFlags-shot-probe(') } else { '' }
   $shotCaptureText = if ($shotCaptureAst) { $shotCaptureAst.Extent.Text.Replace('function Parse-CaptureFlags(', 'function Parse-CaptureFlags-shot-probe(') } else { '' }
-  if ($shotOcclusionText -and $shotCaptureText -and $shotProbeText) { Invoke-Expression ($shotOcclusionText + "`n" + $shotCaptureText + "`n" + $shotProbeText) }
+  if ($shotOcclusionText -and $shotCaptureText -and $shotProbeText) {
+    $shotProbeCombined = $shotOcclusionText + "`n" + $shotCaptureText + "`n" + $shotProbeText
+    if (Test-ProbeTextAllowed $shotProbeCombined 'shot-capture') { . ([scriptblock]::Create($shotProbeCombined)) }
+  }
   function Reset-ShotProbe {
     $script:ShotProbeScreenReads = 0; $script:ShotProbeSaveCalls = 0; $script:ShotProbeSavedPath = ''
   }
@@ -2691,6 +2897,51 @@ public static class DtxWheelProbe {
   ST-Check 'lint (CU-REL-05): shot validates before virtual-screen access and save, and command help gives the local-crop mapping route' (
     $shotResolveAt -ge 0 -and $shotResolveAt -lt $shotScreenAt -and $shotScreenAt -lt $shotSaveAt -and $shotHelpContract)
   Write-Output ('      shot probe: invalid-cases=' + $shotBadCount + '/' + @($shotBadCases).Count + ' screen-reads=' + $script:ShotProbeScreenReads + ' save-calls=' + $script:ShotProbeSaveCalls)
+
+  # L1 (2026-11-06): the three probe texts above used to be handed to the string runner on the promise
+  # that only known names were ever spliced in. The promise is now a gate, and the three rows below
+  # prove the three properties the plan asked for: an unlisted name is refused BEFORE the body runs,
+  # the constant set is pinned by a hash, and each call site gates first and executes the text as a
+  # scriptblock in this scope (the shape the probe definitions depend on).
+  $l1MarkPath = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-l1-refuse-' + [guid]::NewGuid().ToString('N') + '.txt')
+  $l1Refused = $false
+  $l1RefusalText = "Set-Content -LiteralPath '" + $l1MarkPath + "' -Value 'ran'`n"
+  try { if (Test-ProbeTextAllowed $l1RefusalText 'l1-refusal') { . ([scriptblock]::Create($l1RefusalText)) } }
+  catch { $l1Refused = $true }
+  $l1Marker = Test-Path -LiteralPath $l1MarkPath
+  if ($l1Marker) { Remove-Item -LiteralPath $l1MarkPath -ErrorAction SilentlyContinue }
+  $l1AllowedText = 'function Get-L1ProbeSentinel { return 7 }'
+  $l1AllowedRan = $false
+  try {
+    if (Test-ProbeTextAllowed $l1AllowedText 'l1-allowed') { . ([scriptblock]::Create($l1AllowedText)) }
+    $l1AllowedRan = ((Get-L1ProbeSentinel) -eq 7)
+  } catch { $l1AllowedRan = $false }
+  ST-Check 'unit (L1): an unlisted command in a probe text is refused before the body runs, and a listed text still executes in the scope that declares it' (
+    $l1Refused -and (-not $l1Marker) -and $l1AllowedRan)
+  Write-Output ('      L1 gate: refused=' + $l1Refused + ' marker=' + $l1Marker + ' allowed-ran=' + $l1AllowedRan)
+
+  $l1CmdSet = @(Get-ProbeAllowedCommands | Sort-Object)
+  $l1TypeSet = @(Get-ProbeAllowedTypes | Sort-Object)
+  $l1Blob = 'commands' + "`n" + ($l1CmdSet -join "`n") + "`ntypes`n" + ($l1TypeSet -join "`n")
+  $l1Hasher = [System.Security.Cryptography.SHA256]::Create()
+  $l1Hash = (@($l1Hasher.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($l1Blob)) | ForEach-Object { $_.ToString('x2') }) -join '')
+  $l1HashPin = '7a09c40c09415923a65f00735c3eca83dd0775283ecce4f0fc11e01a11ac4066'
+  $l1OldRunner = 'Invoke' + '-Expression'
+  $l1OldCount = @([regex]::Matches(($srcLines -join "`n"), [regex]::Escape([string]$l1OldRunner))).Count
+  ST-Check 'lint (L1): the probe whitelist hashes to the pinned constant, and the removed string runner appears nowhere in the aggregated source' (
+    ($l1Hash -ceq $l1HashPin) -and ($l1OldCount -eq 0))
+  Write-Output ('      L1 whitelist: cmds=' + $l1CmdSet.Count + ' types=' + $l1TypeSet.Count + ' sha=' + $l1Hash + ' old-runner=' + $l1OldCount)
+
+  $l1SiteNames = @('wheelProbeText', 'wheelObservationCombined', 'shotProbeCombined')
+  $l1SrcText = $srcLines -join "`n"
+  $l1SiteGate = 0; $l1SiteRun = 0
+  foreach ($l1SiteName in $l1SiteNames) {
+    if ($l1SrcText.Contains('if (Test-ProbeTextAllowed $' + $l1SiteName + ' ')) { $l1SiteGate++ }
+    if ($l1SrcText.Contains('{ . ([scriptblock]::Create($' + $l1SiteName + ')) }')) { $l1SiteRun++ }
+  }
+  ST-Check 'lint (L1): all three probe blocks pass the gate before running and execute through a scriptblock in the caller''s scope' (
+    @($l1SiteNames).Count -eq 3 -and $l1SiteGate -eq 3 -and $l1SiteRun -eq 3)
+  Write-Output ('      L1 call sites: gated=' + $l1SiteGate + '/3 executed=' + $l1SiteRun + '/3')
 
 }
 

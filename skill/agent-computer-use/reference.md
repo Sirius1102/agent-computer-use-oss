@@ -2,6 +2,8 @@
 
 One level below `SKILL.md`. Everything here is optional depth: the quick reference in `SKILL.md` is enough to start; come here for flags, exit codes and recipes.
 
+Current tool version: v4.9.1.
+
 ## Invocation
 
 ```
@@ -26,21 +28,21 @@ Anywhere a `<sel>` appears:
 
 If a title/proc/class selector matches several windows, resolution **refuses and lists every candidate** — disambiguate with pid / proc: / class: / a longer title.
 
-Numeric-PID selection stays **foreground-first** by default. The ONE exception (v4.9.0, X-04): when the pid's main window is disabled and the foreground window's Owner chain (≤16 hops, cycle-guarded) reaches it, the main window is picked instead and the receipt prints `pick=main` (`pick=parked` when the main is minimized) plus a `note:` stating the reason. Every other shape keeps foreground-first. To act on a dialog itself, select it explicitly by title or `hwnd:` — that path is never re-routed by this exception.
+Numeric-PID selection stays **foreground-first** by default. The ONE exception (v4.9.0, X-04): when the pid's main window is disabled and the foreground window's Owner chain (≤16 hops, cycle-guarded) reaches it, the main window is picked instead and the receipt prints `pick=main` (`pick=parked` when the main is minimized) plus a `note:` stating the reason — the foreground window is only an owned popup of a disabled main window, so input routed to it would bypass the disabled main window. Every other shape (enabled main, unowned popup, owned window of another pid, main in the foreground) keeps foreground-first. To act on a dialog itself, select it explicitly by title or `hwnd:` — that path is never re-routed by this exception.
 
 ## Screenshots And Reading
 
 - `shot [out] [--fit px] [--grid [step] | --no-grid] [--mark x,y] [--occlude off|warn|strict]` — whole virtual screen; accepts at most one output path and rejects unknown flags or extra positions before capture. For a local full-resolution crop use `rect 0 2010 400 80 <outPath> --fit 0`; use its `.map.txt` with `imgclick` or `unmap`, and recapture after the window or layout changes. `--fit` downscales wider crops and the echo carries the explicit scale; the grid is labelled in SCREEN pixels; `--mark` draws a candidate click point.
-- `win <sel> [out] [--fit px|0] [--grid...] [--mark x,y]` — a window; echoes the image→screen mapping (`screen = image + (L,T)` or `(L + ix/scale, T + iy/scale)`).
-- `rect <x> <y> <w> <h> [out] [--fit...] [--grid...] [--mark x,y]` — a region.
-- `zoom <x> <y> <w> <h> [scale] [out]` — small region enlarged (default 2x) with mapping echo.
-- `wins` — table of visible windows: pid / proc / class / popup / owner / main / rect / size / title.
+- `win <sel> [out] [--fit px|0] [--grid...] [--mark x,y] [--content-roi x,y,w,h]` — a window; echoes the image→screen mapping (`screen = image + (L,T)` or `(L + ix/scale, T + iy/scale)`).
+- `rect <x> <y> <w> <h> [out] [--fit...] [--grid...] [--mark x,y] [--content-roi x,y,w,h]` — a region.
+- `zoom <x> <y> <w> <h> [scale] [out] [--content-roi x,y,w,h]` — small region enlarged (default 2x) with mapping echo.
+- `wins` — table of visible windows: pid / proc / class / popup / owner / main / rect / size / title. `wins -z` opts into the verified GetWindow Z-order chain and adds `z hwnd enabled modal modal_source`; a `z` rank is assigned only from the `GetTopWindow` document-chain head, and rows unreachable from that head stay `unknown` (JSON null). modal is yes/no/unknown from a bounded UIA WindowPattern probe, never inferred from ownership. Default text and the original 11-key JSON remain unchanged; `-z --json` is the 16-key extended shape.
 - `info <sel>` · `rect-of <sel>` · `cursor` · `color-at <x> <y>` · `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]`.
 - `hash <sel|x y w h>` — region MD5; input for `assert-hash`.
 - `ocr-cap` — OCR engine limits + installed language packs.
 - `status-summary [--json]` — read-only checkpoint: HEAD, cleanliness, latest offline selftest counts, latest live log, red count.
 
-Screenshot files: `win` / `rect` / `zoom` write a `<image>.map.txt` sidecar next to the image — that sidecar is what `imgclick` / `unmap` use to map pixels back to the screen.
+Screenshot files: `win` / `rect` / `zoom` write a `<image>.map.txt` sidecar next to the image — that sidecar is what `imgclick` / `unmap` use to map pixels back to the screen. `win`/`rect`/`zoom` also publish a content SHA-256 measured from the same raw 1:1 source frame before fit/grid/marks (full frame by default). `--content-roi x,y,w,h` narrows it in source-image pixels. `imgclick` strictly compares that ROI with fresh screen pixels before input; changed, unreadable or legacy/missing baseline refuses. `--stale-content-ok` bypasses only the content check, not geometry/landing; `shot` does not write a point map and refuses the ROI flag.
 
 ## Locating Elements
 
@@ -80,7 +82,8 @@ find <text...> [--target <sel>] [--region x,y,w,h] [--needle <text>] [--json]
 
 - `find-text <sel|x y w h> <needle...> [--all] [--scale auto|1|2|tiled]` — returns line rects of matching OCR lines. A hit is a LINE, not an occurrence (text twice on one line = one hit; `--index` selects lines).
 - `find-click <sel|x y w h> <needle...> [--index n] [--aim-line]` — locate + click the needle's sub-span in one call.
-- `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle]` — OCR dump with rects; a large region always self-reports its read quality as `readability=<n> lines per 100k px2 (area=..., warn-below=..., band=...)` (v2.9.0), and a shouted modal/scrim WARN is reserved for reads under 0.1 lines per 100k px2 - the zone where the result cannot support "it is not there". find-text / assert-text / expect keep the 1.0/1.5 area bands untouched because there the read IS the claim of absence. Hint only either way: never changes the exit code; --min-line-density moves the line, 0 silences label and WARN together. `--file` reads a saved capture instead of a live region: coords are then IMAGE px from the image's own top-left and every line is prefixed `img-rect=` (deliberately not `rect=`, so a file read cannot be pasted into a click), and `--json` is refused there because the pinned envelope has no field naming the coordinate space. v2.8.0, file mode only: --scale tiled really subdivides the image (it halves the LONG side to choose the subdivision - the engine limit alone never splits a screenshot), and a 0-line read of any capture of >= 30000 px2 goes through a retry LADDER (v2.8.1: whole image at 2x, then four un-upscaled overlapping crops) whose every pass is named in the header with its own count, including a pass skipped because --max-tiles was too small (--no-tile opts out); the sparse WARN in file mode reads "image is WxH", not "region".
+- `tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen|window|client] [--scales ...] [--tolerance n] [--index n] [--max-ms ms]` — deterministic, read-only template matching; it neither activates nor clicks. Take a crisp icon crop or use an owned template, restrict `--region` near the target, and read `screen=(x,y) size=WxH` as top-left plus size; centre = `x+floor(W/2), y+floor(H/2)`. Ambiguity refuses unless `--index n` is explicit. JSON keys are `template/tolerance/space/region/matches/selected/positions/ms/settleMs`. `--force` and `--always-activate` are refused by name before resolve/capture/activation (`reason=read-only-override`).
+- `read-text <sel|x y w h> [--file <png>] [--max-lines n | --all-lines] [--filter needle]` — OCR dump with rects; a large region always self-reports its read quality as `readability=<n> lines per 100k px2 (area=..., warn-below=..., band=...)` (v2.9.0), and a shouted modal/scrim WARN is reserved for reads under 0.1 lines per 100k px2 - the zone where the result cannot support "it is not there". find-text / assert-text / expect keep the 1.0/1.5 area bands untouched because there the read IS the claim of absence. Hint only either way: never changes the exit code; --min-line-density moves the line, 0 silences label and WARN together. `--file` reads a saved capture instead of a live region: coords are then IMAGE px from the image's own top-left and every line is prefixed `img-rect=` (deliberately not `rect=`, so a file read cannot be pasted into a click), and `--json` is refused there because the pinned envelope has no field naming the coordinate space. v2.8.0, file mode only: --scale tiled really subdivides the image (it halves the LONG side to choose the subdivision - the engine limit alone never splits a screenshot), and a 0-line read of any capture of >= 30000 px2 goes through a retry LADDER (v2.8.1: whole image at 2x, then four un-upscaled overlapping crops) whose every pass is named in the header with its own count, including a pass skipped because --max-tiles was too small (--no-tile opts out); the sparse WARN in file mode reads "image is WxH", not "region". Text mode also prints a separate OCR-suitability hint with raw total lines, area/density and a UIA status/walked/truncated reading for a bound window; the probe is capped at 1000ms and 256 nodes. Timeout/provider failure is unknown, and file/unbound-region modes are not-probed. It never changes OCR, the pinned JSON envelope or the exit code.
 - `assert-text <sel|x y w h> <needle...>` — OCR + exit-code check.
 
 ### Profile And Calibration (PT family)
@@ -93,12 +96,12 @@ These three read a surface and compare readings. None of them clicks, types, act
 
 ## Acting (Mouse)
 
-- `move` · `hover [--dwell ms]` (tooltips need the dwell) · `click` · `rclick` · `dblclick` — absolute screen pixels; `--to <sel>` activates + verifies a window first; `--guard-text <s>` / `--guard-region x,y,w,h=<s>` assert context BEFORE the click.
+- `move` · `hover [--dwell ms]` (tooltips need the dwell) · `click` · `rclick` · `dblclick` — absolute screen pixels; `--to <sel>` activates + verifies a window first; `--guard-text <s>` / `--guard-region x,y,w,h=<s>` assert context BEFORE the click. The click family (`click`/`rclick`/`dblclick`/`imgclick`/`relclick`) shares one `WindowFromPoint → GA_ROOT` landing observation (hit/none/unknown); with `--to`, only `hit` on the target's root hwnd is allowed, while none/unknown/another window are refused before input. Bare coordinates remain available and the audit records `binding=unbound`; `--allow-outside` relaxes the rect only, never the hit identity.
 - `drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms]` — press, interpolate, release.
 - Mid-state trio (surfaces that decide on release): `press-down [--max-hold ms]` → `drag-to <x> <y>` → `press-up <x> <y>`. Watchdogs: a held button self-releases at the deadline, and any later invocation releases a button left down by a previous run.
 - `wheel [amount] [x y] [--unit raw|notches] [--axis vertical|horizontal] [--to <sel>|--at <sel>] [--focus-first] [--expect-change [x,y,w,h]] [--verify-scroll [--expect-change x,y,w,h]|--expect-visible-text <needle>]` — scroll. Omitted amount remains -120 raw delta. Defaults are raw delta and vertical; `notches` requires an explicit amount and multiplies it by 120. Vertical positive/negative is up/down; horizontal positive/negative is right/left. `--to` verifies the actual point against the selected top-level window; when x/y is omitted it checks the current cursor. `--at` requires explicit x/y; a window centre does not identify the target panel. `--focus-first` stays opt-in and rechecks target, foreground and landing after its real click. Verification is opt-in and requires a selector plus amount/x/y. `--verify-scroll` reads UIA ScrollPattern position; only an explicit in-window region enables the pixel-only fallback. `--expect-visible-text` verifies that a caller-specified UIA name becomes visible in the target window. Receipts separate input insertion from observed effect, report actual wait/sample count and label pixel-only evidence. Boundary avoids injection; no-effect, target-change and unavailable states fail distinctly; no automatic retry.
 - `relclick <sel> <dx> <dy>` — click relative to a window's top-left, from the rect re-read after activation; refused when the point misses the target or a window other than the target answers the hit test (`--allow-outside` relaxes both and says so).
-- `imgclick <img> <ix> <iy> [--dry] [--stale-ok]` — reverse-map through the image's `.map.txt`; `--dry` prints the mapping without clicking; a moved/resized window fails the sidecar check unless `--stale-ok`.
+- `imgclick <img> <ix> <iy> [--dry] [--stale-ok] [--require-verified] [--stale-content-ok]` — reverse-map through the image sidecar and strictly re-check the captured content ROI before clicking; `--stale-content-ok` bypasses content freshness only, while `--stale-ok` is for the separate host-geometry check. Legacy maps without a content baseline are refused unless the explicit content bypass is accepted.
 - `unmap <img> <ix> <iy>` — mapping echo only, no click.
 
 **Proof of effect (opt-in):** `--expect-change [x,y,w,h]` on the click family / drag / wheel hashes the region before and after and WARNs if pixel-identical — a WARN is not proof of failure (the effect may sit outside the rect). Default OFF; never changes the exit code.
@@ -128,7 +131,7 @@ Clipboard write-back is verified; a clipboard that cannot be confirmed is report
 
 ## Batch · Replay · Housekeeping
 
-- `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]` — a JSON array of steps in ONE process; `"to"` per step = foreground guard; asserts as checkpoints; `require-popup` arms a popup survival guard for later steps; `press-down`/`drag-to`/`press-up` are valid steps.
+- `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]` — a JSON array of steps in ONE process; `desc` names each step receipt; ordinary failures continue by default and still make the final exit code 1, while `--stop-on-error` stops after the first; `ok` means step execution/delivery, not business success, so add an assertion such as `assert-text` or `expectText`. `script --json` is refused because script has no JSON envelope. `to` per step = foreground guard; asserts as checkpoints; `require-popup` arms a popup survival guard for later steps; `press-down`/`drag-to`/`press-up` are valid steps.
 - `replay [<actions.log>] [--last n] [--grep s] [--go]` — re-run recorded act/text/clipboard commands; DRY by default. Redacted payloads (`<redacted:Nchars>`) are refused, never typed as placeholders.
 - `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` — bound the screenshot folder; dry by default; `--go` moves files into a quarantine dir with a MANIFEST (nothing is deleted). Since v2.6.0 the same bound is applied automatically after every capture (newest 100 by default; `DTX_SHOT_KEEP=<n>` changes it, `DTX_SHOT_AUTOTRIM=0` stops the automatic pass); it skips with a stated reason when no quarantine is configured, and never runs during selftest. The `--go` target, in order: `--quarantine <dir>`, then `DTX_QUARANTINE` from the process environment, then `DTX_QUARANTINE` from the User-scope registry, then Machine-scope, else the command refuses (exit 2) naming both remedies — no baked-in machine path.
 
@@ -177,7 +180,7 @@ paste-file --to "Notepad" dtx-fixture.txt
 ```
 The example file and the target window are ones this run creates and destroys (a generated text file, a local editor). Its receipt is the file name, so `+ verified` on that line means only "the name showed up in that window".
 
-**项目红线 / hard red line:** do not aim `paste` / `paste-file` / `copy-file` at a real chat, mail or any other person-facing conversation window (WeChat / QQ / DingTalk / Slack / Outlook / webmail in a browser — anything with a human on the other side) unless the user, in this same turn, named that recipient and that file and confirmed it. Foreground and occlusion guards check *which window the keys land in*; they never authorize the send. 不得向任何真实聊天会话发送消息或文件；活体验收只用本项目自建自销的夹具；已经开在屏幕上的聊天窗口不是夹具。
+**Messaging surfaces — whose call it is (the old hard red line, restated):** the tool proves the landing point and the hit; whether to send is the caller's decision. Foreground and occlusion guards check *which window the keys land in*; they never authorize the send. Aiming `paste` / `paste-file` / `copy-file` at a real chat, mail or any other person-facing conversation window (WeChat / QQ / DingTalk / Slack / Outlook / webmail in a browser — anything with a human on the other side) requires an explicit instruction from the owner in this same turn, naming that recipient and that file; system dialogs are always cancelled. 落点与命中可证明，发送与否由调用方决定；发送必须有明确机主指令（本轮点名收件人与文件）。活体验收只用本项目自建自销的夹具；已经开在屏幕上的聊天窗口不是夹具。
 
 **Region screenshot → pixel click:**
 ```
@@ -196,3 +199,109 @@ assert-changed "MyApp" 5 --interval 300
 ```
 selftest
 ```
+
+
+## Command Index (all 98 capabilities names)
+
+One row per `capabilities` command; the usage column is the line `desktop.ps1 help <name>` prints (a `\|` is table escaping).
+
+| Command | Usage |
+|---|---|
+| `assert-changed` | `assert-changed <sel\|x y w h> <sec> [--interval ms]` |
+| `assert-color` | `assert-color <x> <y> <#RRGGBB> [tol]` |
+| `assert-hash` | `assert-hash <sel\|x y w h> ==\|!= <hash>` |
+| `assert-stable` | `assert-stable <sel\|x y w h> <sec> [--interval ms]` |
+| `assert-text` | `assert-text <sel\|x y w h> <needle...> [--scale a\|1\|2\|tiled] [--max-tiles n]` |
+| `assert-window` | `assert-window <sel>` |
+| `capabilities` | `capabilities [--json]` |
+| `clip-info` | `clip-info` |
+| `cluster-color` | `cluster-color <image> [--min-cluster N] [--tolerance d]` |
+| `color-at` | `color-at <x> <y>` |
+| `cursor` | `cursor` |
+| `dpi` | `dpi` |
+| `find` | `find <text...> [--target <sel>] [--region x,y,w,h] [--depth n] [--needle <text>]` |
+| `find-color` | `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]` |
+| `find-text` | `find-text <sel\|x y w h> <needle...> [--all] [--scale auto\|1\|2\|tiled]` |
+| `focus` | `focus <sel>` |
+| `hash` | `hash <sel\|x y w h>` |
+| `help` | `help [<cmd>\|--<flag>]` |
+| `info` | `info <sel>` |
+| `log-index` | `log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current\|day\|all]` |
+| `ocr-cap` | `ocr-cap` |
+| `proc-info` | `proc-info <pid>` |
+| `proc-list` | `proc-list [name-filter]` |
+| `proc-wait` | `proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]` |
+| `pt-anchor` | `pt-anchor <profile> --needle <text> [--strict] [--max-drift px]` |
+| `pt-calibrate` | `pt-calibrate <profile> --estimate <i,j> --verify <k[,...]> [--file <png>]` |
+| `pt-profile` | `pt-profile <sel> [--samples 1..16] [--save <path>] [--file <png>]` |
+| `read-text` | `read-text <sel\|x y w h> [--file <png>] [--max-lines n \| --all-lines] [--filter needle]` |
+| `rect` | `rect <x> <y> <w> <h> [outPath] [--fit px\|0] [--grid [step] \| --no-grid] [--mark x,y] [--content-roi x,y,w,h]` |
+| `rect-of` | `rect-of <sel>` |
+| `shot` | `shot [outPath] [--fit px] [--grid [step] \| --no-grid] [--occlude off\|warn\|strict]` |
+| `status-summary` | `status-summary [--json]` |
+| `tpl-find` | `tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen\|window\|client]` |
+| `wait-cond` | `wait-cond <sel> [--win] [--gone] [--foreground] [--text <needle>]` |
+| `wait-gone` | `wait-gone <sel> <timeoutSec>` |
+| `wait-stable` | `wait-stable <sel\|x y w h> <timeoutSec> [--interval ms]` |
+| `wait-win` | `wait-win <sel> <timeoutSec>` |
+| `win` | `win <sel> [outPath] [--fit px\|0] [--grid [step] \| --no-grid] [--mark x,y] [--content-roi x,y,w,h]` |
+| `wins` | `wins [-z]` |
+| `click` | `click <x> <y> [--button left\|right\|middle\|back\|forward] [--mods ctrl+shift\|ctrl,shift]` |
+| `dblclick` | `dblclick <x> <y> [--mods ...] [--space screen\|window\|client] [--created <iso>]  --guard-region x,y,w,h=s asserts context` |
+| `dialog-cancel` | `dialog-cancel <sel> [--allow-window]` |
+| `drag` | `drag <x1> <y1> <x2> <y2> [--steps n] [--hold ms] [--button left\|middle\|right\|back\|forward] [--mods ctrl+shift] [--space screen\|window\|client] [--created <iso>] [--to <sel>] [--guard-text <s>]` |
+| `drag-to` | `drag-to <x> <y> [--steps n] [--to <sel>] [--expect-change [x,y,w,h]]` |
+| `find-click` | `find-click <sel\|x y w h> <needle...> [--index n] [--aim-line] [--scale a\|1\|2\|tiled]` |
+| `hover` | `hover <x> <y> [--dwell ms]` |
+| `menu-pick` | `menu-pick <sel> <needle...>` |
+| `move` | `move <x> <y>` |
+| `open-and-pick` | `open-and-pick <sel> <opener-x> <opener-y> <needle...> [--region x,y,w,h]` |
+| `press-down` | `press-down <x> <y> [--max-hold ms] [--to <sel>] [--guard-text <s>] [--force]` |
+| `press-up` | `press-up <x> <y> [--to <sel>] [--expect-change [x,y,w,h]]` |
+| `proc-kill` | `proc-kill <pid> [--created <iso>] [--timeout s] [--go]` |
+| `proc-start` | `proc-start [--cwd <dir>] [--wait-window s] <exe> [argv...]` |
+| `rclick` | `rclick <x> <y> [--mods shift] [--space screen\|window\|client] [--created <iso>]  + verifies a window first, --guard-text /` |
+| `relclick` | `relclick <sel> <dx> <dy>` |
+| `wheel` | `wheel [amount] [x y] [--unit raw\|notches] [--axis vertical\|horizontal] [--to <sel>] [--at <sel>]` |
+| `win-close` | `<sel>` |
+| `win-max` | `win-max <sel> \| win-min <sel> \| win-restore <sel> \| win-close <sel>` |
+| `win-min` | `<sel>` |
+| `win-move` | `win-move <sel> <x> <y>` |
+| `win-resize` | `win-resize <sel> <w> <h>` |
+| `win-restore` | `<sel>` |
+| `a11y-probe` | `a11y-probe <sel> [bigDepth]` |
+| `chrome-a11y` | `chrome-a11y <on\|off>` |
+| `chrome-click` | `chrome-click <sel> <text...> [-dry]` |
+| `chrome-debug-off` | `chrome-debug-off` |
+| `chrome-find` | `chrome-find <sel> <text...>` |
+| `chrome-menu-read` | `chrome-menu-read` |
+| `chrome-read` | `chrome-read <sel>` |
+| `chrome-tabs` | `chrome-tabs [--json]` |
+| `copy-file` | `copy-file [--image] [--replace-clipboard] <path>` |
+| `ime` | `ime` |
+| `key` | `key [--to <sel>] <combo> [--repeat n] [--interval ms] [--hold ms] [--guard-text <s>] [--expect <needle>] [--force]` |
+| `key-release` | `key-release [--go]` |
+| `keys` | `keys [--to <sel>] <spec> [--log-payload] [--force]` |
+| `key-state` | `key-state` |
+| `paste` | `paste [--to <sel>] <file> [--expect <s>\|--no-expect] [--replace-clipboard] [--force]` |
+| `paste-file` | `paste-file [--to <sel>] [--image] <path> [--guard-text <s>] [--expect <s>\|--no-expect] [--replace-clipboard] [--force]` |
+| `type` | `type [--to <sel>] <text...> [--verify] [--verify-timeout <sec>] [--log-payload] [--force]` |
+| `type-in` | `type-in <x> <y> [--tab <n>] <text...> [--verify] [--verify-timeout <sec>] [--log-payload]` |
+| `uia-click` | `uia-click <sel> <nameSub>` |
+| `uia-do` | `uia-do <action> <sel> <nameSub> [value]` |
+| `uia-find` | `uia-find <sel> <nameSub> [typeRe]` |
+| `uia-focus` | `uia-focus <sel> <nameSub>` |
+| `uia-path` | `uia-path <sel> @/0/2/1 [maxDepth]` |
+| `uia-settext` | `uia-settext <sel> <nameSub> <file>` |
+| `uia-state` | `uia-state <sel> <nameSub> [--text]` |
+| `uia-tree` | `uia-tree <sel> [maxDepth] [--path </0/1/...>] [--dump <file>]` |
+| `challenge-probe` | `challenge-probe <sel> [--allow-attempt --attempt-click x,y]` |
+| `ime-cn` | `ime-cn [mode]` |
+| `ime-en` | `ime-en [hkl]` |
+| `ime-state` | `ime-state` |
+| `imgclick` | `imgclick <outPath> <ix> <iy> [--to <sel>] [--expect ...] [--dry] [--stale-ok] [--require-verified] [--stale-content-ok] [--on-grid-alert <px>]` |
+| `shots-cleanup` | `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` |
+| `stitch` | `stitch <dir> <out.png>` |
+| `tile` | `tile <x> <y> <w> <h> [--tile WxH] [--grid CxR] [--out-dir <dir>] [--overlap px]` |
+| `unmap` | `unmap <outPath> <ix> <iy> [--stale-ok]` |
+| `zoom` | `zoom <x> <y> <w> <h> [scale] [outPath] [--to <sel>] [--min-ink pc] [--retry 0..5] [--content-roi x,y,w,h]` |

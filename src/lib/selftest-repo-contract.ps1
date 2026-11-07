@@ -332,4 +332,69 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   }
   Write-Output ("      overview check total: doc=$ocTotalSeen declared=$($script:DeclaredCheckTotal)")
 
+  # L8 (owner ruling 2026-11-06): the published tree does not carry the overview, and it used
+  # to be allowed to SKIP there - which is exactly how a published build could ship with an
+  # unchecked total. CHECK-TOTAL.txt is now the count source that travels with the public tree.
+  # Missing file = RED. Malformed or mismatched = RED. There is no SKIP fallback: a count source
+  # that can be absent is not a source. The parser is shared with a planted sample so a scan
+  # that reads nothing can never pass.
+  $ocParse = {
+    param([string]$P)
+    if (-not (Test-Path -LiteralPath $P)) { return -1 }
+    foreach ($L in @(Get-Content -LiteralPath $P -Encoding UTF8)) {
+      if ("$L" -match '^\s*offline=([0-9]+)\s*$') { return [int]$Matches[1] }
+    }
+    return -1
+  }
+  $ocCtPath = Join-Path $script:ToolRootPath 'CHECK-TOTAL.txt'
+  $ocCtTotal = & $ocParse $ocCtPath
+  ST-Check 'lint (F-01b): CHECK-TOTAL.txt exists and its offline= equals DeclaredCheckTotal (missing, malformed or mismatched is RED - no SKIP fallback)' (
+    ($ocCtTotal -gt 0) -and ($ocCtTotal -eq [int]$script:DeclaredCheckTotal))
+  $ocTmp = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-ct-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  try {
+    $ocTmpOk = $ocTmp + '-ok.txt'
+    $ocTmpBad = $ocTmp + '-bad.txt'
+    [System.IO.File]::WriteAllText($ocTmpOk, "offline=42`n")
+    [System.IO.File]::WriteAllText($ocTmpBad, "checks=42`n")
+    $ocP1 = & $ocParse $ocTmpOk
+    $ocP2 = & $ocParse $ocTmpBad
+    $ocP3 = & $ocParse ($ocTmp + '-missing.txt')
+    ST-Check 'unit (F-01b): the count-file parser returns the declaration and -1 for malformed and missing (a zero-hit scan cannot pass)' (
+      ($ocP1 -eq 42) -and ($ocP2 -eq -1) -and ($ocP3 -eq -1))
+  } finally {
+    foreach ($ocP in @($ocTmp + '-ok.txt', $ocTmp + '-bad.txt')) { try { if (Test-Path -LiteralPath $ocP) { Remove-Item -LiteralPath $ocP -Force } } catch { } }
+  }
+  # The published docs carry the same number in prose (README badge + "current N checks"). Where
+  # those files exist, every such declaration must equal the same source. Internal trees do not
+  # carry them, so that leg is a NAMED skip there - the count source check above stays mandatory
+  # in every tree.
+  $ocPubName = 'README.zh-CN.md'
+  $ocPubDocs = @('README.md', $ocPubName, 'CHANGELOG.md')
+  $ocPubHere = Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ocPubName)
+  if ($ocPubHere) {
+    $ocDocHits = 0
+    $ocDocBad = New-Object System.Collections.ArrayList
+    $ocCurrent = ([string][char]0x5F53) + ([string][char]0x524D)
+    $ocTiao = [string][char]0x6761
+    foreach ($ocDoc in $ocPubDocs) {
+      $ocDocPath = Join-Path $script:ToolRootPath $ocDoc
+      if (-not (Test-Path -LiteralPath $ocDocPath)) { continue }
+      foreach ($ocL in @(Get-Content -LiteralPath $ocDocPath -Encoding UTF8)) {
+        $ocNums = @()
+        if ("$ocL" -match 'message=([0-9]+)%20checks') { $ocNums += [int]$Matches[1] }
+        if ("$ocL" -match "$ocCurrent\s*([0-9]+)\s*$ocTiao") { $ocNums += [int]$Matches[1] }
+        foreach ($ocN in $ocNums) {
+          $ocDocHits++
+          if ($ocN -ne [int]$script:DeclaredCheckTotal) { [void]$ocDocBad.Add("$ocDoc=$ocN") }
+        }
+      }
+    }
+    ST-Check 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' (
+      ($ocDocHits -ge 1) -and (@($ocDocBad).Count -eq 0))
+    if (@($ocDocBad).Count -gt 0) { Write-Output ('      published doc totals off: ' + (@($ocDocBad) -join ',')) }
+    Write-Output ("      published doc totals: hits=$ocDocHits bad=$(@($ocDocBad).Count) declared=$($script:DeclaredCheckTotal)")
+  } else {
+    ST-Skip 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' 'published-only docs are not in this tree - this leg runs in the tree that ships them'
+  }
+
 }

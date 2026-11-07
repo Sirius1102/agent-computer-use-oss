@@ -383,6 +383,37 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
   ST-Check 'unit: autoexpect needle of a whitespace-only payload is empty (readback skipped)' ((Get-AutoExpectNeedle "  `n`t`n") -ceq '')
   ST-Check 'unit: autoexpect needle of an empty payload is empty' ((Get-AutoExpectNeedle '') -ceq '')
 
+  # N-1 (owner real-machine report 2026-11-06): attachment landing is THREE states.
+  # The live chip elides the middle of a long name and appends a size ("...Zeyu.docx (450.7K)"),
+  # so a contiguous full-name needle can never match. The probe takes the head from the stem and
+  # the tail from the FULL name (the extension survives the elision), and neither half is a
+  # strong assertion - the verdict is weak by construction and `absent` is the only non-zero state.
+  $apLong = Get-AttachmentProbe 'LabReport4_20261025-Zeyu.docx'
+  ST-Check 'unit (N-1): attachment probe = 10-char head from the stem + 6-char tail from the FULL name (extension survives the elision)' (
+    ($apLong.HeadChars -eq 10) -and ($apLong.Head -ceq 'LabReport4') -and ($apLong.TailChars -eq 6) -and $apLong.Tail.EndsWith('.docx'))
+  $apShort = Get-AttachmentProbe 'a.docx'
+  ST-Check 'unit (N-1): a short name still yields a usable probe instead of throwing (head and tail never collapse to the same needle)' (
+    ($apShort.HeadChars -ge 1) -and ($apShort.TailChars -ge 1) -and ($apShort.Head -cne $apShort.Tail))
+  $apEmpty = Get-AttachmentProbe ''
+  ST-Check 'unit (N-1): an empty name yields an empty probe (the runner reports unverified instead of asserting)' (
+    ($apEmpty.Head -eq '') -and ($apEmpty.Tail -eq ''))
+  # The two real chip shapes the owner reported: middle elided (head survives) and tail elided
+  # (extension survives). Both carry the " (450.7K)" suffix.
+  $apChipElidedMiddle = 'LabReport4_2...Zeyu.docx (450.7K)'
+  $apChipElidedTail = 'LabReport4_20261025-....docx (450.7K)'
+  ST-Check 'unit (N-1): a chip with the MIDDLE elided still matches the head (and keeps the size suffix out of the needle)' (
+    $apChipElidedMiddle.Contains($apLong.Head))
+  ST-Check 'unit (N-1): a chip with the TAIL elided still matches the survivor (the probe never demands the full name)' (
+    $apChipElidedTail.Contains($apLong.Head) -or $apChipElidedTail.Contains($apLong.Tail))
+  $avHead = Get-AttachmentLandingVerdict @{ HeadHit = $true; TailHit = $false }
+  $avTail = Get-AttachmentLandingVerdict @{ HeadHit = $false; TailHit = $true }
+  ST-Check 'unit (N-1): either half of the name (head or tail) = unverified -> Ok, stable code, weak flag (no full-name equality demanded)' (
+    ($avHead.State -ceq 'unverified') -and ($avHead.Code -ceq 'PASTE_LANDED_UNVERIFIED') -and [bool]$avHead.Ok -and [bool]$avHead.Weak -and
+    ($avTail.State -ceq 'unverified') -and ($avTail.Criterion -ceq 'tail-probe'))
+  $avNone = Get-AttachmentLandingVerdict @{ HeadHit = $false; TailHit = $false }
+  ST-Check 'unit (N-1): nothing speaking = absent, the ONLY state that may exit non-zero (stable code)' (
+    ($avNone.State -ceq 'absent') -and ($avNone.Code -ceq 'PASTE_NOT_LANDED') -and (-not [bool]$avNone.Ok))
+
   $aeMockSeen = New-Object System.Collections.ArrayList
   $aeMockReal = ${function:Invoke-Expectation}
   $aeReceiptSeen = New-Object System.Collections.ArrayList
@@ -469,6 +500,23 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     $aeSkip6 = Invoke-AutoPasteExpect $pAnyGone $null 'DTXMOCKTAIL'
     ST-Check 'unit: an --expect-any / --expect-any-gone list counts as an explicit expectation and skips the readback' (
       @($aeMockSeen).Count -eq 0 -and (-not $aeSkip5.Ran) -and (-not $aeSkip6.Ran))
+    # N-1 runner: renders the three states, and an explicit expectation is never overridden.
+    [void]$aeMockSeen.Clear()
+    $script:aeMockOk = $true
+    $alRun = Invoke-AttachmentLanding $pAe $null 'LabReport4_20261025-Zeyu.docx'
+    ST-Check 'unit (N-1): a landed attachment chip is unverified (exit 0), carries the stable code and the do-not-resend wording' (
+      ($null -ne $alRun) -and [bool]$alRun.Ok -and ($alRun.State -ceq 'unverified') -and
+      $alRun.Message.Contains('landing=unverified') -and $alRun.Message.Contains('code=PASTE_LANDED_UNVERIFIED') -and
+      $alRun.Message.Contains('WEAK evidence') -and $alRun.Message.Contains('DO NOT resend'))
+    $alSkip = Invoke-AttachmentLanding $pExplicit $null 'LabReport4_20261025-Zeyu.docx'
+    ST-Check 'unit (N-1): an explicit expectation owns the criterion - the attachment probe refuses to override it' ($null -eq $alSkip)
+    $script:aeMockOk = $false
+    [void]$aeMockSeen.Clear()
+    $alAbsent = Invoke-AttachmentLanding $pAe $null 'LabReport4_20261025-Zeyu.docx'
+    ST-Check 'unit (N-1): a silent target is absent (the only non-zero state) and the probe tried BOTH halves' (
+      ($null -ne $alAbsent) -and (-not [bool]$alAbsent.Ok) -and ($alAbsent.State -ceq 'absent') -and
+      $alAbsent.Message.Contains('code=PASTE_NOT_LANDED') -and (@($aeMockSeen).Count -eq 2))
+    $script:aeMockOk = $true
     # the same gate guards the CHEAP half: a paste that already asserts must not pay for
     # a receipt baseline either. Asserted through the mock, not through the screen.
     [void]$aeMockSeen.Clear()
@@ -495,8 +543,8 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     if ($codeLines[$awi] -match '^\s*#') { continue }
     if ($codeLines[$awi].Contains('Invoke-AutoPasteExpect')) { $aeWire += ($awi + 1) }
   }
-  ST-Check 'lint: paste AND paste-file both wire the autoexpect readback (exactly 3 sites: 1 def + 2 calls)' (@($aeWire).Count -eq 3)
-  if (@($aeWire).Count -ne 3) { Write-Output "      autoexpect wiring sites: $(@($aeWire) -join ', ')" }
+  ST-Check 'lint: paste AND paste-file both wire the readback (exactly 4 sites: 1 def + 1 text call + 2 attachment probes)' (@($aeWire).Count -eq 4)
+  if (@($aeWire).Count -ne 4) { Write-Output "      autoexpect wiring sites: $(@($aeWire) -join ', ')" }
   # The skip decision must have ONE producer. Counting calls is not enough on its own:
   # a hand-written enumeration re-added somewhere else would leave the call count alone,
   # so the scan also fails any production line that chains -or through the flags again.
@@ -517,7 +565,7 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     if ($tiLine.Contains('Test-ExpectationGiven $')) { $tewCalls += ($ti + 1) }
   }
   ST-Check 'lint: the "an expectation was already given" decision has one producer and no hand-run enumeration left' (
-    ($tewDef -ge 0) -and ($tewEnd -gt $tewDef) -and (@($tewCalls).Count -eq 2) -and (@($tewHand).Count -eq 0))
+    ($tewDef -ge 0) -and ($tewEnd -gt $tewDef) -and (@($tewCalls).Count -eq 3) -and (@($tewHand).Count -eq 0))
   Write-Output ("      expectation-given producer: def=" + (Format-SourceLineRef ($tewDef + 1)) + " calls=" + (Format-SourceLineList $tewCalls) + " hand-run enumerations left=" + @($tewHand).Count)
   $aeNeedleSites = @()
   for ($awi = 0; $awi -lt $codeLines.Count; $awi++) {
@@ -525,16 +573,16 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     if ($codeLines[$awi] -match '^\s*#') { continue }
     if ($codeLines[$awi].Contains('Get-AutoExpectNeedle')) { $aeNeedleSites += ($awi + 1) }
   }
-  ST-Check 'lint: both autoexpect call sites derive the needle from the payload (exactly 3 sites)' (@($aeNeedleSites).Count -eq 3)
-  if (@($aeNeedleSites).Count -ne 3) { Write-Output "      needle derivation sites: $(@($aeNeedleSites) -join ', ')" }
+  ST-Check 'lint: the TEXT paste call derives its needle from the payload (exactly 2 sites; attachment uses the probe pair, not the payload tail)' (@($aeNeedleSites).Count -eq 2)
+  if (@($aeNeedleSites).Count -ne 2) { Write-Output "      needle derivation sites: $(@($aeNeedleSites) -join ', ')" }
   $aeGateSites = @()
   for ($awi = 0; $awi -lt $codeLines.Count; $awi++) {
     if ($awi -ge $j5ProdStart -and $awi -lt $j5ProdEnd) { continue }
     if ($codeLines[$awi] -match '^\s*#') { continue }
     if ($codeLines[$awi].Contains('Confirm-AutoExpect')) { $aeGateSites += ($awi + 1) }
   }
-  ST-Check 'lint: both autoexpect call sites run the failure gate (exactly 3 sites: 1 def + 2 calls)' (@($aeGateSites).Count -eq 3)
-  if (@($aeGateSites).Count -ne 3) { Write-Output "      gate wiring sites: $(@($aeGateSites) -join ', ')" }
+  ST-Check 'lint: the TEXT paste call runs the failure gate (exactly 2 sites: 1 def + 1 call; attachment has its own three-state gate)' (@($aeGateSites).Count -eq 2)
+  if (@($aeGateSites).Count -ne 2) { Write-Output "      gate wiring sites: $(@($aeGateSites) -join ', ')" }
   # search string assembled by concatenation: the scan line must not contain its own
   # pattern (the self-match shape that fed "at least N" lints three times in one day)
   $aeUsagePat = "throw 'usage: pas" + "te(-file)? \["
@@ -722,6 +770,56 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     ${function:Format-OcclusionCovering} = $ex5FocReal
     ${function:Get-PasteReceiptOcclusionMax} = $ex5KnobReal
     ${function:Find-OcrHitsScaled} = $ex5OcrReal
+  }
+
+  # N-2 (owner real-machine report 2026-11-06): a whole-window --guard-text hit proves the WINDOW,
+  # not the active conversation - a permanent contact-list entry stays visible after the chat
+  # switches, so the old receipt could pass while looking at somebody else's conversation. The
+  # guard now names its level, and --guard-region title=<needle> maps to the top 48 px title bar.
+  # Level resolution first (pure):
+  ST-Check 'unit (N-2): guard level is window for --guard-text alone, session when --guard-region is given, none when neither' (
+    (Get-GuardLevel 'needle' '') -ceq 'window' -and (Get-GuardLevel '' 'title=needle') -ceq 'session' -and
+    (Get-GuardLevel 'needle' 'title=needle') -ceq 'session' -and (Get-GuardLevel '' '') -ceq 'none')
+  $g2Title = Resolve-GuardRegionSpec 'title=Active Chat' 600 400
+  $g2Rect = Resolve-GuardRegionSpec '10,20,300,80=Active Chat' 600 400
+  $g2Bad = Resolve-GuardRegionSpec 'Active Chat' 600 400
+  ST-Check 'unit (N-2): title=<needle> resolves to the top 48 px of the window, x,y,w,h=<needle> keeps its rect, a spec without = is refused' (
+    ($null -ne $g2Title) -and ($g2Title.Mode -ceq 'title') -and ($g2Title.Needle -ceq 'Active Chat') -and
+    ((@($g2Title.X, $g2Title.Y, $g2Title.W, $g2Title.H)) -join ',') -eq '0,0,600,48' -and
+    ($null -ne $g2Rect) -and ($g2Rect.Mode -ceq 'rect') -and ($g2Rect.Needle -ceq 'Active Chat') -and
+    ((@($g2Rect.X, $g2Rect.Y, $g2Rect.W, $g2Rect.H)) -join ',') -eq '10,20,300,80' -and ($null -eq $g2Bad))
+  # Receipt legs: the real Invoke-ContentGuard runs; only the screen-reading seams are stubbed so the
+  # level wording and the OCR rectangle are measured, not assumed.
+  $g2OcrCalls = New-Object System.Collections.ArrayList
+  $g2Tgt = @{ Handle = [IntPtr]1; Title = 'Mock Chat'; Pid = 7 }
+  $g2OcrReal = ${function:Find-OcrHitsScaled}
+  $g2EngReal = ${function:Get-OcrEngine}
+  $g2TreReal = ${function:Get-TargetRect}
+  $g2OccReal = ${function:Resolve-OcclusionMode}
+  $g2GateReal = ${function:Invoke-OcclusionGate}
+  try {
+    ${function:Get-OcrEngine} = { return @{ Lang = 'mock' } }
+    ${function:Get-TargetRect} = { param($t) return @{ X = 0; Y = 0; W = 600; H = 400 } }
+    ${function:Resolve-OcclusionMode} = { param($v, $a, $s) return @{ Action = 'off' } }
+    ${function:Invoke-OcclusionGate} = { param($r, $h, $a, $g, $d, $sel, $k) return @{ Ran = $false; Pct = 0; Echo = 'mock-skip' } }
+    ${function:Find-OcrHitsScaled} = { param($x, $y, $w, $h, $n, $s, $m, $nt)
+      [void]$g2OcrCalls.Add("$x,$y,$w,$h")
+      return @{ Hits = @(@{ X = 0; Y = 0; W = 10; H = 10; Text = 'mock' }); Lines = @('mock'); Scaled = $false } }
+    $g2Win = @(Invoke-ContentGuard $g2Tgt 'KeepVisible' '' 'auto' 16 $false '' $false 5)
+    $g2Ses = @(Invoke-ContentGuard $g2Tgt '' 'title=Active Chat' 'auto' 16 $false '' $false 5)
+    Write-Output ('      N-2 receipts: window=[' + ($g2Win -join ' / ') + '] session=[' + ($g2Ses -join ' / ') + '] ocr=[' + ($g2OcrCalls -join ';') + ']')
+    ST-Check 'e2e (N-2): a whole-window hit is receipted [level=window] with a WINDOW-level warning and reads the whole window' (
+      (@($g2Win).Count -eq 2) -and ($g2Win[0].Contains('[level=window]')) -and
+      ($g2Win[1] -clike '*WINDOW-level*') -and ($g2OcrCalls[0] -ceq '0,0,600,400'))
+    ST-Check 'e2e (N-2): a title-bar hit is receipted [level=session] with no window warning and reads only the top 48 px' (
+      (@($g2Ses).Count -eq 1) -and ($g2Ses[0] -clike '*title bar*') -and ($g2Ses[0].Contains('[level=session]')) -and
+      (-not ($g2Ses[0] -clike '*WINDOW-level*')) -and ($g2OcrCalls[1] -ceq '0,0,600,48'))
+  } finally {
+    ${function:Find-OcrHitsScaled} = $g2OcrReal
+    ${function:Get-OcrEngine} = $g2EngReal
+    ${function:Get-TargetRect} = $g2TreReal
+    ${function:Resolve-OcclusionMode} = $g2OccReal
+    ${function:Invoke-OcclusionGate} = $g2GateReal
   }
 
 }

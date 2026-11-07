@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.9.0  (version sync list lives in the project overview doc)
+# version: 4.9.1  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.9.0'
+$script:ToolVersion = '4.9.1'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -521,7 +521,52 @@ Set-StrictMode -Version Latest
 # four-source identity resolver legs with their order ruler). The other nine emitter lines the
 # live suite gained are inside the ladder and cannot be emitted offline, so they do not enter
 # this total (1166 -> 1183). v4.8.0 B-round (CU-REMAINDER-FINAL-20261029-01): the B-1 calibration fixture is rebuilt (labels measured CAL-A/B/C, geometry 1100x800, bands on the measured box quantization), B-2 adds the origin-resolver and archive-walk criteria (+6 emitters), B-3 adds the grid-proximity criteria (+7), and every A-14 registration moves with the measured tallies (1183 -> 1240).
-$script:DeclaredCheckTotal = 1314
+# v4.9.0 (2026-11-04): +74 - 1240 -> 1314 across the release batch; the per-entry detail lives
+# in the iteration log (wai bu file, kept out of this ASCII source), this line only closes the
+# numeric trail that D-1 continues.
+# D-1 (2026-11-06): +4 - the GetNewClosure closure AST lint (one check over the live source
+# plus three planted shapes) and the rect/zoom dual-pose e2e legs (map presence, kind, hash,
+# and imgclick --dry parity per pose: three checks) in the window-targeting family (1314 -> 1318).
+# X-07 (2026-11-06): +10 runtime checks - the visibility contract (3 unit legs over
+# Get-VisibleRegion's three shapes, clipped rect/zoom/off-screen-refusal/edge-click/
+# in-screen e2e, and two OCR-backed legs), in the window-targeting family
+# (1318 -> 1328; the 19 static emitters include 9 named SKIP branches).
+# M1+L8 (2026-11-06): +3 - CHECK-TOTAL.txt becomes the count source (must exist and match), its
+# parser proves absent/malformed/right on planted samples, and the published-doc count lint runs
+# wherever README.zh-CN/CHANGELOG are present (1328 -> 1331).
+# N-1 (2026-11-06): +10 - attachment landing is three states (confirmed / unverified / absent):
+# the probe shape, the short/empty name legs, the two real chip-elision forms, the pure verdict
+# table (any-half/receipt = unverified, silence = absent) and three runner legs (unverified
+# renders exit 0, an explicit expectation is never overridden, a silent target tries both halves)
+# in the expect-family family (1331 -> 1341).
+# N-2 (2026-11-06): +4 - the guard receipt names its level (window / session); `title=<needle>`
+# resolves to the top 48 px title bar, a whole-window --guard-text hit warns that it proved the
+# WINDOW only, and the two receipt legs pin the OCR rectangle each level actually reads (1341 -> 1345).
+# N-3 (2026-11-06): +2 - --clipboard-backup writes the OLD clipboard to one file before the
+# destructive write, and a failed write restores it and says restored / nothing-to-restore /
+# NOT-restored; the e2e leg pins backup-before-write ordering and the recovery path (1345 -> 1347).
+# M2 (2026-11-06): +1 - every file in the aggregate now carries a UTF-8 BOM; the entry keeps its
+# stronger pure-ASCII rule, and the two lib files that shipped bare are pinned by the same check
+# (1347 -> 1348).
+# M9 (2026-11-06): +3 - under --json the failure road emits one ok:false envelope on stdout and
+# moves the ERROR line to stderr; text mode stays byte-identical. The unit leg pins the classifier
+# and two subprocess legs pin both roads (1348 -> 1351).
+# N-4 (2026-11-06): +1 - the unknown-caller warning is emitted once per process and shortened
+# while keeping the substring the contract legs read (1351 -> 1352).
+# M7 (2026-11-06): +2 - retention no longer deletes: beyond-keep archives move to a quarantine
+# folder with a five-segment MANIFEST row and a `log-rotation ... moved=N deleted=0` audit line;
+# the old "prunes archives" leg splits into keep/quarantine/manifest/empty-run legs (1352 -> 1354).
+# M8 (2026-11-06): +4 - a DPI fallback now warns once on stderr and records one dpi-fallback
+# audit line on the first audited command; one unit + two child e2e legs in audit-output and one
+# unit leg beside the trim tests (1354 -> 1358).
+# M6 (2026-11-06): +5 - the trim contracts "moved, deleted nothing" in its audit line (one e2e),
+# DTX_SHOT_AUTOTRIM=0 writes nothing (one e2e), the pure switch (one unit), its boundary wiring
+# (one lint) and one child e2e that the flag is stripped before a parser (1358 -> 1363).
+# L1 (2026-11-06): +3 - the three probe texts run through a parse-gate with a pinned command/type
+# set instead of the removed string runner: refusal happens before the body runs (one unit with a
+# plant that would leave a marker), the whitelist hash and the zero-occurrence scan are pinned
+# (one lint), and all three call sites gate before executing via a scriptblock in this scope (one lint).
+$script:DeclaredCheckTotal = 1368
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -1290,7 +1335,7 @@ $script:StLoadTimeInits = @(
   "`$script:PressId = ''",
   "`$script:PressTopLevel = `$true",
   "`$script:UiaActionAllowRe = '^(Button|MenuItem|Edit|CheckBox|RadioButton|ComboBox|ListItem|TabItem|TreeItem|Hyperlink|Slider|SplitButton)`$'",
-  "`$script:JsonSchemaVersion = 3",
+  "`$script:JsonSchemaVersion = 4",
   "`$script:NoAutoTrim = `$false",
   "`$script:ActivationLine = ''",
   "`$script:ActivationNotice = ''",
@@ -1566,9 +1611,14 @@ function Get-StubParamNameList($Parsed, [string]$FunctionName) {
     if ($null -eq $a08sRight.ScriptBlock) { continue }
     $a08sPb = $a08sRight.ScriptBlock.ParamBlock
     if ($null -eq $a08sPb) { continue }
-    foreach ($p in @($a08sPb.Parameters)) { $out += [string]$p.Name.VariablePath.UserPath }
+    # N-3 (2026-11-06): two doubles for one function now exist (drag-press and the clipboard
+    # backup e2e), so the return value keeps ONE GROUP PER STUB (newline-separated); a flat
+    # name list would add the two arities together and let a wrong stub hide inside the sum.
+    $a08sNames = @()
+    foreach ($p in @($a08sPb.Parameters)) { $a08sNames += [string]$p.Name.VariablePath.UserPath }
+    $out += ($a08sNames -join ';')
   }
-  return ($out -join ';')
+  return ($out -join "`n")
 }
 
 function Get-StubAlignmentDiscrepancy($Parsed, [string]$FunctionName) {
@@ -1578,11 +1628,14 @@ function Get-StubAlignmentDiscrepancy($Parsed, [string]$FunctionName) {
   # its parameters whatever it likes as long as the arity matches.
   $real = @()
   foreach ($x in @((Get-FunctionParamNameList $Parsed $FunctionName) -split ';')) { if ($x -ne '') { $real += $x } }
-  $stub = @()
-  foreach ($x in @((Get-StubParamNameList $Parsed $FunctionName) -split ';')) { if ($x -ne '') { $stub += $x } }
+  $stubText = [string](Get-StubParamNameList $Parsed $FunctionName)
   if (@($real).Count -lt 1) { return ('no-function:' + [string]$FunctionName) }
-  if (@($stub).Count -lt 1) { return ('no-stub:' + [string]$FunctionName) }
-  if (@($stub).Count -ne @($real).Count) { return ($FunctionName + ':stub=' + @($stub).Count + '-real=' + @($real).Count) }
+  if ($stubText -eq '') { return ('no-stub:' + [string]$FunctionName) }
+  # Every double is checked on its own: one stub may not borrow another stub's arity.
+  foreach ($sLine in @($stubText -split "`n")) {
+    $sNames = @($sLine -split ';' | Where-Object { $_ -ne '' })
+    if ($sNames.Count -ne @($real).Count) { return ($FunctionName + ':stub=' + $sNames.Count + '-real=' + @($real).Count) }
+  }
   return ''
 }
 function Get-VarUseOwnerList($Parsed, [string]$VarText) {
@@ -2368,7 +2421,7 @@ $script:StFamilyFragments = @{
   'split-machine' = @('a handler group leaves the entry only by naming the file it goes to', 'v4.4.0 (A-0', 'v4.4.0 (A-11', 'v4.4.0 (A-12', 'v4.4.0 (A-14', 'v4.4.0 (A-23', 'v4.4.0 (S-9', 'file encoding invariants')
   'repo-contract' = @('version number sync', 'v4.5.5 (TB-1)', 'tracked-file count', 'tracked in the INDEX', 'offline-check total')
   'popup-occlusion' = @('same-process popup', 'no---to send path must take the SAME popup baseline', 'occlusion self-proof', 'popup survival guard', 'popup delta merge', 'red-1/red-2', 'the operating rule, made mechanical')
-  'window-targeting' = @('window label, including the anonymous', 'the main-window rule is a pure function', 'Resolve-Window selector semantics', 'the composite locator', 'idempotent activation', 'uia-tree file route', 'open-and-pick', 'the take-a-coordinate ladder', 'find --region''s inverted validator', 'the UIA-driven Chrome exit menu', 'the landing identity check and the post-activation state read', 'the tile grid and the stitch that rebuilds it', 'D-4 (v4.6.13): grid denoise', 'v4.8.0 (B-3): the grid note MEASURES', 'v4.8.0 (C): the capture quality gate', 'D-5 (v4.6.13): cluster-color')
+  'window-targeting' = @('window label, including the anonymous', 'the main-window rule is a pure function', 'Resolve-Window selector semantics', 'the composite locator', 'idempotent activation', 'uia-tree file route', 'open-and-pick', 'the take-a-coordinate ladder', 'find --region''s inverted validator', 'the UIA-driven Chrome exit menu', 'the landing identity check and the post-activation state read', 'the tile grid and the stitch that rebuilds it', 'D-4 (v4.6.13): grid denoise', 'v4.8.0 (B-3): the grid note MEASURES', 'v4.8.0 (C): the capture quality gate', 'D-5 (v4.6.13): cluster-color', 'D-1 (2026-11-06): GetNewClosure')
   'capture-ocr' = @('OCR a saved capture', 'CJK spacing', 'OCR retry decision', 'tiled OCR planner', 'one OCR tail for every miss', 'sparse-read hint', 'needle sub-span aiming', 'folded-long-payload', 'folded long payload receipt', 'CU-OPS-464-REVIEW-20261028-01 (W-1a/W-1b)', 'D-1 (v4.6.13): PT profile and anchor calibration', 'v4.7.0 (B-1): two anchors estimate, a THIRD one tests')
   'expect-family' = @('the expect family names its patience', 'B-1/B-2/B-3', 'autoexpect', 'wiring (default-on must stay WIRED', 'the expectation anchor is fail-closed', 'the verbatim expectation legs', 'every verify call site passes the patience', '--verify-timeout', 'F-02: the 7th positional argument')
   'flags-grammar' = @('a flag must be REACHABLE', 'the named-stub conversion is machine-checked', 'Strip-OwnFlags', 'sibling-flag hint', 'Bool flags, per-command shared routing', 'the auto-grid decision', 'no miss message writes its own tail', 'truncation must self-report', 'the case shape is judged from the AST', 'a miss carries every premise', 'numeric arguments fail readably', 'the same hole elsewhere', 'the chrome family''s own promises', 'menu-pick target predicate', 'menu-pick''s extracted parser', 'the six "do not lose" contracts')
@@ -2394,9 +2447,17 @@ $script:StFamilyCounts = @{
   # v4.8.0 B-2 (b-wip-r3): the A-07/A-09 registration notes grow the family by 9 lines (measured).
   # v4.8.0 B-round (b-wip-r9): the A-14a banner-pin note grows the family by 3 more (+3 -> 1356).
   # v4.8.0 C (c-wip-r8): the banner-pin comment grows by one more line (+1 -> 1357).
-  'split-machine' = 'banners=23,lines=1396'
-  'repo-contract' = 'banners=5,lines=322'
-  'gate-meta' = 'banners=30,lines=2822'
+  # D-1 (2026-11-06): the A-14a banner-pin note and the A-07 function-table note record the
+  # GetNewClosure repair in this file and add six comment lines (+6 -> 1402, banners unchanged).
+  # 2026-11-07 (M4 sync): the M2 source-mode branch adds four lines to the split-machine
+  # body (+4 -> 1425, banners unchanged at 23), so a single-file artifact skips instead of
+  # reading a lib/ table that does not exist there.
+  'split-machine' = 'banners=23,lines=1425'
+  # 2026-11-07 (public gate): F-01c's name goes back to a static literal (the PS5.1-safe binding
+  # keeps the index extractor able to read it), and the bad list moved to its own detail line:
+  # repo-contract body 386 -> 387, banners unchanged at 5.
+  'repo-contract' = 'banners=5,lines=387'
+  'gate-meta' = 'banners=30,lines=3073'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
   # D-5 (v4.6.13): the same prose names the new 97/100/111 and which round moved them (+1 -> 889).
@@ -2420,7 +2481,7 @@ $script:StFamilyCounts = @{
   # v4.8.0 (B-2) (b-wip-r3): the origin-resolution / archive-walk banner and its 5 checks (one
   # is the child-process e2e, one a conditional SKIP) add one banner and 99 lines
   # (+1 -> 12, +99 -> 1150), measured by the b-wip-r3 attribution run on this tree.
-  'audit-output' = 'banners=12,lines=1220'
+  'audit-output' = 'banners=12,lines=1359'
   # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
@@ -2446,16 +2507,21 @@ $script:StFamilyCounts = @{
   # X-04 (2026-11-03): the disabled-main-window override block adds 9 checks (one override,
   # one owner-chain, four negative controls, two note producers, one keyboard-family guard
   # census) and 44 lines to this family (git diff --numstat on lib/selftest-window-targeting.ps1).
-  'window-targeting' = 'banners=16,lines=3259'
-  'expect-family' = 'banners=9,lines=705'
+  # D-1 (2026-11-06): the GetNewClosure closure lint and the rect/zoom dual-pose e2e legs
+  # add one banner and 155 lines (+1 -> 17, +155 -> 3414), measured by the offline gate
+  # attribution run on this tree; the pin is the measurement, not a hand count.
+  'window-targeting' = 'banners=17,lines=3569'
+  'expect-family' = 'banners=9,lines=803'
   # v4.7.0 (CU-REMAINDER-FINAL-20261029-01 INC-01): the companion-content resolver block - eight
   # offline legs, the wiring ruler and its swap witness, and the fixture-shape fix in the
   # already-other legs (+120 -> 310), tallied by the offline gate on this box.
   # v4.8.0 (c-final live finding): the managed-view leg splits the read-failed negative (a raw
   # read answering null is the managed view of the text payload, measured on real clipboards in
   # live v48-live-r1/r2 where the shipped refusal broke every paste) (+9 -> 319).
-  'clipboard-input' = 'banners=4,lines=333'
-  'docs-contract' = 'banners=12,lines=646'
+  'clipboard-input' = 'banners=4,lines=403'
+  # M4 (v4.9.1): the coverage lint and its teeth block add 43 lines to the same banner family, so the
+  # span moves 646 -> 689 (banners unchanged at 12, measured by the A-14a banner walk).
+  'docs-contract' = 'banners=12,lines=689'
   'chrome-cdp' = 'banners=6,lines=475'
   'drag-press' = 'banners=3,lines=199'
   'challenge-workflow' = 'banners=2,lines=206'
@@ -2613,20 +2679,28 @@ $script:StFamilyCheckCounts = @(
   # owner chain, four negative controls, two note producers, one keyboard-family guard census),
   # 292 -> 301, measured by the same A-14b AST counter over lib/selftest-window-targeting.ps1
   # (ST-Check=301, ST-Skip=0), not by adding the block's lines by hand.
-  'Invoke-SelftestFamily-WindowTargeting=301',
-  'Invoke-SelftestFamily-DocsContract=62',
+  # D-1 (2026-11-06): the closure lint (1 ST-Check) and the dual-pose legs (3 ST-Check
+  # plus 3 conditional ST-Skip emitters) move the AST emitter count 301 -> 308, measured by
+  # the same A-14b counter over lib/selftest-window-targeting.ps1, not by adding lines by hand.
+  'Invoke-SelftestFamily-WindowTargeting=327',
+  # M4 (v4.9.1): the coverage lint and its teeth block add four emitters (two ST-Check, two conditional
+  # ST-Skip), 62 -> 66, measured by the A-14b AST counter over lib/selftest-docs-contract.ps1.
+  'Invoke-SelftestFamily-DocsContract=66',
   'Invoke-SelftestFamily-ChromeCdp=55',
   'Invoke-SelftestFamily-ChallengeWorkflow=18',
   # INC-01 (2026-10-30): the clipboard-input family grew the companion-resolver block - eight emitters
   # (seven unit/contract legs over the real resolver plus the source-shape wiring lint), 32 -> 40,
   # measured by re-running the same A-14b AST counter over lib/selftest-clipboard-input.ps1
   # (ST-Check=40, ST-Skip=0), not by adding the block's lines by hand.
-  'Invoke-SelftestFamily-ClipboardInput=42',
-  'Invoke-SelftestFamily-RepoContract=26',
-  'Invoke-SelftestFamily-SplitMachine=66',
+  'Invoke-SelftestFamily-ClipboardInput=44',
+  'Invoke-SelftestFamily-RepoContract=30',
+  # 2026-11-07: the M2 mode branch adds one conditional ST-Skip emitter (aggregate still emits
+  # the ST-Check), 67 -> 68, measured by re-running the A-14b counter over
+  # lib/selftest-split-machine.ps1.
+  'Invoke-SelftestFamily-SplitMachine=68',
   'Invoke-SelftestFamily-PopupOcclusion=48',
-  'Invoke-SelftestFamily-AuditOutput=98',
-  'Invoke-SelftestFamily-ExpectFamily=87',
+  'Invoke-SelftestFamily-AuditOutput=107',
+  'Invoke-SelftestFamily-ExpectFamily=101',
   'Invoke-SelftestFamily-DragPress=22',
   # v4.6.13: the occlusion true-negative leg grew its own ST-Skip branch (premise not established),
   # so the family counts one more emitter - 164 -> 165, measured by re-running the A-14b counter.
@@ -2639,7 +2713,7 @@ $script:StFamilyCheckCounts = @(
   # six unit (INC-02) legs + contract (INC-02), unit (INC-03) + contract (INC-03). Only the offline
   # nine can enter the declared total.
   'Invoke-SelftestFamily-LiveSuite=191',
-  'Invoke-SelftestFamily-GateMeta=168'
+  'Invoke-SelftestFamily-GateMeta=177'
 )
 
 # A-23 (criterion-5): every `exit` this tree can execute, named by the owner that holds it. Registered by CASE
@@ -2665,7 +2739,9 @@ $script:StCommandOwners = @(
   'fn:Invoke-Handler-chrome-a11y=1',
   'fn:Invoke-Handler-chrome-debug-off=1',
   'fn:Invoke-Handler-chrome-menu-read=1',
-  'fn:Invoke-Handler-copy-file=1',
+  # N-3 (2026-11-06): four receipts in copy-file (backup, restore, failure note) all name the
+  # command, so the owner map and the $Cmd-use map both move from one to four.
+  'fn:Invoke-Handler-copy-file=4',
   'fn:Invoke-Handler-dialog-cancel=1',
   'fn:Invoke-Handler-drag=1',
   'fn:Invoke-Handler-drag-to=1',
@@ -2705,8 +2781,9 @@ $script:StCommandOwners = @(
   'fn:Release-Press=1',
   'fn:Trim-ShotDir=1'
 )
-# The ten mentions that are not calls: the definition, comments, probes and function-table
-# handles, plus the two CU-REL-04 wheel-probe source-rewrite lines. Each has its own anchor.
+# The thirteen mentions that are not calls: the definition, comments, probes and function-table
+# handles, plus the two CU-REL-04 wheel-probe source-rewrite lines and N-3's three audit-double
+# test-double handles. Each has its own anchor.
 # A-08 changes the shape of the stubs; when it does, this table moves with it.
 $script:StCommandExclusions = @(
   '([string[]]$restArgs, [string]$target, [string]$CmdName)',
@@ -2718,22 +2795,42 @@ $script:StCommandExclusions = @(
   'dispatch switch stays a dispatch',
   'v1.5.2 WP-2 (audit R-03, HIGH)',
   'wheelProbeText = ',
-  'New = ''Invoke-WheelProbeLog '
+  'New = ''Invoke-WheelProbeLog ',
+  '$n3LogReal = ${',
+  'param($lines, $detail, $cmd)',
+  '= $n3LogReal'
 )
 # '@LA@' stands for the audited command; the gate substitutes it from the assembled token, so the
 # registration never contains the word the registration is about.
 $script:StFunctionScopeRefs = @(
-  '@LA@=3',
-  'Find-OcrHitsScaled=7',
+  # N-3 (2026-11-06): the clipboard backup e2e also swaps the audited command, so its capture/mock/restore
+  # handles count as three more references.
+  '@LA@=6',
+  'Find-OcrHitsScaled=10',
   'Format-OcclusionCovering=3',
   'Get-ExpectChangeBaseline=3',
+  # N-2 (2026-11-06): the two guard-receipt legs stub four screen-reading seams (save, override,
+  # restore each) so the receipt wording and the OCR rectangle are measured without OCR.
+  'Get-OcrEngine=3',
   'Get-OcclusionVerdict=6',
   'Get-PasteReceipt=3',
   'Get-PasteReceiptOcclusionMax=4',
   'Get-SamePidWindowsAbove=6',
+  'Get-TargetRect=3',
   'Invoke-Expectation=6',
   'Invoke-HitWindowCheck=5',
-  'Resolve-Target=3'
+  'Invoke-OcclusionGate=3',
+  'Resolve-OcclusionMode=3',
+  'Resolve-Target=3',
+  # N-3 (2026-11-06): the e2e leg saves, overrides and restores four clipboard seams.
+  'Assert-ClipboardReplaceable=3',
+  'Restore-ClipboardState=3',
+  'Save-ClipboardState=3',
+  'Set-ClipboardFileDrop=3',
+  # D-1 (2026-11-06): the two map publishers capture the function object itself
+  # (`$fn = ${function:Write-MapSidecar}`) so the dynamic module carries the code, not a bare
+  # name that its own session state cannot resolve. Both references are counted here.
+  'Write-MapSidecar=2'
 )
 # All load-time assignments, self-registration included: A-03 added six statements to the baseline
 # count of 54, and the five tables above are the seventh through eleventh. A card that introduces
@@ -2757,7 +2854,7 @@ $script:StLoadTimeNames = @(
   'needTrustNote=1',
   'pressWarn=1',
   'produced=3',
-  'Rest=4',
+  'Rest=5',
   'script:ActivationLine=1',
   'script:ActivationNotice=1',
   'script:AsTaskM=1',
@@ -2850,7 +2947,8 @@ $script:StLoadTimeNames = @(
 # still reads caller scope fails the lint by name instead of writing a column that only looks
 # like a command.
 $script:StCommandNameArgs = @(
-  '3|$Cmd=49',
+  # N-3 (2026-11-06): copy-file's three added receipts also pass the dispatcher command (+3).
+  '3|$Cmd=52',
   '3|$CmdName=9',
   '3|$cmdName=1'
 )
@@ -2861,11 +2959,12 @@ $script:StCommandNameArgs = @(
 # DECLARE it, and a new row only appears when somebody starts reading a scope they do not own.
 $script:StCmdVarUses = @(
   # v4.7.0 B-2: +1 - the dispatcher now reads the top-level command once more (the selftest-mode
-  # origin set: `if ($Cmd -eq 'selftest')`), so the script-scope use count is 17, not 16.
+  # origin set: `if ($Cmd -eq 'selftest')`), so the script-scope use count is 18, not 16 (M9 adds
+  # the catch's envelope call).
   # PT rounds 2026-11-02: the five observed-input handlers (click/dblclick/imgclick/rclick/
   # relclick) now hand the command name to Invoke-ObservedMouseInput as well, so each declares
   # two reads instead of one (+5 total -> 94); measured by the A-09 owner scan, not by hand.
-  '<script>=17',
+  '<script>=18',
   'fn:Invoke-DesktopCommand=5',
   'fn:Get-HandlerName=1',
   'fn:Get-CommandCodeRanges=3',
@@ -2878,7 +2977,9 @@ $script:StCmdVarUses = @(
   'fn:Invoke-Handler-chrome-debug-off=1',
   'fn:Invoke-Handler-chrome-menu-read=1',
   'fn:Invoke-Handler-click=2',
-  'fn:Invoke-Handler-copy-file=1',
+  # N-3 (2026-11-06): four receipts in copy-file (backup, restore, failure note) all name the
+  # command, so the owner map and the $Cmd-use map both move from one to four.
+  'fn:Invoke-Handler-copy-file=4',
   'fn:Invoke-Handler-dblclick=2',
   'fn:Invoke-Handler-dialog-cancel=1',
   'fn:Invoke-Handler-drag=1',
@@ -3306,15 +3407,26 @@ public class INK {
 # clicks there can be offset. Older builds throw EntryPointNotFoundException
 # and we fall back to SetProcessDPIAware() (System aware).
 # $DpiMode is reported by the `dpi` command for troubleshooting.
+# M8 (2026-11-06): a DPI fallback used to be invisible - the command still ran, but every
+# coordinate was virtualized. The final mode now gets one stderr line (stdout contracts untouched)
+# and the first audited command of the process adds one `dpi-fallback` line to the log. The
+# DTX_DPI_FORCE hook only exists so the selftests can simulate an unavailable tier:
+# `per-monitor-v2` skips the modern context, `all` skips both. Normal runs are unchanged.
+function Get-DpiFallbackWarning([string]$mode) {
+  if ($mode -eq 'per-monitor-v2') { return '' }
+  if ($mode -eq 'system') { return 'WARNING: dpi=system (per-monitor-v2 unavailable) - screen coordinates are virtualized; pass monitor-relative rects or recalibrate.' }
+  return 'WARNING: dpi=unaware (per-monitor-v2 and system-aware unavailable) - screen coordinates are virtualized; pass monitor-relative rects or recalibrate.'
+}
 $script:DpiMode = 'unaware'
 try {
-  if ([DT]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $script:DpiMode = 'per-monitor-v2' }
+  if (([string]$env:DTX_DPI_FORCE) -notmatch '(^|,)(per-monitor-v2|all)(,|$)') { if ([DT]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $script:DpiMode = 'per-monitor-v2' } }
 } catch { }
 if ($script:DpiMode -eq 'unaware') {
   try {
-    if ([DT]::SetProcessDPIAware()) { $script:DpiMode = 'system' }
+    if (([string]$env:DTX_DPI_FORCE) -notmatch '(^|,)all(,|$)') { if ([DT]::SetProcessDPIAware()) { $script:DpiMode = 'system' } }
   } catch { }
 }
+if ($script:DpiMode -ne 'per-monitor-v2') { [Console]::Error.WriteLine((Get-DpiFallbackWarning $script:DpiMode)) }
 
 $MOUSE_LDOWN = 0x0002
 $MOUSE_LUP = 0x0004
@@ -3569,7 +3681,7 @@ function Trim-ShotDir([string]$Dir = $OutDir, [string]$why = 'after-capture', [i
   if (@($r.Unrecorded).Count -gt 0) {
     $r.Note = ($r.Note + ' - ' + @($r.Unrecorded).Count + ' MOVED FILE(S) HAVE NO MANIFEST ROW, the run stopped instead of moving more without a record')
   }
-  Log-Action @('auto-trim', '--keep', "$($pol.Keep)", $why) "moved=$($r.Moved) failed=$($r.Failed) unrecorded=$(@($r.Unrecorded).Count) dest=$($r.Dest)" $CmdName
+  Log-Action @('auto-trim', '--keep', "$($pol.Keep)", $why) "moved=$($r.Moved) failed=$($r.Failed) unrecorded=$(@($r.Unrecorded).Count) deleted=0 dest=$($r.Dest)" $CmdName
   return $r
 }
 
@@ -3603,11 +3715,35 @@ function Get-LogRotationPolicy { return @{ MaxBytes = 524288; Keep = 5; ArchiveP
 function Invoke-LogRotation([string]$logPath, [long]$maxBytes, [int]$keep) {
   if (-not (Test-Path -LiteralPath $logPath)) { return $false }
   if ((Get-Item -LiteralPath $logPath).Length -lt $maxBytes) { return $false }
+  $logDir = Split-Path -Parent $logPath
   $stamp = (Get-Date).ToString('yyyyMMddTHHmmss')
-  $archive = Join-Path (Split-Path -Parent $logPath) (((Get-LogRotationPolicy).ArchivePrefix + $stamp + '.log'))
+  $archive = Join-Path $logDir (((Get-LogRotationPolicy).ArchivePrefix + $stamp + '.log'))
   Move-Item -LiteralPath $logPath -Destination $archive -Force
-  $old = @(Get-ChildItem -LiteralPath (Split-Path -Parent $logPath) -Filter ((Get-LogRotationPolicy).ArchiveGlob) | Sort-Object -Property Name -Descending)
-  for ($k = $keep; $k -lt $old.Count; $k++) { Remove-Item -LiteralPath $old[$k].FullName -Force }
+  $old = @(Get-ChildItem -LiteralPath $logDir -Filter ((Get-LogRotationPolicy).ArchiveGlob) | Sort-Object -Property Name -Descending)
+  # M7 (2026-11-06): retention never destroys the audit trail. Archives beyond the newest $keep
+  # move to <logDir>\quarantine\ and each move appends one machine-readable MANIFEST row
+  # (name|bytes|sha256|moved_at|reason). Nothing is Remove-Item'd. The new live log then carries
+  # a `log-rotation ... moved=N deleted=0` line written HERE (the audit double is our caller, so we
+  # append directly instead of recursing into it). Below-threshold calls stay side-effect free.
+  $moved = 0
+  $reason = 'beyond-keep(' + $keep + ')'
+  $quarantineDir = Join-Path $logDir 'quarantine'
+  $manifestPath = Join-Path $quarantineDir 'MANIFEST.txt'
+  for ($k = $keep; $k -lt $old.Count; $k++) {
+    $item = $old[$k]
+    $sha = (([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($item.FullName))) -replace '-', '')).ToLowerInvariant()
+    if (-not (Test-Path -LiteralPath $quarantineDir)) { New-Item -Path $quarantineDir -ItemType Directory -ErrorAction Stop | Out-Null }
+    Move-Item -LiteralPath $item.FullName -Destination (Join-Path $quarantineDir $item.Name) -Force
+    $row = $item.Name + '|' + $item.Length + '|' + $sha + '|' + (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') + '|' + $reason
+    [System.IO.File]::AppendAllText($manifestPath, $row + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    $moved++
+  }
+  if ($moved -gt 0) {
+    $rotTs = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+    $rotOrigin = Resolve-AuditOrigin ([string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)) ([string](Get-Variable -Name 'LogOriginMode' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)) '' ''
+    $rotLine = "$rotTs UTC | log-rotation | --keep $keep | moved=$moved deleted=0 quarantine=$quarantineDir | origin=$rotOrigin"
+    [System.IO.File]::AppendAllText($logPath, $rotLine + "`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  }
   return $true
 }
 
@@ -3690,6 +3826,18 @@ function Log-Action([string[]]$restArgs, [string]$target, [string]$CmdName) {
   $logMode = [string](Get-Variable -Name 'LogOriginMode' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
   $logId = Get-DtxCallIdentity
   $logOrigin = Resolve-AuditOrigin $logOrigin $logMode ([string]$logId.CallerLabel) ([string]$logId.IdentitySource)
+  # M8 (2026-11-06): a degraded DPI mode is a fact about every run, so the first audited command
+  # of THIS process records it once, AHEAD of that command's own line; later commands stay quiet,
+  # and a healthy per-monitor-v2 run writes nothing. The guard is lazy (Get/Set-Variable) - no new
+  # load-time $script: assignment.
+  if ($script:DpiMode -ne 'per-monitor-v2') {
+    $dpiLogged = [bool](Get-Variable -Name 'DpiFallbackLogged' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+    if (-not $dpiLogged) {
+      Set-Variable -Name 'DpiFallbackLogged' -Scope Script -Value $true
+      $dpiLine = "$ts UTC | dpi-fallback from=per-monitor-v2 to=$($script:DpiMode) | startup | first-command | origin=$logOrigin"
+      [System.IO.File]::AppendAllText($ActionLog, "$dpiLine`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    }
+  }
   $line = "$ts UTC | $CmdName | " + (($restArgs | ForEach-Object { Quote-LogArg $_ }) -join ' ') + " | $target | origin=$logOrigin"
   [System.IO.File]::AppendAllText($ActionLog, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -4872,6 +5020,14 @@ function Get-GridAvoidRects([System.Drawing.Bitmap]$bmp, [int]$originX, [int]$or
 # window grab) is recorded in the sidecar so imgclick/unmap can detect that
 # the window moved/resized since capture instead of silently mis-mapping.
 function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]$fit, [int]$grid, $marks, [string]$mapKind = '', $mapWin = $null, $mapRect = $null, $cf = $null, [scriptblock]$occlRecheck = $null, [scriptblock]$captureStep = $null) {
+  # X-07: clamp to what the screen can actually show BEFORE any pixel is grabbed, so
+  # nothing downstream (fit, grid, marks, content baseline, sidecar) ever describes
+  # invented black. A fully off-screen request is refused with REGION_CLIPPED; a
+  # partial one is captured at the visible intersection and the receipt says so.
+  $reqX = $x; $reqY = $y; $reqW = $w; $reqH = $h
+  $vis = Get-VisibleRegion $x $y $w $h
+  if ($vis.FullyOffscreen) { throw (Format-RegionClippedError $vis 'capture') }
+  if ($vis.Clipped) { $x = [int]$vis.CX; $y = [int]$vis.CY; $w = [int]$vis.CW; $h = [int]$vis.CH }
   $contentRoiArg = Get-OptValue $cf 'ContentRoi'
   if (-not $mapKind -and $null -ne $contentRoiArg) { throw '--content-roi applies only to win/rect/zoom captures that write a point map; shot does not bind a content baseline' }
   $contentRoi = $null
@@ -5028,7 +5184,11 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     try { $bmp.Save($msP, [System.Drawing.Imaging.ImageFormat]::Png); $pngBytes = $msP.ToArray() } finally { $msP.Dispose(); $bmp.Dispose() }
     $shaW = [System.Security.Cryptography.SHA256]::Create()
     try { $pendingSha = ([BitConverter]::ToString($shaW.ComputeHash($pngBytes)) -replace '-','').ToLower() } finally { $shaW.Dispose() }
-    $mapPublish = { Write-MapSidecar $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha $null $gridStyle $contentInfo }.GetNewClosure()
+    # D-1 fix: resolve the function once in this script scope and carry its ScriptBlock into the
+    # closure. A bare name inside GetNewClosure()'s dynamic module is invisible when the entry is
+    # invoked with & from a parent scope; only -File puts those functions in the session scope.
+    $wmsFn = ${function:Write-MapSidecar}
+    $mapPublish = { & $wmsFn $path $x $y $scale $iw $ih $mapKind $mapWin $grid $mapSnap $pendingSha $null $gridStyle $contentInfo $vis }.GetNewClosure()
     Publish-CapturePair $path $pngBytes $mapPublish
   } else {
     # v4.6.10 (CU-REMAINDER-FINAL-20261029-01 A2): a capture that publishes NO sidecar (shot, script
@@ -5043,10 +5203,14 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     $bmp.Dispose()
   }
   $size = (Get-Item -LiteralPath $path).Length
+  # X-07: the clip line appears ONLY when the request actually crossed a screen edge,
+  # so an in-screen capture keeps its old receipt shape byte for byte (R3).
+  $clipTxt = ''
+  if ([bool]$vis.Clipped) { $clipTxt = "  clipped=$(Format-VisibilityClip $vis) req=($reqX,$reqY) ${reqW}x${reqH} captured=($x,$y) ${w}x${h}" }
   $lines = New-Object System.Collections.ArrayList
   $gridTxt = $(if ($grid -gt 0) { "  grid=$grid style=$gridStyle$(if ($avoidNote) { " avoid=off ($avoidNote)" } else { " avoid=$(@($avoidRects).Count) text line(s) kept clear" })$(if ($autoGrid) { ' (auto: --fit and wider than 1000px; --no-grid turns it off)' } else { '' })" } else { '' })
   if ($scale -eq 1.0) {
-    [void]$lines.Add("saved $path  rect=($x,$y) size=${w}x${h}  bytes=$size  coords: screen = image + ($x,$y)  (image ${iw}x${ih} px, 1:1)$gridTxt")
+    [void]$lines.Add("saved $path  rect=($x,$y) size=${w}x${h}  bytes=$size  coords: screen = image + ($x,$y)  (image ${iw}x${ih} px, 1:1)$gridTxt$clipTxt")
     if ($w -gt 1400) {
       [void]$lines.Add("WARN: ${w} px wide - your viewer will likely DOWNSCALE this image, so eyeballed coordinates WILL be off. Use --grid (read coordinates off the labels), --fit 900, or zoom. The only supported way back from a pixel you SAW in this image is: imgclick <image> <ix> <iy> (unmap prints the mapping without clicking) - this capture already wrote the .map.txt it needs next to the file. $(if ($grid -gt 0) { 'This capture already carries a grid.' } else { 'Prefer find <text> / find-text <small region> --needle <text> over any measured point.' })")
     }
@@ -5056,7 +5220,7 @@ function Save-RectEx([int]$x, [int]$y, [int]$w, [int]$h, [string]$path, [double]
     # Both forms on purpose: dividing by 0.593 in your head was the direct
     # source of two real mis-clicks (audit 2026-09-29b #3); the multiply form
     # removes the division. --grid removes the math altogether.
-    [void]$lines.Add("saved $path  rect=($x,$y) req=${w}x${h} image=${iw}x${ih} scale=$rs  bytes=$size  coords: screen = ($x + ix/$rs, $y + iy/$rs)  (= $x + ix*$inv, $y + iy*$inv)$gridTxt")
+    [void]$lines.Add("saved $path  rect=($x,$y) req=${w}x${h} image=${iw}x${ih} scale=$rs  bytes=$size  coords: screen = ($x + ix/$rs, $y + iy/$rs)  (= $x + ix*$inv, $y + iy*$inv)$gridTxt$clipTxt")
     if ($iw -gt (Get-ShotViewerWidePx) -and $grid -le 0) {
       # v1.5.7 (D-6): the owner measured (3590,50) against a true (3562,32) on a
       # --fit 1200/1400 image - the viewer downscales AGAIN on top of this file.
@@ -5180,10 +5344,17 @@ function Publish-CapturePair([string]$ImagePath, [byte[]]$PngBytes, [scriptblock
   }
 }
 
-function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '', $tileInfo = $null, [string]$gridStyle = '', $contentInfo = $null) {
+function Write-MapSidecar([string]$imagePath, [int]$ox, [int]$oy, [double]$scale, [int]$ow, [int]$oh, [string]$kind, $hostWin = $null, [int]$gridStep = 0, $hostRect = $null, [string]$pngSha256 = '', $tileInfo = $null, [string]$gridStyle = '', $contentInfo = $null, $visibility = $null) {
   $inv = [System.Globalization.CultureInfo]::InvariantCulture
   $s = [math]::Round($scale, 6).ToString($inv)
   $text = "origin_x=$ox`r`norigin_y=$oy`r`nscale=$s`r`nout_w=$ow`r`nout_h=$oh`r`nkind=$kind`r`n"
+  # X-07: a clipped capture starts at the visible edge, so its origin alone no longer
+  # says what was ASKED for. The sidecar carries the request and the clipped edges so
+  # a later reader can tell "this image is the full region" from "this image is the
+  # visible part of a larger request" without re-deriving it from the screen.
+  if ($null -ne $visibility -and [bool]$visibility.Clipped) {
+    $text += "req_x=$([int]$visibility.X)`r`nreq_y=$([int]$visibility.Y)`r`nreq_w=$([int]$visibility.W)`r`nreq_h=$([int]$visibility.H)`r`nclip_left=$([int]$visibility.ClipLeft)`r`nclip_top=$([int]$visibility.ClipTop)`r`nclip_right=$([int]$visibility.ClipRight)`r`nclip_bottom=$([int]$visibility.ClipBottom)`r`nclipped=$([string]$visibility.Edges)`r`n"
+  }
   # v1.5.7 (D-6, owner's added condition): a grid is drawn ON this bitmap, and imgclick
   # reads exactly this bitmap - so the fact has to travel with the file instead of being
   # discoverable only by looking at the PNG.
@@ -5766,19 +5937,27 @@ function Await-WinRt($op, [type]$resultType, [int]$MaxWaitMs = 20000, $Deadline 
 # invariant) with the bitmap the caller MUST dispose, plus the scale actually
 # applied, so bitmap pixels map back to screen as screen = origin + px/scale.
 function Get-ScreenBitmap([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale) {
-  $bmp = New-Object System.Drawing.Bitmap($w, $h)
+  # X-07: capture ONLY the visible intersection. CopyFromScreen does not throw on a
+  # negative origin - it paints the off-screen part pure black - so a half-offscreen
+  # region used to be read as "black background" instead of "no pixels exist there".
+  # Fully off-screen is a refusal with the stable code REGION_CLIPPED: there is nothing
+  # to read, and inventing a black frame as evidence is exactly what this closes.
+  $vis = Get-VisibleRegion $x $y $w $h
+  if ($vis.FullyOffscreen) { throw (Format-RegionClippedError $vis 'capture') }
+  $cx = [int]$vis.CX; $cy = [int]$vis.CY; $cw = [int]$vis.CW; $ch = [int]$vis.CH
+  $bmp = New-Object System.Drawing.Bitmap($cw, $ch)
   $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+  $g.CopyFromScreen($cx, $cy, 0, 0, (New-Object System.Drawing.Size($cw, $ch)))
   $g.Dispose()
   $src = $bmp
   if ($scale -ne 1.0) {
-    $src = New-Object System.Drawing.Bitmap([int]($w * $scale), [int]($h * $scale))
+    $src = New-Object System.Drawing.Bitmap([int]($cw * $scale), [int]($ch * $scale))
     $g2 = [System.Drawing.Graphics]::FromImage($src)
     $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g2.DrawImage($bmp, 0, 0, $src.Width, $src.Height)
     $g2.Dispose(); $bmp.Dispose()
   }
-  return @{ Bitmap = $src; Scale = $scale }
+  return @{ Bitmap = $src; Scale = $scale; OriginX = $cx; OriginY = $cy; VisibleW = $cw; VisibleH = $ch; RequestedW = $w; RequestedH = $h; Clipped = [bool]$vis.Clipped; Vis = $vis }
 }
 
 # Recognition half of the OCR pipeline: OCRs an in-memory bitmap and returns
@@ -5874,12 +6053,21 @@ function Invoke-OcrRegion([int]$x, [int]$y, [int]$w, [int]$h, [double]$forceScal
   try {
     $r = Invoke-OcrBitmap $cap.Bitmap $DeadlineMs
     $lines = New-Object System.Collections.ArrayList
+    # X-07: bitmap px -> screen uses the CAPTURED origin, not the requested one. On a
+    # clipped region the capture starts at the visible edge, so mapping through $x/$y
+    # would shift every line by the clipped amount and hand back a clickable-but-wrong
+    # rect. cap.OriginX/Y is the request itself whenever nothing was clipped.
+    $ox = $x; $oy = $y
+    $ovx = Get-OptValue $cap 'OriginX'
+    if ($null -ne $ovx) { $ox = [int]$ovx }
+    $ovy = Get-OptValue $cap 'OriginY'
+    if ($null -ne $ovy) { $oy = [int]$ovy }
     foreach ($ln in $r.Lines) {
       # bitmap px -> screen: screen = origin + px/scale (single offset, by design)
       [void]$lines.Add([pscustomobject]@{
         Text = $ln.Text
-        X = $x + [int][math]::Round($ln.X / $scale)
-        Y = $y + [int][math]::Round($ln.Y / $scale)
+        X = $ox + [int][math]::Round($ln.X / $scale)
+        Y = $oy + [int][math]::Round($ln.Y / $scale)
         W = [int][math]::Round($ln.W / $scale)
         H = [int][math]::Round($ln.H / $scale)
       })
@@ -6305,7 +6493,19 @@ function Invoke-OcrBitmapTiled([System.Drawing.Bitmap]$canvas, [int]$srcW, [int]
 function Invoke-OcrRegionTiled([int]$x, [int]$y, [int]$w, [int]$h, [double]$scale, [int]$maxTiles, [int]$DeadlineMs = 0) {
   $cap = Get-ScreenBitmap $x $y $w $h 1.0
   try {
-    return Invoke-OcrBitmapTiled $cap.Bitmap $w $h $scale $maxTiles $x $y 0 $DeadlineMs
+    # X-07: tile over the CAPTURED frame. The plan's region origin is the visible
+    # intersection, so every tile line still maps to a real screen pixel and no tile
+    # is spent on black filler the screen never showed.
+    $tw = $w; $th = $h; $tox = $x; $toy = $y
+    $tvw = Get-OptValue $cap 'VisibleW'
+    if ($null -ne $tvw) { $tw = [int]$tvw }
+    $tvh = Get-OptValue $cap 'VisibleH'
+    if ($null -ne $tvh) { $th = [int]$tvh }
+    $toxv = Get-OptValue $cap 'OriginX'
+    if ($null -ne $toxv) { $tox = [int]$toxv }
+    $toyv = Get-OptValue $cap 'OriginY'
+    if ($null -ne $toyv) { $toy = [int]$toyv }
+    return Invoke-OcrBitmapTiled $cap.Bitmap $tw $th $scale $maxTiles $tox $toy 0 $DeadlineMs
   } finally { $cap.Bitmap.Dispose() }
 }
 
@@ -6988,23 +7188,84 @@ function Format-OcrRetryNote($f) {
   return 'no retry ran'
 }
 
+# X-07 (v4.9.1): the VISIBILITY CONTRACT. A region is a request; what the screen can
+# actually show is the request intersected with the virtual screen. CopyFromScreen does
+# NOT refuse a negative origin - it fills the off-screen part with opaque black - so
+# without this every half-offscreen read mixed invented black into evidence. This is
+# the one producer of that intersection: X/Y/W/H are the REQUEST, CX/CY/CW/CH the
+# visible part, FullyOffscreen means nothing can be read at all. Callers must refuse
+# a fully off-screen region (stable code REGION_CLIPPED) and must never treat a miss
+# on a clipped region as proof of absence.
+function Get-VisibleRegion([int]$x, [int]$y, [int]$w, [int]$h) {
+  $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+  $vx = [int]$vs.X; $vy = [int]$vs.Y; $vw = [int]$vs.Width; $vh = [int]$vs.Height
+  $vr = [long]$vx + $vw; $vb = [long]$vy + $vh
+  $right = [long]$x + $w; $bottom = [long]$y + $h
+  $cx = [int][math]::Max([long]$x, [long]$vx)
+  $cy = [int][math]::Max([long]$y, [long]$vy)
+  $cr = [int][math]::Min($right, $vr)
+  $cb = [int][math]::Min($bottom, $vb)
+  $cw = $cr - $cx
+  $ch = $cb - $cy
+  if ($cw -lt 0) { $cw = 0 }
+  if ($ch -lt 0) { $ch = 0 }
+  $cl = [int][math]::Max(0, [long]$vx - [long]$x)
+  $ct = [int][math]::Max(0, [long]$vy - [long]$y)
+  $crt = [int][math]::Max(0, $right - $vr)
+  $cbt = [int][math]::Max(0, $bottom - $vb)
+  $edges = New-Object System.Collections.ArrayList
+  if ($cl -gt 0) { [void]$edges.Add('left') }
+  if ($ct -gt 0) { [void]$edges.Add('top') }
+  if ($crt -gt 0) { [void]$edges.Add('right') }
+  if ($cbt -gt 0) { [void]$edges.Add('bottom') }
+  return @{
+    X = $x; Y = $y; W = $w; H = $h
+    VX = $vx; VY = $vy; VW = $vw; VH = $vh
+    CX = $cx; CY = $cy; CW = $cw; CH = $ch
+    Clipped = ([bool](($cl + $ct + $crt + $cbt) -gt 0))
+    FullyOffscreen = ([bool](($cw -le 0) -or ($ch -le 0)))
+    ClipLeft = $cl; ClipTop = $ct; ClipRight = $crt; ClipBottom = $cbt
+    Edges = (@($edges) -join ',')
+  }
+}
+
+# X-07: one-line clip receipt used by every read/capture echo, so the caller sees the
+# same phrase regardless of which command produced it. ASCII only.
+function Format-VisibilityClip($vis) {
+  if ($null -eq $vis) { return '' }
+  $parts = New-Object System.Collections.ArrayList
+  if ([int]$vis.ClipLeft -gt 0) { [void]$parts.Add("left:$([int]$vis.ClipLeft)px") }
+  if ([int]$vis.ClipTop -gt 0) { [void]$parts.Add("top:$([int]$vis.ClipTop)px") }
+  if ([int]$vis.ClipRight -gt 0) { [void]$parts.Add("right:$([int]$vis.ClipRight)px") }
+  if ([int]$vis.ClipBottom -gt 0) { [void]$parts.Add("bottom:$([int]$vis.ClipBottom)px") }
+  return (@($parts) -join ' ')
+}
+
+# X-07: the stable REGION_CLIPPED refusal sentence, shared by captures and reads.
+function Format-RegionClippedError($vis, [string]$what) {
+  $edge = Format-VisibilityClip $vis
+  return ("REGION_CLIPPED: $what region ($($vis.X),$($vis.Y)) $($vis.W)x$($vis.H) is clipped by the screen edge ($edge) and nothing can be read there - the off-screen part is not black pixels, it does not exist. Move the window fully on-screen (or pass a region inside the virtual screen ($($vis.VX),$($vis.VY)) $($vis.VW)x$($vis.VH)) and re-run")
+}
+
 # <sel> or <x> <y> <w> <h> (starting at word <i>) -> screen-space rect.
 # Four integers always win over a selector; use t:<digits> if you ever need a
 # digit-only title selector in a position where 4 ints could also parse.
 # v1.5.1 WP-A: the resolved window object rides along as .Win (null for the
 # raw-quad form) so occlusion checks know the expected pixel owner.
+# X-07: .Vis is the visibility record (see Get-VisibleRegion) - every reader of this
+# region must consult it before drawing a conclusion from a miss.
 function Resolve-Region([string[]]$words, [int]$i) {
   if ($words.Count -ge ($i + 4)) {
     $quad = @($words[$i..($i + 3)])
     if (@($quad | Where-Object { $_ -match '^-?\d+$' }).Count -eq 4) {
       $w = [int]$quad[2]; $h = [int]$quad[3]
       if ($w -le 0 -or $h -le 0) { throw "region w/h must be positive: $($quad -join ' ')" }
-      return @{ X = [int]$quad[0]; Y = [int]$quad[1]; W = $w; H = $h; Win = $null }
+      return @{ X = [int]$quad[0]; Y = [int]$quad[1]; W = $w; H = $h; Win = $null; Vis = (Get-VisibleRegion ([int]$quad[0]) ([int]$quad[1]) $w $h) }
     }
   }
   if ($words.Count -ge ($i + 1)) {
     $w = Resolve-Window $words[$i]
-    if ($w) { return @{ X = $w.Left; Y = $w.Top; W = $w.W; H = $w.H; Win = $w } }
+    if ($w) { return @{ X = $w.Left; Y = $w.Top; W = $w.W; H = $w.H; Win = $w; Vis = (Get-VisibleRegion ([int]$w.Left) ([int]$w.Top) ([int]$w.W) ([int]$w.H)) } }
   }
   throw "expected <sel> or <x> <y> <w> <h>"
 }
@@ -8396,6 +8657,26 @@ function Resolve-MenuPickArgs([string[]]$mp) {
 # pixels and finding the needle there is exactly the false-green this guard
 # exists to prevent, so an occluded guard region fails BEFORE the OCR and
 # nothing is sent (--allow-occluded / --occlude warn downgrade to a warning).
+# N-2 (owner real-machine report 2026-11-06): a whole-window needle is WINDOW-level evidence.
+# A permanent contact-list entry stays visible forever, so a window-level hit still passes after
+# the active conversation switched to somebody else. Session proof needs a region that only the
+# active session renders - the title bar - hence `title=<needle>` maps to the top 48 px of the
+# window, and every guard receipt says level=window or level=session out loud.
+function Get-GuardLevel([string]$guardText, [string]$guardRegion) {
+  if ((-not $guardText) -and (-not $guardRegion)) { return 'none' }
+  if ($guardRegion) { return 'session' }
+  return 'window'
+}
+function Resolve-GuardRegionSpec([string]$spec, [int]$winW, [int]$winH) {
+  if ($spec -match '^title=(.+)$') {
+    $th = [Math]::Min(48, [Math]::Max(1, $winH))
+    return @{ Mode = 'title'; Needle = [string]$Matches[1]; X = 0; Y = 0; W = [Math]::Max(1, $winW); H = $th }
+  }
+  if ($spec -match '^(-?\d+),(-?\d+),(\d+),(\d+)=(.+)$') {
+    return @{ Mode = 'rect'; Needle = [string]$Matches[5]; X = [int]$Matches[1]; Y = [int]$Matches[2]; W = [int]$Matches[3]; H = [int]$Matches[4] }
+  }
+  return $null
+}
 function Invoke-ContentGuard($target, [string]$guardText, [string]$guardRegion, [string]$scaleMode = 'auto', [int]$maxTiles = 16, [bool]$noTile = $false, [string]$occMode = '', [bool]$allowOccluded = $false, [int]$occGrid = 5) {
   if (-not $guardText -and -not $guardRegion) { return }
   $eng = Get-OcrEngine
@@ -8406,14 +8687,16 @@ function Invoke-ContentGuard($target, [string]$guardText, [string]$guardRegion, 
   if ($null -eq $rect) { throw 'content guard: cannot determine target window rect (window may be gone)' }
   $needle = $guardText
   $where = 'whole target window'
+  $guardLevel = Get-GuardLevel $guardText $guardRegion
   if ($guardRegion) {
-    if ($guardRegion -notmatch '^(-?\d+),(-?\d+),(\d+),(\d+)=(.+)$') { throw "--guard-region expects x,y,w,h=needle got: $guardRegion" }
-    $needle = $Matches[5]
+    $gspec = Resolve-GuardRegionSpec $guardRegion ([int]$rect.W) ([int]$rect.H)
+    if ($null -eq $gspec) { throw "--guard-region expects x,y,w,h=needle or title=needle got: $guardRegion" }
+    $needle = $gspec.Needle
     # Base on the resolved $rect, never on $target.Left: a no-sel target
     # (foreground lookup) carries no Left, and null + offset silently degraded
     # the window-relative region to a screen-absolute one (audit 2026-09-29 #12).
-    $rect = @{ X = $rect.X + [int]$Matches[1]; Y = $rect.Y + [int]$Matches[2]; W = [int]$Matches[3]; H = [int]$Matches[4] }
-    $where = "region $($Matches[1]),$($Matches[2]),$($Matches[3])x$($Matches[4]) (window-relative)"
+    $rect = @{ X = $rect.X + $gspec.X; Y = $rect.Y + $gspec.Y; W = $gspec.W; H = $gspec.H }
+    $where = if ($gspec.Mode -eq 'title') { "title bar (window-relative 0,0,$($gspec.W)x$($gspec.H))" } else { "region $($gspec.X),$($gspec.Y),$($gspec.W)x$($gspec.H) (window-relative)" }
   }
   if (-not $needle) { throw 'content guard: empty needle' }
   $occAct = (Resolve-OcclusionMode $occMode $allowOccluded $true).Action
@@ -8424,7 +8707,10 @@ function Invoke-ContentGuard($target, [string]$guardText, [string]$guardRegion, 
   }
   $occSeg = ''
   if ($gate.Ran) { $occSeg = " [occ: $($gate.Echo)]" }
-  Write-Output "content guard ok: '$needle' found in $where$(if ($g.Scaled) { ' (needed 2x upscale to read)' })$(Get-OcrFoldMarker $g.Hits)$occSeg"
+  Write-Output "content guard ok: '$needle' found in $where$(if ($g.Scaled) { ' (needed 2x upscale to read)' })$(Get-OcrFoldMarker $g.Hits)$occSeg [level=$guardLevel]"
+  if ($guardLevel -eq 'window') {
+    Write-Output '  warn: this guard is WINDOW-level - a hit proves the WINDOW, not the active conversation; pass --guard-region title=<needle> (top title bar) or x,y,w,h=<needle> for SESSION-level evidence'
+  }
 }
 
 # v1.5.0 WP-2: post-action expectation contract. Polls the anchor region via
@@ -8876,6 +9162,76 @@ function Confirm-AutoExpect($auto) {
   $extra = ''
   if ($auto.Criterion) { $extra = ' (readback=' + $auto.Criterion + $(if ($auto.Receipt) { ', ' + $auto.Receipt } else { '' }) + ')' }
   throw ('autoexpect NOT met after ' + [math]::Round($auto.Elapsed, 1) + ' s (patience ' + [math]::Round($auto.Timeout, 1) + 's): payload tail (autoexpect=' + $auto.NeedleChars + 'chars) not visible in the target' + $extra + ' - may already have landed, DO NOT resend blindly: verify with read-text / uia-find / find-text first; pass --no-expect to accept send-only')
+}
+
+# N-1 (owner real-machine report 2026-11-06): an attachment chip ELIDES the middle of a long
+# file name ("...4_2...docx (450.7K)"), so a contiguous full-name needle can never match and a
+# miss here used to exit 1 - which a script reads as "not pasted" and answers with a RESEND.
+# Landing is therefore THREE states with stable identifiers, not a boolean:
+#   confirmed  -> the caller's own explicit expectation proved the payload
+#   unverified -> the chip (or a weak receipt leg) proves SOMETHING landed; exit stays 0 and the
+#                 message says plainly that this is weak evidence and must not be re-sent blindly
+#   absent     -> nothing speaks: the only state that may exit non-zero
+# The probe deliberately does NOT demand the full name: head and tail are independent needles,
+# and the verdict is weak by construction (the elision can hide either half).
+function Get-AttachmentProbe([string]$name) {
+  $full = [string]$name
+  if ($full -eq '') { return @{ Head = ''; Tail = ''; HeadChars = 0; TailChars = 0 } }
+  $base = [System.IO.Path]::GetFileNameWithoutExtension($full)
+  if ($base -eq '') { $base = $full }
+  $hn = 10
+  $tn = 6
+  if ($base.Length -lt ($hn + $tn + 2)) {
+    $hn = [Math]::Max(3, [int][Math]::Floor($base.Length / 2))
+  }
+  $head = $base.Substring(0, [Math]::Min($hn, $base.Length))
+  # The tail is read off the FULL name on purpose: a real chip keeps the extension visible
+  # ("...Zeyu.docx (450.7K)"), so "u.docx"-style needles survive the elision while a
+  # base-only tail (cut from the middle of the stem) would not.
+  $tail = $full.Substring([Math]::Max(0, $full.Length - [Math]::Min($tn, $full.Length)))
+  if ($tail -eq $head) { $tail = '' }
+  return @{ Head = $head; Tail = $tail; HeadChars = $head.Length; TailChars = $tail.Length }
+}
+
+# Pure truth table: three states, each with a stable identifier the caller can branch on.
+function Get-AttachmentLandingVerdict($o) {
+  $headHit = [bool](Get-OptValue $o 'HeadHit')
+  $tailHit = [bool](Get-OptValue $o 'TailHit')
+  if ($headHit -or $tailHit) {
+    $which = if ($headHit -and $tailHit) { 'head+tail' } elseif ($headHit) { 'head' } else { 'tail' }
+    return @{ State = 'unverified'; Code = 'PASTE_LANDED_UNVERIFIED'; Ok = $true; Weak = $true; Criterion = $which + '-probe'; Detail = ('chip visible (' + $which + ' half of the name matched, middle may be elided; full-name equality is NOT proven)') }
+  }
+  return @{ State = 'absent'; Code = 'PASTE_NOT_LANDED'; Ok = $false; Weak = $false; Criterion = 'none'; Detail = 'neither head nor tail of the attachment name was visible' }
+}
+
+# Runs the probe pair and renders the three-state answer. Returns $null when the caller gave an
+# explicit expectation (--expect/--expect-any/--no-expect): that caller owns the criterion, and
+# this weak probe must never override or contradict it.
+function Invoke-AttachmentLanding($p, $target, [string]$name) {
+  if (Test-ExpectationGiven $p) { return $null }
+  $probe = Get-AttachmentProbe $name
+  $headArg = if ($probe.Head -ne '') { [string]$probe.Head } else { [string]$name }
+  # P-06 keeps the deliberate chain split: the text path passes the receipt base and the payload
+  # length, the attachment path passes NEITHER (an attachment chip is not text, so a text
+  # baseline would be a false receipt). The verdict rests on the two chip needles only.
+  $head = Invoke-AutoPasteExpect $p $target $headArg
+  $headHit = [bool]($head.Ran -and $head.Ok -and ($head.Criterion -eq 'verbatim-tail'))
+  $tail = $null
+  $tailHit = $false
+  if ((-not $headHit) -and ($probe.Tail -ne '') -and ($probe.Tail -ne $headArg)) {
+    $tail = Invoke-AutoPasteExpect $p $target ([string]$probe.Tail)
+    $tailHit = [bool]($tail.Ran -and $tail.Ok -and ($tail.Criterion -eq 'verbatim-tail'))
+  }
+  $v = Get-AttachmentLandingVerdict @{ HeadHit = $headHit; TailHit = $tailHit }
+  $scan = 'head=' + $probe.HeadChars + 'chars tail=' + $probe.TailChars + 'chars'
+  if ($v.State -eq 'unverified') {
+    $m = ('  + landing=unverified code=' + $v.Code + ' (' + $v.Detail + '; ' + $scan + ') - WEAK evidence: the attachment chip may elide the middle, so the full name is NOT proven; DO NOT resend - verify in the target first')
+  } elseif ($v.State -eq 'absent') {
+    $m = ('  landing=absent code=' + $v.Code + ' (' + $v.Detail + '; ' + $scan + ') - no half of the attachment name and no weak receipt leg spoke after the send; verify with read-text / find-text before any retry')
+  } else {
+    $m = ('  + landing=confirmed code=' + $v.Code + ' (' + $v.Detail + ')')
+  }
+  return @{ Ran = $true; Ok = [bool]$v.Ok; State = $v.State; Code = $v.Code; Weak = [bool]$v.Weak; Criterion = $v.Criterion; Detail = $v.Detail; Message = $m }
 }
 
 # v1.6.0 (A-1, J-03 A): open-and-pick's optional screenshot sub-region, window-relative
@@ -9394,6 +9750,76 @@ function Get-ClipboardRestoreOutcome([string]$note) {
   if ($note -like 'skipped clipboard restore*') { return 'skipped' }
   if ($note -like 'clipboard restored*') { return 'ok' }
   return 'unknown'
+}
+
+# N-3 (owner real-machine report 2026-11-06): --replace-clipboard destroys the previous
+# clipboard by design and left no recoverable trace. This writes ONE human-readable file
+# BEFORE the destructive write so the old content survives outside the clipboard. Kinds this
+# tool cannot serialize are REFUSED with their name - a loss must never be dressed as a backup.
+function Write-ClipboardBackupFile($st, [string]$path) {
+  $res = @{ Ok = $false; Kind = ''; Bytes = 0; Reason = '' }
+  if ($null -eq $st) { $res.Reason = 'no clipboard snapshot was taken'; return $res }
+  $kind = [string]$st.Kind
+  $res.Kind = $kind
+  $full = [System.IO.Path]::GetFullPath($path)
+  $dir = [System.IO.Path]::GetDirectoryName($full)
+  if ((-not $dir) -or (-not (Test-Path -LiteralPath $dir -PathType Container))) {
+    $res.Reason = ('backup directory does not exist: ' + $dir)
+    return $res
+  }
+  $enc = New-Object System.Text.UTF8Encoding($false)
+  try {
+    if ($kind -eq 'text') {
+      [System.IO.File]::WriteAllText($full, [string]$st.Text, $enc)
+    } elseif ($kind -eq 'files') {
+      $fl = New-Object System.Collections.ArrayList
+      [void]$fl.Add('kind=files')
+      foreach ($f in @($st.Files)) { [void]$fl.Add('file=' + [string]$f) }
+      [System.IO.File]::WriteAllText($full, (($fl -join "`n") + "`n"), $enc)
+    } elseif ($kind -eq 'both') {
+      $bl = New-Object System.Collections.ArrayList
+      [void]$bl.Add('kind=both')
+      foreach ($f in @($st.Files)) { [void]$bl.Add('file=' + [string]$f) }
+      [void]$bl.Add('--- text below ---')
+      [void]$bl.Add([string]$st.Text)
+      [System.IO.File]::WriteAllText($full, (($bl -join "`n") + "`n"), $enc)
+    } elseif ($kind -eq 'none') {
+      [System.IO.File]::WriteAllText($full, "kind=none`n(empty clipboard)`n", $enc)
+    } elseif (($kind -eq 'image') -and ([string]$st.ImagePath -ne '') -and (Test-Path -LiteralPath ([string]$st.ImagePath) -PathType Leaf)) {
+      Copy-Item -LiteralPath ([string]$st.ImagePath) -Destination $full -Force
+    } else {
+      $res.Reason = ('the clipboard holds content this tool cannot serialize to one file (kind=' + $kind + ')')
+      return $res
+    }
+  } catch {
+    $res.Reason = ('backup write failed: ' + $_.Exception.Message)
+    return $res
+  }
+  if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
+    $res.Reason = 'backup file was not created'
+    return $res
+  }
+  $res.Bytes = (Get-Item -LiteralPath $full).Length
+  if ($res.Bytes -le 0) {
+    $res.Reason = 'backup file is empty'
+    return $res
+  }
+  $res.Ok = $true
+  return $res
+}
+
+# N-3: the failure sentence must say whether the previous clipboard actually came back.
+# A 'skipped' note is harmless only when the snapshot was EMPTY; an unreadable snapshot was
+# never preserved, so calling that a skip would be the same false green this gate exists to kill.
+function Get-ClipboardFailureNote($st, [string]$what) {
+  $note = Restore-ClipboardState $st
+  $outcome = Get-ClipboardRestoreOutcome $note
+  $kind = ''
+  if ($null -ne $st) { $kind = [string]$st.Kind }
+  $verdict = 'NOT-restored'
+  if ($outcome -eq 'ok') { $verdict = 'restored' }
+  elseif (($outcome -eq 'skipped') -and ($kind -eq 'none')) { $verdict = 'nothing-to-restore' }
+  return @{ Outcome = $outcome; Verdict = $verdict; Note = $note; Text = ($what + '; previous clipboard: ' + $verdict + ' (' + $note + ')') }
 }
 
 # Returns a human readable note for the command echo. Never throws. The 'both' path
@@ -10714,10 +11140,10 @@ function Invoke-DialogCancel($w, [bool]$allowWindow) {
     return @{ Via = 'uia-invoke'; Confirmed = $goneW.Gone; Pressed = $pick.Pick.Name; Note = $echo; WaitedMs = $goneW.WaitedMs }
   }
   if ($pick.Action -eq 'escape') {
-    $d = Dismiss-UiaMenu $w.Pid 0
+    $fgOk = Activate-Win $w; $d = Dismiss-UiaMenu $w.Pid 0
     $goneW = Wait-WindowGone $w.Handle (Get-DialogCancelPatienceMs) 150
-    if ($goneW.Gone) { return @{ Via = 'escape'; Confirmed = $true; Pressed = ''; Note = 'no cancel button in the tree; Escape sent and the window is gone'; WaitedMs = $goneW.WaitedMs } }
-    return @{ Via = 'escape'; Confirmed = $false; Pressed = ''; Note = "no cancel button in the tree and Escape did NOT close it (menu-count left=$($d.Left))"; WaitedMs = $goneW.WaitedMs }
+    if ($goneW.Gone) { return @{ Via = 'escape'; Confirmed = $true; Pressed = ''; Note = "no cancel button in the tree; Escape sent and the window is gone (activated=$fgOk)"; WaitedMs = $goneW.WaitedMs } }
+    return @{ Via = 'escape'; Confirmed = $false; Pressed = ''; Note = "no cancel button in the tree and Escape did NOT close it (activated=$fgOk, menu-count left=$($d.Left))"; WaitedMs = $goneW.WaitedMs }
   }
   throw "dialog-cancel: $(@($hits).Count) cancel-shaped buttons in this dialog ($($pick.List)) - refusing to guess which one dismisses it. Nothing was pressed."
 }
@@ -11750,7 +12176,7 @@ function Format-FindMiss([string]$needle, [int]$uiaWalked, [string]$uiaNote, [in
 # envelopes but NOT their pinned key sets - adding a key to find's shape is still a
 # contract change for find's consumers, which is what Find-JsonTopKeys + its lint below
 # exist to catch. The two published find-text / read-text envelopes stay untouched.
-function Get-FindJsonTopKeys { return @('schemaVersion', 'source', 'target', 'contentTrust', 'occluded', 'coveredBy', 'hits') }
+function Get-FindJsonTopKeys { return @('schemaVersion', 'source', 'target', 'contentTrust', 'occluded', 'coveredBy', 'clipped', 'visibleRect', 'offscreenPx', 'hits') }
 
 # v3.1.0: the published read-text / find-text --json key contract, in ONE place. v3.0.0 (B-6)
 # added `contentTrust` and bumped schemaVersion, and updated the OFFLINE copy of this list only -
@@ -11758,11 +12184,23 @@ function Get-FindJsonTopKeys { return @('schemaVersion', 'source', 'target', 'co
 # they shipped and nobody noticed for two rounds because neither round ran --live. A contract
 # written twice drifts; a lint now forbids a second literal copy of either list.
 function Get-JsonContractKeySet([string]$which) {
-  if ($which -eq 'read') { return (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'lines') | Sort-Object) -join ',' }
-  if ($which -eq 'find') { return (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'hits') | Sort-Object) -join ',' }
+  if ($which -eq 'read') { return (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'clipped', 'visibleRect', 'offscreenPx', 'lines') | Sort-Object) -join ',' }
+  if ($which -eq 'find') { return (@('schemaVersion', 'contentTrust', 'occluded', 'coveredBy', 'clipped', 'visibleRect', 'offscreenPx', 'hits') | Sort-Object) -join ',' }
   throw "Get-JsonContractKeySet: unknown envelope '$which' (expected read or find)"
 }
-function New-FindJsonEnvelope([string]$source, [string]$target, $gate, $hits) {
+function New-FindJsonEnvelope([string]$source, [string]$target, $gate, $hits, $visibility = $null) {
+  # X-07: find carries the same visibility record as the OCR envelopes, so a machine
+  # consumer sees one contract across every find-shaped answer.
+  $clipped = $false
+  $visibleRect = $null
+  $offscreenPx = @{ left = 0; top = 0; right = 0; bottom = 0 }
+  if ($null -ne $visibility) {
+    $clipped = [bool]$visibility.Clipped
+    if ($clipped) {
+      $visibleRect = @{ x = [int]$visibility.CX; y = [int]$visibility.CY; w = [int]$visibility.CW; h = [int]$visibility.CH }
+      $offscreenPx = @{ left = [int]$visibility.ClipLeft; top = [int]$visibility.ClipTop; right = [int]$visibility.ClipRight; bottom = [int]$visibility.ClipBottom }
+    }
+  }
   $occJ = $null
   $covJ = @()
   if ($null -ne $gate) {
@@ -11776,6 +12214,9 @@ function New-FindJsonEnvelope([string]$source, [string]$target, $gate, $hits) {
     contentTrust = (Get-UntrustedContentTag)
     occluded = $occJ
     coveredBy = $covJ
+    clipped = $clipped
+    visibleRect = $visibleRect
+    offscreenPx = $offscreenPx
     hits = @($hits)
   }
   return [pscustomobject]$map
@@ -12813,10 +13254,17 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
       if (-not $script:Json -and (Test-SparseReadability $boxW $boxH $total $minLineDensity)) {
         $sparseWarn = Build-SparseReadWarn $boxW $boxH $total $minLineDensity $sparseSubject
       }
+      # X-07: same visibility contract as find-text. A dump from a clipped region is
+      # still a dump, but its header must say which edge was cut and the JSON lines
+      # carry edgeClipped so a consumer can filter them.
+      $rVis = $null
+      if ($null -ne $region) { $rVis = Get-OptValue $region 'Vis' }
+      $rVisTag = ''
+      if ($null -ne $rVis -and [bool]$rVis.Clipped) { $rVisTag = " clipped=$(Format-VisibilityClip $rVis) (visible part ($($rVis.CX),$($rVis.CY)) $($rVis.CW)x$($rVis.CH); a clipped read covers only what the screen can show)" }
       if ($script:Json) {
         # CONTRACT keys: schemaVersion + occluded + coveredBy + lines. Same rule as
         # find-text above - key set changes bump $JsonSchemaVersion and README.
-        $envelope = New-OcrJsonEnvelope 'lines' $gate @($shown | ForEach-Object { [pscustomobject]@{ n = $_.N; text = $_.Line.Text; x = $_.Line.X; y = $_.Line.Y; w = $_.Line.W; h = $_.Line.H } })
+        $envelope = New-OcrJsonEnvelope 'lines' $gate @($shown | ForEach-Object { [pscustomobject]@{ n = $_.N; text = $_.Line.Text; x = $_.Line.X; y = $_.Line.Y; w = $_.Line.W; h = $_.Line.H; edgeClipped = [bool](Get-VisibleRegion ([int]$_.Line.X) ([int]$_.Line.Y) ([int]$_.Line.W) ([int]$_.Line.H)).Clipped } }) $rVis
         $envelope | ConvertTo-Json -Compress -Depth 4
       } else {
         $occSeg = ''
@@ -12839,7 +13287,7 @@ function Invoke-Handler-read-text([string]$Cmd, [string[]]$Rest) {
           "OCR file '$fn' $($fileResult.W)x$($fileResult.H) source=file scale=$($fileResult.Scale): $total line(s)$(if ($filter) { ", filter='$filter'" })$fTileSeg$(if ($fileRetry) { " [$fileRetry]" })$fNoteSeg$readLabel - coords are IMAGE px from the image top-left, NOT a screen rect; img-rect= is not clickable"
           foreach ($e in $shown) { "L{0:D2} img-rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         } else {
-        "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$readLabel$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
+        "OCR region ($($region.X),$($region.Y)) $($region.W)x$($region.H): $total line(s)$(if ($filter) { ", filter='$filter'" })$tiledInfo$occSeg$readLabel$rVisTag$(if ($cut -gt 0) { ", showing first $($maxLines) ($cut more cut off - raise --max-lines or add --filter)" })"
         foreach ($e in $shown) { "L{0:D2} rect=({1},{2},{3}x{4})  {5}" -f $e.N, $e.Line.X, $e.Line.Y, $e.Line.W, $e.Line.H, $e.Line.Text }
         }
         if ($sparseWarn) { Write-Output $sparseWarn }
@@ -12967,6 +13415,9 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
       # and the echo prints the bound that actually ran.
       $fDepth = [int]$own.Values['--depth']
       $of = Split-OcclusionFlags @($own.Rest)
+      # X-07: filled by the OCR road; null when UIA answered, since UIA rects are
+      # element boxes, not captures. Declared here so StrictMode never sees an unset read.
+      $fVis = $null
       $words = New-Object System.Collections.ArrayList
       $fNeedle = ''
       $fi = 0
@@ -13084,6 +13535,9 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
           Write-Output "find: uia gave 0 hits after walking $fWalked element(s) at depth $(Format-UiaWalkDepth $fDepth) - $fScanned of them survived the region filter ($fReprobe) - falling back to OCR on the same rect. source=ocr means the rect came from OCR: it folds look-alike glyphs, can merge two controls into one line, and cannot see enabled/offscreen."
         }
         $fReg = @{ X = $fRect.X; Y = $fRect.Y; W = $fRect.W; H = $fRect.H; Win = $(if ($fWinHow -eq 'target') { $fWin } else { $null }) }
+        # X-07: the OCR fallback reads a rect that may be cut by the screen edge. Record
+        # the visibility before reading, so a miss can refuse instead of claiming absence.
+        $fVis = Get-VisibleRegion ([int]$fRect.X) ([int]$fRect.Y) ([int]$fRect.W) ([int]$fRect.H)
         $occAct = (Resolve-OcclusionMode $of.Occlude $of.AllowOccluded $false).Action
         $fOwners = $null
         if ($null -ne $fReg.Win) { $fGate = Invoke-OcclusionGate $fReg $fReg.Win.Handle $occAct $of.OcclGrid $fReg.Win.Title $fNeedle 'read' }
@@ -13096,6 +13550,11 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
         if ($null -ne $fGate) { $occTxt = "; occluded=$([int][math]::Round($fGate.Pct))% $($fGate.Echo)" }
         elseif ($null -ne $fOwners -and $fOwners.Ran) { $occTxt = "; owners $($fOwners.Echo)" }
         if ($fDecision.Refuse) {
+          # X-07: a clipped target rect makes every absence claim void. Refuse with the
+          # stable code instead of printing Format-FindMiss as if the whole rect was read.
+          if (($null -ne $fVis) -and [bool]$fVis.Clipped) {
+            throw "REGION_CLIPPED: find: '$fNeedle' not found in the VISIBLE part of $($fVis.X),$($fVis.Y) $($fVis.W)x$($fVis.H) only - clipped=$(Format-VisibilityClip $fVis) edge-clipped: the rest of the target is off-screen, so a not-found here is NOT evidence of absence. Move the window fully on-screen and re-run"
+          }
           # the miss names BOTH roads with what each one measured - never a bare 'not found'
           $fUiaNote = "walks=$(if ($null -ne $fUia) { $fUia.Walks } else { 0 }) walked=$fWalked depth=$(Format-UiaWalkDepth $fDepth) kept=$fScanned after region filter re-contact=$fReprobe"
           throw (Format-FindMiss $fNeedle $fWalked $fUiaNote $fOcrLines $fOcrNote "($($fRect.X),$($fRect.Y)) $($fRect.W)x$($fRect.H)" $occTxt)
@@ -13120,7 +13579,7 @@ function Invoke-Handler-find([string]$Cmd, [string[]]$Rest) {
         }
       }
       if ($script:Json) {
-        (New-FindJsonEnvelope $fDecision.Source $fDesc $fGate $fHits) | ConvertTo-Json -Compress -Depth 5
+        (New-FindJsonEnvelope $fDecision.Source $fDesc $fGate $fHits $fVis) | ConvertTo-Json -Compress -Depth 5
       }
 }
 
@@ -13166,6 +13625,14 @@ function Invoke-Handler-find-text([string]$Cmd, [string[]]$Rest) {
       else { $owners = Invoke-OcclusionOwners $region $occAct $of.OcclGrid }
       $f = Find-OcrHitsScaled $region.X $region.Y $region.W $region.H $needle $scaleMode $maxTiles $noTile
       $hits = $f.Hits; $lines = $f.Lines
+      # X-07: the visibility verdict is part of every answer. A clipped region was only
+      # read where the screen could show pixels - so the negative path below stops
+      # claiming absence, and a hit that touches the cut edge is labelled as such.
+      $fVis = Get-OptValue $region 'Vis'
+      $fVisNote = ''
+      if ($null -ne $fVis -and [bool]$fVis.Clipped) {
+        $fVisNote = "; clipped=$(Format-VisibilityClip $fVis) edge-clipped: the region is cut by the screen edge, only the visible part ($($fVis.CX),$($fVis.CY)) $($fVis.CW)x$($fVis.CH) was read, so a not-found here is NOT evidence of absence. Move the target fully on-screen and re-run [REGION_CLIPPED]"
+      }
       if ($hits.Count -eq 0) {
         # quote the retry decision verbatim: a silent skip must never read as
         # "we tried everything" (audit 2026-09-29b #1; three states per v1.5.0 WP-1 2.6)
@@ -13191,20 +13658,24 @@ function Invoke-Handler-find-text([string]$Cmd, [string[]]$Rest) {
         if (Test-SparseReadability $region.W $region.H @($lines).Count $minLineDensity) {
           Write-Output (Build-SparseReadWarn $region.W $region.H @($lines).Count $minLineDensity)
         }
-        throw "find-text: '$needle' not found in region $missRect ($(Format-OcrRetryNote $f)); $(Format-OcrSampleTail $lines 8 @{ Rect = $missRect; Retry = (Format-OcrRetryNote $f); Occlusion = $occTxt; Needle = $needle })$occNote"
+        throw "find-text: '$needle' not found in region $missRect ($(Format-OcrRetryNote $f)); $(Format-OcrSampleTail $lines 8 @{ Rect = $missRect; Retry = (Format-OcrRetryNote $f); Occlusion = $occTxt; Needle = $needle })$occNote$fVisNote"
       }
       if ($script:Json) {
         # CONTRACT keys: schemaVersion + occluded + coveredBy + hits. Changing this
         # set means bumping $JsonSchemaVersion and README together (see
         # New-OcrJsonEnvelope); selftest asserts the set exactly.
-        $envelope = New-OcrJsonEnvelope 'hits' $gate @($hits | ForEach-Object { [pscustomobject]@{ text = $_.Text; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; cx = ($_.X + [int]($_.W / 2)); cy = ($_.Y + [int]($_.H / 2)); folded = [bool]($_.PSObject.Properties['Folded'] -and $_.Folded) } })
+        $envelope = New-OcrJsonEnvelope 'hits' $gate @($hits | ForEach-Object { [pscustomobject]@{ text = $_.Text; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; cx = ($_.X + [int]($_.W / 2)); cy = ($_.Y + [int]($_.H / 2)); folded = [bool]($_.PSObject.Properties['Folded'] -and $_.Folded); edgeClipped = [bool](Get-VisibleRegion ([int]$_.X) ([int]$_.Y) ([int]$_.W) ([int]$_.H)).Clipped } }) $fVis
         $envelope | ConvertTo-Json -Compress -Depth 5
       } else {
         $show = if ($all) { $hits } else { $hits[0] }
         $foldMark = Get-OcrFoldMarker $hits
         foreach ($h in $show) {
           $cx = $h.X + [int]($h.W / 2); $cy = $h.Y + [int]($h.H / 2)
-          "hit: text='$($h.Text)' rect=($($h.X),$($h.Y),$($h.W)x$($h.H)) centre=($cx,$cy)  -> click $cx $cy"
+          # X-07: a hit's box may straddle the cut edge; say so per hit, not just once
+          # in the header, because a caller acts on the individual rect.
+          $edgeMark = ''
+          if ([bool](Get-VisibleRegion ([int]$h.X) ([int]$h.Y) ([int]$h.W) ([int]$h.H)).Clipped) { $edgeMark = ' [edge-clipped]' }
+          "hit: text='$($h.Text)' rect=($($h.X),$($h.Y),$($h.W)x$($h.H)) centre=($cx,$cy)$edgeMark  -> click $cx $cy"
         }
         if ($foldMark) { Write-Output "needle: $foldMark" }
         # J-05: the hit count a reader is about to act on is line-granular BY RULING; say
@@ -13862,6 +14333,13 @@ function Invoke-Handler-tpl-find([string]$Cmd, [string[]]$Rest) {
       try {
         $tplNorm = ConvertTo-Bitmap32 $tplSrc
         $cap = Get-ScreenBitmap ($origin.X + $rx) ($origin.Y + $ry) $rw $rh 1.0
+        # X-07: template matching is an EXACT pixel test - a partial crop would shift every
+        # match by the clipped amount and could report a "match" from a partial pattern.
+        # Refuse a clipped region outright; no match list is invented from half an image.
+        if ([bool](Get-OptValue $cap 'Clipped')) {
+          $tplClipVis = Get-OptValue $cap 'Vis'
+          throw "REGION_CLIPPED: tpl-find: the requested region is clipped by the screen edge ($(Format-VisibilityClip $tplClipVis)); template matching needs the whole region and only the visible part ($(Get-OptValue $cap 'VisibleW')x$(Get-OptValue $cap 'VisibleH') at $(Get-OptValue $cap 'OriginX'),$(Get-OptValue $cap 'OriginY')) exists. Move the target fully on-screen and re-run"
+        }
         try {
           $hay = Get-Bitmap32Bytes $cap.Bitmap
           foreach ($s in @($scales)) {
@@ -16113,7 +16591,7 @@ function Invoke-Handler-dialog-cancel([string]$Cmd, [string[]]$Rest) {
         throw "dialog-cancel: handle pin - this call may only act on $($pin.Expected) but '$sel' is hwnd=$($pin.Actual) pid=$($w.Pid) '$($w.Title)' ($(Format-HandlePinReason $pin)) - NOTHING was pressed."
       }
       Log-Action $Rest "pid=$($w.Pid) title='$($w.Title)'" $Cmd
-      "target: pid=$($w.Pid) hwnd=$($w.Handle) class='$($w.Class)' title='$($w.Title)' (no activation - UIA invoke needs no foreground)"
+      "target: pid=$($w.Pid) hwnd=$($w.Handle) class='$($w.Class)' title='$($w.Title)' (UIA invoke needs no foreground; the Escape fallback activates the dialog first)"
       $r = Invoke-DialogCancel $w ([bool]$own.Values['--allow-window'])
       "cancelled-via=$($r.Via) pressed='$($r.Pressed)' window-gone=$([bool]$r.Confirmed) waited=$($r.WaitedMs)ms"
       "detail: $($r.Note)"
@@ -18169,19 +18647,25 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
         "pasted file $($fi.Name) bytes=$($fi.Length), target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
       }
       Invoke-ActionExpectation $p $target ($(if ($useImage) { 'pasted image' } else { 'pasted file' }))
-      # v1.5.9 (P-1): same default-on readback as paste; the FileDrop's name is the
-      # payload handle the target renders, so the needle comes from the file name.
+      # v1.5.9 (P-1): default-on readback in this case; the FileDrop's name is the payload
+      # handle the target renders. N-1 keeps that promise but routes it through
+      # Invoke-AttachmentLanding, because the live chip elides the middle of the name.
       # CU-OPS package G (v4.6.4): for --image there is nothing textual to read back, and
       # claiming a window effect from a receipt would be exactly the false-green this package
       # exists to kill - so the row says the window was NOT read back instead of faking one.
       if ($useImage) {
         Write-Output '      readback: carrier=image - this tool cannot read pixels back out of a target window; the clipboard digest above proves the PAYLOAD, not the receiving app'
       } else {
-        $auto = Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)
-        if ($auto.Ran) {
-          Log-Action @("autoexpect=$($auto.NeedleChars)chars") "target pid=$($target.Pid) verified=$(if ($auto.Ok) { 'yes' } else { 'no' })" $Cmd
+        # N-1 (owner real-machine report 2026-11-06): the attachment chip elides the middle of a
+        # long name, so the old full-name tail needle was a guaranteed false negative that exited
+        # 1 - scripts read that as "not pasted" and re-sent. Landing is now a THREE-STATE answer
+        # (confirmed / unverified / absent); only `absent` may exit non-zero, and `unverified`
+        # says out loud that it is weak evidence and must not be re-sent blindly.
+        $auto = Invoke-AttachmentLanding $p $target $fi.Name
+        if ($null -ne $auto) {
+          Log-Action @("landing=$($auto.State)", "code=$($auto.Code)") "target pid=$($target.Pid) verified=$(if ($auto.Weak) { 'weak' } elseif ($auto.Ok) { 'yes' } else { 'no' })" $Cmd
           Write-Output $auto.Message
-          Confirm-AutoExpect $auto
+          if (-not $auto.Ok) { throw ('paste-file: landing=absent code=' + $auto.Code + ' - the attachment did not prove its landing; inspect the target before any retry (do NOT resend blindly)') }
         }
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
@@ -18195,25 +18679,36 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): copy-file - the case body, verbatim
 function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
-      # copy-file [--image] [--replace-clipboard] <path>
+      # copy-file [--image] [--replace-clipboard] [--clipboard-backup <file>] <path>
       # - put a local file on the clipboard as FileDrop (default) or as the IMAGE carrier
-      #   (--image: PNG/BMP pixels, not a path), and verify what landed. Deliberately does NOT
-      #   restore the previous clipboard: leaving the payload there is the point of this
-      #   command (paste / paste-file do restore).
+      #   (--image: PNG/BMP pixels, not a path), and verify what landed. On SUCCESS the payload
+      #   deliberately stays there (that is the point of this command; paste / paste-file restore).
       # - CU-OPS package G (v4.6.4): before ANY write the current clipboard is snapshotted and
       #   the write gate runs. A clipboard holding formats this tool cannot put back is refused
-      #   with their names, unless --replace-clipboard says the loss is intended. This is also
-      #   what makes the flag meaningful for a command that never restores.
+      #   with their names, unless --replace-clipboard says the loss is intended.
+      # - N-3 (owner real-machine report 2026-11-06): --clipboard-backup writes ONE file with the
+      #   OLD content before the destructive write (readable text is backed up automatically when
+      #   --replace-clipboard is used). A failed write/send RESTORES the old clipboard and says
+      #   whether it really came back.
       $useImage = $false
       $replace = $false
+      $backupPath = ''
       $words = New-Object System.Collections.ArrayList
-      foreach ($a in @($Rest)) {
-        $s = "$a"
+      $restList = @($Rest)
+      for ($ri = 0; $ri -lt $restList.Count; $ri++) {
+        $s = "$($restList[$ri])"
         if ($s -eq '--image') { $useImage = $true; continue }
         if ($s -eq '--replace-clipboard') { $replace = $true; continue }
+        if ($s -eq '--clipboard-backup') {
+          if ($ri + 1 -ge $restList.Count) { throw 'copy-file: --clipboard-backup needs a file path' }
+          $backupPath = [string]$restList[$ri + 1]
+          if ($backupPath.StartsWith('--')) { throw 'copy-file: --clipboard-backup got a flag-like token; pass a file path' }
+          $ri++
+          continue
+        }
         [void]$words.Add($s)
       }
-      if ($words.Count -lt 1) { throw 'usage: copy-file [--image] [--replace-clipboard] <path> - --image puts the PNG/BMP PIXELS on the clipboard instead of a FileDrop path' }
+      if ($words.Count -lt 1) { throw 'usage: copy-file [--image] [--replace-clipboard] [--clipboard-backup <file>] <path> - --image puts the PNG/BMP PIXELS on the clipboard instead of a FileDrop path' }
       if ($words.Count -gt 1) { throw ('copy-file takes exactly one path; extra arguments: ' + (@($words | Select-Object -Skip 1) -join ' ')) }
       $srcPath = [string]$words[0]
       # The payload is validated BEFORE the clipboard is read: a bad image path changes nothing.
@@ -18232,13 +18727,36 @@ function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
       $fi = Get-Item -LiteralPath $srcPath
       $carrierName = if ($useImage) { 'image' } else { 'file' }
       Log-Action $Rest "file=$($fi.FullName) bytes=$($fi.Length) carrier=$carrierName" $Cmd
+      # N-3: the backup lands BEFORE the destructive write, so a refused backup writes nothing.
+      $autoBackup = $false
+      if (($backupPath -eq '') -and $replace -and (($clip.Kind -eq 'text') -or ($clip.Kind -eq 'both'))) {
+        $backupPath = Join-Path ([System.IO.Path]::GetTempPath()) ('desktop-clipboard-backup-' + (Get-Date).ToString('yyyyMMdd-HHmmss-fff') + '.txt')
+        $autoBackup = $true
+      }
+      if ($backupPath -ne '') {
+        $bk = Write-ClipboardBackupFile $clip $backupPath
+        if (-not [bool]$bk.Ok) {
+          throw ('copy-file: clipboard backup failed (' + $bk.Reason + '); nothing was written, the clipboard is unchanged')
+        }
+        $how = if ($autoBackup) { 'auto backup of readable text' } else { 'backup' }
+        Log-Action @("clipboard-backup=$backupPath", "kind=$($bk.Kind)", "bytes=$($bk.Bytes)") "file=$($fi.FullName) carrier=$carrierName" $Cmd
+        Write-Output ("clipboard $($how): $backupPath (kind=$($bk.Kind), $($bk.Bytes) bytes) - the previous clipboard can be put back from this file")
+      }
       if ($useImage) {
         $ok = Set-ClipboardImageCarrier $carrier
-        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName + '. copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either') }
+        if (-not $ok) {
+          $rf = Get-ClipboardFailureNote $clip ('copy-file: the image did not come back after the write (size/digest check failed): ' + $fi.FullName)
+          Log-Action @("clipboard-restore=$($rf.Verdict)") "file=$($fi.FullName) carrier=image" $Cmd
+          throw ($rf.Text + '. Inspect the clipboard before relying on it again' + $(if ($backupPath -ne '') { '; the old content is recoverable from ' + $backupPath } else { '' }))
+        }
         ("copied image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  bytes=$($fi.Length)  carrier=image  clipboard verified (same pixels read back)")
       } else {
         $ok = Set-ClipboardFileDrop $fi.FullName
-        if (-not $ok) { throw "copy-file: clipboard verification failed for: $($fi.FullName). copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either" }
+        if (-not $ok) {
+          $rf = Get-ClipboardFailureNote $clip ('copy-file: clipboard verification failed for: ' + $fi.FullName)
+          Log-Action @("clipboard-restore=$($rf.Verdict)") "file=$($fi.FullName) carrier=file" $Cmd
+          throw ($rf.Text + '. Inspect the clipboard before relying on it again' + $(if ($backupPath -ne '') { '; the old content is recoverable from ' + $backupPath } else { '' }))
+        }
         "copied $($fi.Name)  bytes=$($fi.Length)  carrier=file  clipboard verified: $($fi.FullName)"
       }
 }
@@ -18287,6 +18805,14 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       if ($ix -lt 0 -or $ix -ge $map.OutW -or $iy -lt 0 -or $iy -ge $map.OutH) { throw "imgclick: image coords ($ix,$iy) outside $($map.OutW)x$($map.OutH) of $img" }
       $st = Test-MapSidecarStale $map
       $sp = Convert-ImageToScreen $map $ix $iy
+      # X-07: a mapped point must exist on the screen. The map's origin is the visible
+      # intersection, so a point beyond that edge is not clickable - clicking it would
+      # move the cursor onto a monitor that does not exist. Refused in BOTH dry and
+      # live modes, with the stable code HIT_OFFSCREEN.
+      $spVis = Get-VisibleRegion $sp.X $sp.Y 1 1
+      if ($spVis.FullyOffscreen) {
+        throw "imgclick: HIT_OFFSCREEN: image ($ix,$iy) maps to screen ($($sp.X),$($sp.Y)), outside the virtual screen ($($spVis.VX),$($spVis.VY)) $($spVis.VW)x$($spVis.VH) - the point is not clickable; re-capture inside the screen"
+      }
       $staleNote = ''
       if ($st.Verdict -eq 'unverifiable') { $staleNote = "  ($($st.Msg))" }
       elseif ($st.Verdict -eq 'stale' -and $staleOk) { $staleNote = "  [stale-ok] $($st.Msg)" }
@@ -18410,6 +18936,13 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
         }
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
+      # X-07: same visibility contract as Save-RectEx. A partially off-screen zoom
+      # enlarges only the visible part (no black filler is ever amplified into the
+      # image), and a fully off-screen one is refused with REGION_CLIPPED.
+      $reqX = $x; $reqY = $y; $reqW = $w; $reqH = $h
+      $zVis = Get-VisibleRegion $x $y $w $h
+      if ($zVis.FullyOffscreen) { throw (Format-RegionClippedError $zVis 'zoom') }
+      if ($zVis.Clipped) { $x = [int]$zVis.CX; $y = [int]$zVis.CY; $w = [int]$zVis.CW; $h = [int]$zVis.CH }
       if (-not $path) { $path = Default-ShotName 'zoom' }
       $contentRoi = Resolve-ContentRoi $contentRoiArg $w $h
       $hostWin = $null; $hostSnap = $null
@@ -18468,10 +19001,16 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       try { $dst.Save($msZ, [System.Drawing.Imaging.ImageFormat]::Png); $zBytes = $msZ.ToArray() } finally { $msZ.Dispose(); $dst.Dispose() }
       $shaZ = [System.Security.Cryptography.SHA256]::Create()
       try { $zSha = ([BitConverter]::ToString($shaZ.ComputeHash($zBytes)) -replace '-','').ToLower() } finally { $shaZ.Dispose() }
-      $zMapPublish = { Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha $null '' $contentInfo }.GetNewClosure()
+      # D-1 fix: carry the resolved ScriptBlock into the closure; a bare function name is not
+      # visible inside GetNewClosure()'s dynamic module when the entry is invoked with & from a
+      # parent scope (only -File puts those functions in the session scope).
+      $wmsFnZ = ${function:Write-MapSidecar}
+      $zMapPublish = { & $wmsFnZ $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha $null '' $contentInfo $zVis }.GetNewClosure()
       Publish-CapturePair $path $zBytes $zMapPublish
       $size = $zBytes.Length
-      "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
+      $zClip = ''
+      if ([bool]$zVis.Clipped) { $zClip = "  clipped=$(Format-VisibilityClip $zVis) req=($reqX,$reqY) ${reqW}x${reqH} captured=($x,$y) ${w}x${h}" }
+      "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size$zClip"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"
       if ($hostWin) { "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it" }
@@ -18749,6 +19288,9 @@ function Invoke-Handler-unmap([string]$Cmd, [string[]]$Rest) {
       if ($st.Verdict -eq 'gone') { throw "unmap: $($st.Msg)" }
       if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "unmap: $($st.Msg)" }
       $sp = Convert-ImageToScreen $map $ix $iy
+      # X-07: unmap stays a PURE coordinate calculator - it prints the arithmetic, it does
+      # not click, so an off-screen result is still a legitimate answer here. The refusal
+      # belongs to the action path (imgclick), where the point must actually exist.
       $staleNote = ''
       if ($st.Verdict -eq 'unverifiable') { $staleNote = "  ($($st.Msg))" }
       elseif ($st.Verdict -eq 'stale') { $staleNote = "  [stale-ok] $($st.Msg)" }
@@ -19105,6 +19647,18 @@ function Get-DtxCallInternalParent($ActiveById, $ParentInfo, [string]$Root) {
   return $parentRecord
 }
 
+# N-4 (2026-11-06): the unlabeled-caller sentence is a CONTRACT line - the live identity legs
+# read `caller identity=unknown` - not a per-call narration. Keep the pinned words, shorten the
+# tail, and emit at most once per process: an in-process round may start tracking many times,
+# and repeating the same sentence adds noise without adding a fact. The guard variable is set
+# lazily (Get/Set-Variable at run time) so the load-time $script: inventory does not grow.
+function Write-DtxCallIdentityWarning {
+  $shown = [bool](Get-Variable -Name 'DtxIdentityWarningShown' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  if ($shown) { return }
+  Set-Variable -Name 'DtxIdentityWarningShown' -Scope Script -Value $true
+  [Console]::Error.WriteLine('WARNING: desktop tool caller identity=unknown (tracked separately; desktop exclusivity not established).')
+}
+
 function Start-DtxCallTracking([string]$Command, [string[]]$Arguments, $Context = $null) {
   $lock = $null
   try {
@@ -19231,7 +19785,7 @@ function Start-DtxCallTracking([string]$Command, [string[]]$Arguments, $Context 
     $lock = $null
     if ($stateUnknown) { [Console]::Error.WriteLine('WARNING: desktop tool call-state=unknown; one or more state records could not be verified. This run is not reported as idle.') }
     if (([string]$identity.CallerLabel -ceq 'unknown') -or ([string]$identity.CallerSessionId -ceq 'unknown')) {
-      [Console]::Error.WriteLine('WARNING: desktop tool caller identity=unknown; this invocation remains separately tracked and does not establish desktop exclusivity.')
+      Write-DtxCallIdentityWarning
     }
     foreach ($otherEntry in @($overlapGroups.GetEnumerator())) {
       $otherRoot = [string]$otherEntry.Key
@@ -19985,6 +20539,22 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
   ST-Check 'lint: UTF-8 BOM present + pure ASCII beyond it (v1.5.0 task invariant; BOM+ASCII parses identically on PS 5.1)' ($hasBom -and (([regex]::Matches($src, '[^\x00-\x7F]')).Count -eq 0))
   ST-Check 'lint: file is pure ASCII' (([regex]::Matches($src, '[^\x00-\x7F]')).Count -eq 0)
+  # M2 (2026-11-06): the BOM promise covers every file in the aggregate.
+  # Two lib files shipped without a BOM because only the entry was ever measured. The entry keeps
+  # its stronger ASCII rule above; every other declared source must still start with EF BB BF, and
+  # the list is pinned at 23 so a file that misses the table cannot skip the check.
+  $m2NoBom = @()
+  if ("$script:StSourceMode" -ceq 'aggregate') {
+    foreach ($m2F in @($script:StSourceFiles)) {
+      $m2B = [System.IO.File]::ReadAllBytes([string]$script:StFileMap[$m2F])
+      if (-not ($m2B.Length -ge 3 -and $m2B[0] -eq 0xEF -and $m2B[1] -eq 0xBB -and $m2B[2] -eq 0xBF)) { $m2NoBom += [string]$m2F }
+    }
+    ST-Check 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' (
+      (@($script:StSourceFiles).Count -eq 23) -and (@($m2NoBom).Count -eq 0))
+    if (@($m2NoBom).Count -gt 0) { Write-Output ('      missing BOM: ' + ($m2NoBom -join ',')) }
+  } else {
+    ST-Skip 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' 'single-file source mode (no lib/ beside the entry) - the artifact inlines every file, so there is no per-file BOM table to measure'
+  }
   # ---------- v4.4.0 (A-03): the source set is under test, not merely in use ----------
   # Planted fixtures: until the first lib/ file exists the aggregate path is unreachable in
   # the live tree, so the loader, the order it promises and the mode split are measured here
@@ -20197,9 +20767,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 59 sites, table sums to the same 59)' (
-    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 59) -and
-    ($a07OwnerSum -eq 59) -and (@($script:StCommandOwners).Count -eq 41))
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 62 sites, table sums to the same 62)' (
+    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 62) -and
+    ($a07OwnerSum -eq 62) -and (@($script:StCommandOwners).Count -eq 41))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -20210,9 +20780,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a07A2 in @($script:StCommandExclusions)) { if ([string]$a07A1 -ceq [string]$a07A2) { $a07C = $a07C + 1 } }
     if ($a07C -gt 1) { $a07AnchorDup = $a07AnchorDup + 1 }
   }
-  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the ten exclusions, and no exclusion certifies two lines (69 = 59 + 10)' (
-    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 69) -and (@($script:StCommandExclusions).Count -eq 10) -and
-    ($a07AnchorDup -eq 0) -and (($a07SiteCount + 10) -eq $a07Mentions))
+  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the thirteen exclusions, and no exclusion certifies two lines (75 = 62 + 13)' (
+    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 75) -and (@($script:StCommandExclusions).Count -eq 13) -and
+    ($a07AnchorDup -eq 0) -and (($a07SiteCount + 13) -eq $a07Mentions))
   if ($a07MentionGap -ne '') { Write-Output ('      mention gap: ' + $a07MentionGap) }
   $a07FtKeys = @()
   foreach ($a07K in @((Get-FunctionScopeNameList $a07Parsed) -split ';')) {
@@ -20221,8 +20791,14 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07FtCount = @($a07FtKeys).Count
   $a07FtGap = Get-InventoryDiscrepancy ($a07FtKeys -join ';') $script:StFunctionScopeRefs
-  ST-Check 'lint (A-07): the function-table test-double family equals the registered eleven names across forty-nine references' (
-    ($a07FtGap -ceq '') -and ($a07FtCount -eq 49) -and (@($script:StFunctionScopeRefs).Count -eq 11))
+  # D-1 (2026-11-06): the two map publishers now carry ${function:Write-MapSidecar} as a
+  # capture - registered, not exempted, because a capture is exactly what this table counts.
+  # N-2 (2026-11-06): four more names join it because the guard-receipt legs stub the reading
+  # seams; the table is sixteen names across sixty-six references, still registered, never exempted.
+  # N-3 (2026-11-06): the clipboard backup e2e adds four seams (three references each) and three
+  # more audit-double handles - twenty names across eighty-one references.
+  ST-Check 'lint (A-07): the function-table test-double family equals the registered twenty names across eighty-one references' (
+    ($a07FtGap -ceq '') -and ($a07FtCount -eq 81) -and (@($script:StFunctionScopeRefs).Count -eq 20))
   if ($a07FtGap -ne '') { Write-Output ('      function table: ' + $a07FtGap) }
   $a07LtList = Get-TopLevelAssignmentNameList $a07Parsed
   $a07LtGap = Get-InventoryDiscrepancy "$a07LtList" $script:StLoadTimeNames
@@ -20240,8 +20816,10 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   # v4.7.0 B-2 (measured, not relaxed): the two $script:LogOriginMode load-time assignments at the
   # dispatcher (empty default + the selftest-mode set) put the table at 91 names / 118 assignments;
   # the pins below were still the D-3 numbers (90/116) and lagged the table they sit next to.
+  # M6 (2026-11-06): the --no-auto-trim boundary adds one $Rest write (4->5) but no new name:
+  # verdict and remaining tokens both come from the same pure helper, so the table is 91 names / 119.
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 118) -and (@($script:StLoadTimeNames).Count -eq 91) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 119) -and (@($script:StLoadTimeNames).Count -eq 91) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -20281,8 +20859,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all fifty-nine (none left reading caller scope)' (
-    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 59) -and (@($script:StCommandNameArgs).Count -eq 3))
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all sixty-two (none left reading caller scope)' (
+    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 62) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
   ST-Check 'lint (A-08): the six helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all six are actually on the list' (
     (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 6))
@@ -20365,7 +20943,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09PlantNote = Get-UndeclaredVarUseDiscrepancy $a09PlantParsed $a09Var $true
   ST-Check 'lint (A-09): every use of the dispatcher command variable sits in an owner that declares it, a planted borrower is named with its count while a planted owner is left alone, and the top-level exemption is itself load-bearing' (
     ($a09Undeclared -ceq '') -and ($a09PlantNote.Contains('fn:F-Borrower=uses1-undeclared')) -and
-    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses17-without-entry-param')))
+    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses18-without-entry-param')))
   if ($a09Undeclared -ne '') { Write-Output ('      undeclared uses: ' + $a09Undeclared) }
   $a09DYes = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Owner' 'Cmd'
   $a09DNo = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Borrower' 'Cmd'
@@ -20379,6 +20957,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   # The shape is pinned below by counting call ASTs: one site reused twice would be calls=1, and a
   # genuine duplicate would put two sites in the same arm (preflight=2 or direct=2). The shared
   # helper must read no dispatcher variable at all - it logs under its own $CmdName parameter.
+  # N-3 (2026-11-06): 94 -> 97 - copy-file's three added receipts read the dispatcher parameter.
+  # M9 (2026-11-06): 97 -> 98 - the catch hands the command name to the failure envelope.
   $a09ObsNames = @('click', 'dblclick', 'imgclick', 'rclick', 'relclick')
   $a09ObsNotes = @()
   $a09ObsOk = $true
@@ -20411,7 +20991,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09HelperCmd = Get-VarUseCountInFunction $a07Parsed 'Invoke-ObservedMouseInput' $a09Var
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, the registered owners account for every use of the dispatcher variable, and each observed-input handler hands the name over at exactly two mutually exclusive sites (the counts are in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 94) -and (@($script:StCmdVarUses).Count -eq 46) -and
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 98) -and (@($script:StCmdVarUses).Count -eq 46) -and
     ($a09ObsOk) -and ($a09HelperCmd -ceq '0'))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
@@ -20556,7 +21136,10 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     # until its fragment learned the title's version prefix), the B-2 origin/archive banner in
     # audit-output, the B-3 grid-proximity banner and the C capture-quality banner in
     # window-targeting bring the body to 177.
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 177) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # D-1 (2026-11-06): the window-targeting family gained the GetNewClosure closure lint
+    # and its dual-pose e2e banner, so the body pin moves to 178 - measured, agreement still
+    # required to be empty.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 178) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')
@@ -21404,6 +21987,71 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   }
   Write-Output ("      overview check total: doc=$ocTotalSeen declared=$($script:DeclaredCheckTotal)")
 
+  # L8 (owner ruling 2026-11-06): the published tree does not carry the overview, and it used
+  # to be allowed to SKIP there - which is exactly how a published build could ship with an
+  # unchecked total. CHECK-TOTAL.txt is now the count source that travels with the public tree.
+  # Missing file = RED. Malformed or mismatched = RED. There is no SKIP fallback: a count source
+  # that can be absent is not a source. The parser is shared with a planted sample so a scan
+  # that reads nothing can never pass.
+  $ocParse = {
+    param([string]$P)
+    if (-not (Test-Path -LiteralPath $P)) { return -1 }
+    foreach ($L in @(Get-Content -LiteralPath $P -Encoding UTF8)) {
+      if ("$L" -match '^\s*offline=([0-9]+)\s*$') { return [int]$Matches[1] }
+    }
+    return -1
+  }
+  $ocCtPath = Join-Path $script:ToolRootPath 'CHECK-TOTAL.txt'
+  $ocCtTotal = & $ocParse $ocCtPath
+  ST-Check 'lint (F-01b): CHECK-TOTAL.txt exists and its offline= equals DeclaredCheckTotal (missing, malformed or mismatched is RED - no SKIP fallback)' (
+    ($ocCtTotal -gt 0) -and ($ocCtTotal -eq [int]$script:DeclaredCheckTotal))
+  $ocTmp = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-ct-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  try {
+    $ocTmpOk = $ocTmp + '-ok.txt'
+    $ocTmpBad = $ocTmp + '-bad.txt'
+    [System.IO.File]::WriteAllText($ocTmpOk, "offline=42`n")
+    [System.IO.File]::WriteAllText($ocTmpBad, "checks=42`n")
+    $ocP1 = & $ocParse $ocTmpOk
+    $ocP2 = & $ocParse $ocTmpBad
+    $ocP3 = & $ocParse ($ocTmp + '-missing.txt')
+    ST-Check 'unit (F-01b): the count-file parser returns the declaration and -1 for malformed and missing (a zero-hit scan cannot pass)' (
+      ($ocP1 -eq 42) -and ($ocP2 -eq -1) -and ($ocP3 -eq -1))
+  } finally {
+    foreach ($ocP in @($ocTmp + '-ok.txt', $ocTmp + '-bad.txt')) { try { if (Test-Path -LiteralPath $ocP) { Remove-Item -LiteralPath $ocP -Force } } catch { } }
+  }
+  # The published docs carry the same number in prose (README badge + "current N checks"). Where
+  # those files exist, every such declaration must equal the same source. Internal trees do not
+  # carry them, so that leg is a NAMED skip there - the count source check above stays mandatory
+  # in every tree.
+  $ocPubName = 'README.zh-CN.md'
+  $ocPubDocs = @('README.md', $ocPubName, 'CHANGELOG.md')
+  $ocPubHere = Test-Path -LiteralPath (Join-Path $script:ToolRootPath $ocPubName)
+  if ($ocPubHere) {
+    $ocDocHits = 0
+    $ocDocBad = New-Object System.Collections.ArrayList
+    $ocCurrent = ([string][char]0x5F53) + ([string][char]0x524D)
+    $ocTiao = [string][char]0x6761
+    foreach ($ocDoc in $ocPubDocs) {
+      $ocDocPath = Join-Path $script:ToolRootPath $ocDoc
+      if (-not (Test-Path -LiteralPath $ocDocPath)) { continue }
+      foreach ($ocL in @(Get-Content -LiteralPath $ocDocPath -Encoding UTF8)) {
+        $ocNums = @()
+        if ("$ocL" -match 'message=([0-9]+)%20checks') { $ocNums += [int]$Matches[1] }
+        if ("$ocL" -match "$ocCurrent\s*([0-9]+)\s*$ocTiao") { $ocNums += [int]$Matches[1] }
+        foreach ($ocN in $ocNums) {
+          $ocDocHits++
+          if ($ocN -ne [int]$script:DeclaredCheckTotal) { [void]$ocDocBad.Add("$ocDoc=$ocN") }
+        }
+      }
+    }
+    ST-Check 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' (
+      ($ocDocHits -ge 1) -and (@($ocDocBad).Count -eq 0))
+    if (@($ocDocBad).Count -gt 0) { Write-Output ('      published doc totals off: ' + (@($ocDocBad) -join ',')) }
+    Write-Output ("      published doc totals: hits=$ocDocHits bad=$(@($ocDocBad).Count) declared=$($script:DeclaredCheckTotal)")
+  } else {
+    ST-Skip 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' 'published-only docs are not in this tree - this leg runs in the tree that ships them'
+  }
+
 }
 
 # lib/selftest-clipboard-input.ps1 - family clipboard-input of the selftest section, lifted out of
@@ -21752,6 +22400,76 @@ function Invoke-SelftestFamily-ClipboardInput($Ctx) {
   Write-Output ('      INC-01 wiring ruler: body-lines=' + @($qBody).Count + ' resolver-sites=' + @($qCallSites).Count +
     ' autoConvert-off-sites=' + @($qConvSites).Count + ' call@' + $qCallIdx + ' files-read@' + $qFilesIdx +
     ' swapped=call@' + $qCallSwap + '/files@' + $qFilesSwap + ' flip-detected=' + $qRulerHasTeeth)
+
+  # N-3 (owner real-machine report 2026-11-06): --replace-clipboard destroys the old clipboard by
+  # design and left no recoverable trace; a failed write left the caller guessing. The backup file
+  # is written BEFORE the destructive write, and the failure path must put the old content back and
+  # say whether it actually came back instead of claiming a restore it never performed.
+  $n3Dir = Join-Path $env:TEMP ('n3-clip-' + [Guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $n3Dir -Force | Out-Null
+  try {
+    $n3Path = Join-Path $n3Dir 'text.bak'
+    $n3Text = "old clipboard line1`nold clipboard line2"
+    $n3r = Write-ClipboardBackupFile @{ Kind = 'text'; Text = $n3Text; Files = @(); ImagePath = '' } $n3Path
+    $n3Files = Join-Path $n3Dir 'both.bak'
+    $n3r2 = Write-ClipboardBackupFile @{ Kind = 'both'; Text = 'tail text'; Files = @('C:\a.txt', 'C:\b.txt'); ImagePath = '' } $n3Files
+    $n3None = Join-Path $n3Dir 'none.bak'
+    $n3r3 = Write-ClipboardBackupFile @{ Kind = 'none'; Text = ''; Files = @(); ImagePath = '' } $n3None
+    $n3Bad = Write-ClipboardBackupFile @{ Kind = 'other'; Text = ''; Files = @(); ImagePath = '' } (Join-Path $n3Dir 'other.bak')
+    $n3ImgSrc = Join-Path $n3Dir 'fake.png'
+    [System.IO.File]::WriteAllBytes($n3ImgSrc, [byte[]](1, 2, 3, 4, 5))
+    $n3Img = Join-Path $n3Dir 'image.bak'
+    $n3r4 = Write-ClipboardBackupFile @{ Kind = 'image'; Text = ''; Files = @(); ImagePath = $n3ImgSrc } $n3Img
+    ST-Check 'unit (N-3): backup writes text verbatim, both as file= lines plus the text tail, none as a marker, image as a byte copy, and refuses kinds it cannot serialize' (
+      [bool]$n3r.Ok -and ([System.IO.File]::ReadAllText($n3Path) -ceq $n3Text) -and
+      [bool]$n3r2.Ok -and ([System.IO.File]::ReadAllText($n3Files)).Contains('file=C:\a.txt') -and
+      ([System.IO.File]::ReadAllText($n3Files)).Contains('--- text below ---') -and ([System.IO.File]::ReadAllText($n3Files)).Contains('tail text') -and
+      [bool]$n3r3.Ok -and ([System.IO.File]::ReadAllText($n3None)).Contains('kind=none') -and
+      (-not [bool]$n3Bad.Ok) -and $n3Bad.Reason.Contains('cannot serialize') -and
+      [bool]$n3r4.Ok -and ((Get-Item -LiteralPath $n3Img).Length -eq 5))
+  } finally {
+    Remove-Item -LiteralPath $n3Dir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  $n3CallLog = New-Object System.Collections.ArrayList
+  $n3Src = Join-Path $env:TEMP ('n3-src-' + [Guid]::NewGuid().ToString('N') + '.txt')
+  $n3Bak = Join-Path $env:TEMP ('n3-bak-' + [Guid]::NewGuid().ToString('N') + '.txt')
+  [System.IO.File]::WriteAllText($n3Src, 'payload')
+  $n3SaveReal = ${function:Save-ClipboardState}
+  $n3RestReal = ${function:Restore-ClipboardState}
+  $n3DropReal = ${function:Set-ClipboardFileDrop}
+  $n3GateReal = ${function:Assert-ClipboardReplaceable}
+  $n3LogReal = ${function:Log-Action}
+  try {
+    ${function:Save-ClipboardState} = { return @{ Kind = 'text'; Text = 'the text that was there before'; Files = @(); ImagePath = ''; Formats = @(); Extras = @(); ReadError = '' } }
+    ${function:Set-ClipboardFileDrop} = { param($path) [void]$n3CallLog.Add('write=' + $path); return $false }
+    ${function:Restore-ClipboardState} = { param($st) [void]$n3CallLog.Add('restore=' + $st.Kind); return 'clipboard restored (previous content was text, 32 chars)' }
+    ${function:Assert-ClipboardReplaceable} = { param($st, $replace, $who) [void]$n3CallLog.Add('gate=' + [string]$who) }
+    ${function:Log-Action} = { param($lines, $detail, $cmd) [void]$n3CallLog.Add('log=' + (@($lines) -join ',')) }
+    $n3Threw = ''
+    try { Invoke-Handler-copy-file 'copy-file' @('--replace-clipboard', '--clipboard-backup', $n3Bak, $n3Src) | Out-Null }
+    catch { $n3Threw = $_.Exception.Message }
+    $n3BkIdx = -1; $n3WrIdx = -1; $n3RsIdx = -1
+    for ($n3i = 0; $n3i -lt $n3CallLog.Count; $n3i++) {
+      $n3l = [string]$n3CallLog[$n3i]
+      if ($n3BkIdx -lt 0 -and $n3l -like 'log=*clipboard-backup=*') { $n3BkIdx = $n3i }
+      if ($n3WrIdx -lt 0 -and $n3l -like 'write=*') { $n3WrIdx = $n3i }
+      if ($n3RsIdx -lt 0 -and $n3l -like 'restore=*') { $n3RsIdx = $n3i }
+    }
+    Write-Output ('      N-3 ordering: backup@' + $n3BkIdx + ' write@' + $n3WrIdx + ' restore@' + $n3RsIdx + ' calls=[' + ($n3CallLog -join ' / ') + ']')
+    ST-Check 'e2e (N-3): a failed replace backs up BEFORE the write, puts the old clipboard back exactly once, receipt says restored, and names the backup for recovery' (
+      ($n3Threw.Contains('previous clipboard: restored')) -and
+      ($n3BkIdx -ge 0) -and ($n3WrIdx -gt $n3BkIdx) -and ($n3RsIdx -gt $n3WrIdx) -and
+      (@($n3CallLog | Where-Object { $_ -like 'restore=*' }).Count -eq 1) -and
+      ((Test-Path -LiteralPath $n3Bak) -and ([System.IO.File]::ReadAllText($n3Bak) -ceq 'the text that was there before')) -and
+      $n3Threw.Contains('recoverable from ' + $n3Bak))
+  } finally {
+    ${function:Save-ClipboardState} = $n3SaveReal
+    ${function:Restore-ClipboardState} = $n3RestReal
+    ${function:Set-ClipboardFileDrop} = $n3DropReal
+    ${function:Assert-ClipboardReplaceable} = $n3GateReal
+    ${function:Log-Action} = $n3LogReal
+    Remove-Item -LiteralPath $n3Src, $n3Bak -Force -ErrorAction SilentlyContinue
+  }
 
 }
 
@@ -28308,6 +29026,316 @@ function Invoke-SelftestFamily-WindowTargeting($Ctx) {
     $d5Residual = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Filter 'dtx-d5-*' -Force -ErrorAction SilentlyContinue).Count
     if ($d5Residual -gt 0) { Write-Output ('      D-5 cleanup: ' + $d5Residual + ' temp dir(s) left behind') }
   }
+  # ---------- D-1 (2026-11-06): GetNewClosure bodies must carry the function, not its name ----------
+  # GetNewClosure() builds a dynamic module that copies VARIABLES but resolves FUNCTION names in
+  # its own session state. Under -File the script's functions land in the session table; under
+  # `& <entry>` from a parent scope they live only in the caller's child scope, so a bare name
+  # inside the closure answers "term not recognized". Both map publishers (rect in the entry,
+  # zoom in handlers-batch) hit exactly that. The repair is a capture: resolve the function once
+  # in script scope and carry ${function:...} into the closure. This lint makes the capture the
+  # rule for every future closure, and the planted sources below prove the detector can say both
+  # yes and no.
+  $d1Parsed = Parse-SourceForInventory ($codeLines -join "`n")
+  $d1FnNames = @($d1Parsed.Root.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object { [string]$_.Name })
+  $d1Scan = {
+    param([string]$Text, [string[]]$Names)
+    $p = Parse-SourceForInventory $Text
+    if (($null -eq $p) -or ($null -eq $p.Root)) { return 'no-parse' }
+    $bad = @()
+    $found = @($p.Root.FindAll({
+      param($n)
+      ($n -is [System.Management.Automation.Language.InvokeMemberExpressionAst]) -and
+      ($n.Member -is [System.Management.Automation.Language.StringConstantExpressionAst]) -and
+      ([string]$n.Member.Value -ceq 'GetNewClosure')
+    }, $true))
+    foreach ($c in $found) {
+      if (-not ($c.Expression -is [System.Management.Automation.Language.ScriptBlockExpressionAst])) {
+        $bad += ('opaque-receiver@' + [string]$c.Extent.StartLineNumber)
+        continue
+      }
+      foreach ($cmd in @($c.Expression.ScriptBlock.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))) {
+        $nm = [string]$cmd.GetCommandName()
+        if (($nm -ne '') -and (@($Names) -contains $nm)) { $bad += ($nm + '@' + [string]$cmd.Extent.StartLineNumber) }
+      }
+    }
+    return ($bad -join ',')
+  }
+  $d1LiveBad = & $d1Scan ($codeLines -join "`n") $d1FnNames
+  $d1PlantBad = 'function Write-MapSidecar { param($a) return $a }' + "`n" + '$pub = { Write-MapSidecar 1 2 }.GetNewClosure()'
+  $d1PlantGood = 'function Write-MapSidecar { param($a) return $a }' + "`n" + '$fn = ${function:Write-MapSidecar}' + "`n" + '$pub = { & $fn 1 2 }.GetNewClosure()'
+  $d1PlantOpaque = '$sb = { 1 }' + "`n" + '$pub = $sb.GetNewClosure()'
+  $d1BadFlag = & $d1Scan $d1PlantBad $d1FnNames
+  $d1GoodFlag = & $d1Scan $d1PlantGood $d1FnNames
+  $d1OpaqueFlag = & $d1Scan $d1PlantOpaque $d1FnNames
+  ST-Check 'lint (D-1): no GetNewClosure body calls a function this tree declares by bare name, a variable receiver is refused as opaque, and planted bare/good/opaque sources are each judged the way their shape deserves' (
+    ($d1LiveBad -ceq '') -and ($d1BadFlag -like 'Write-MapSidecar@*') -and ($d1GoodFlag -ceq '') -and ($d1OpaqueFlag -like 'opaque-receiver@*'))
+  if ($d1LiveBad -ne '') { Write-Output ('      D-1 closure lint: live violations=' + $d1LiveBad) }
+  # The outcome half: the SAME command must publish its sidecar under both invocation poses -
+  # -File (script at the session top) and & from a parent scope (script in a child scope). The
+  # check runs the real entry twice per command and compares the pair it writes, not the pixels:
+  # map presence, kind, and png_sha256 against the file actually on disk. A child that cannot
+  # spawn is a named SKIP; a child that runs and misses the map is RED.
+  $d1Dir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-d1-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($d1Dir)
+  try {
+    $d1Run = {
+      param([string]$ArgLine, [string]$OutName)
+      $o = Join-Path $d1Dir $OutName
+      try {
+        $pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $ArgLine -RedirectStandardOutput $o -RedirectStandardError "$o.err" -Wait -PassThru -NoNewWindow
+        $txt = ''
+        if (Test-Path -LiteralPath $o) { $txt += [IO.File]::ReadAllText($o) }
+        if (Test-Path -LiteralPath "$o.err") { $txt += [IO.File]::ReadAllText("$o.err") }
+        return @{ Ok = $true; Exit = [int]$pr.ExitCode; Txt = $txt }
+      } catch { return @{ Ok = $false; Why = [string]$_.Exception.Message; Exit = -1; Txt = '' } }
+    }
+    $d1Map = {
+      param([string]$Png)
+      $mp = $Png + '.map.txt'
+      if (-not (Test-Path -LiteralPath $mp)) { return $null }
+      $kv = @{}
+      foreach ($ln in @([IO.File]::ReadAllLines($mp))) { if ($ln -match '^([A-Za-z0-9_]+)=(.*)$') { $kv[$Matches[1]] = $Matches[2] } }
+      return $kv
+    }
+    $d1Sha = {
+      param([string]$P)
+      $h = [System.Security.Cryptography.SHA256]::Create()
+      try { $s = [System.IO.File]::OpenRead($P); try { ([BitConverter]::ToString($h.ComputeHash($s)) -replace '-','').ToLower() } finally { $s.Dispose() } } finally { $h.Dispose() }
+    }
+    $d1FilePng = Join-Path $d1Dir 'rect-file.png'
+    $d1AmpPng = Join-Path $d1Dir 'rect-amp.png'
+    $d1FileRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect 0 0 400 300 "' + $d1FilePng + '" --fit 0') 'rect-file.txt'
+    $d1AmpRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -Command "& ''' + $self + ''' rect 0 0 400 300 ''' + $d1AmpPng + ''' --fit 0"') 'rect-amp.txt'
+    if (-not ($d1FileRun.Ok -and $d1AmpRun.Ok)) {
+      ST-Skip 'e2e (D-1): rect publishes its map sidecar under -File AND under & from a parent scope' ($d1FileRun.Why + ' / ' + $d1AmpRun.Why + ' - the check spawns a child process')
+    } else {
+      $d1FileMap = & $d1Map $d1FilePng
+      $d1AmpMap = & $d1Map $d1AmpPng
+      $d1FileSha = ''
+      if (Test-Path -LiteralPath $d1FilePng) { $d1FileSha = & $d1Sha $d1FilePng }
+      $d1AmpSha = ''
+      if (Test-Path -LiteralPath $d1AmpPng) { $d1AmpSha = & $d1Sha $d1AmpPng }
+      $d1RectOk = ($d1FileRun.Exit -eq 0) -and ($d1AmpRun.Exit -eq 0) -and
+        (Test-Path -LiteralPath $d1FilePng) -and (Test-Path -LiteralPath $d1AmpPng) -and
+        ($null -ne $d1FileMap) -and ($null -ne $d1AmpMap) -and
+        ($d1FileMap['kind'] -ceq 'rect') -and ($d1AmpMap['kind'] -ceq 'rect') -and
+        ($d1FileMap['png_sha256'] -ceq $d1FileSha) -and ($d1AmpMap['png_sha256'] -ceq $d1AmpSha)
+      ST-Check 'e2e (D-1): rect publishes its map sidecar under -File AND under & from a parent scope, both sides carry kind=rect and a hash equal to the PNG they describe' $d1RectOk
+      if (-not $d1RectOk) {
+        Write-Output ('      D-1 rect poses: file exit=' + $d1FileRun.Exit + ' map=' + ($null -ne $d1FileMap) + ' amp exit=' + $d1AmpRun.Exit + ' map=' + ($null -ne $d1AmpMap) +
+          ' file-out=[' + $d1FileRun.Txt.Replace("`n", ' | ') + '] amp-out=[' + $d1AmpRun.Txt.Replace("`n", ' | ') + ']')
+      }
+    }
+    $d1ZFilePng = Join-Path $d1Dir 'zoom-file.png'
+    $d1ZAmpPng = Join-Path $d1Dir 'zoom-amp.png'
+    $d1ZFileRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" zoom 0 0 400 300 2 "' + $d1ZFilePng + '"') 'zoom-file.txt'
+    $d1ZAmpRun = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -Command "& ''' + $self + ''' zoom 0 0 400 300 2 ''' + $d1ZAmpPng + '''"') 'zoom-amp.txt'
+    if (-not ($d1ZFileRun.Ok -and $d1ZAmpRun.Ok)) {
+      ST-Skip 'e2e (D-1): zoom publishes its map sidecar under -File AND under & from a parent scope' ($d1ZFileRun.Why + ' / ' + $d1ZAmpRun.Why + ' - the check spawns a child process')
+    } else {
+      $d1ZFileMap = & $d1Map $d1ZFilePng
+      $d1ZAmpMap = & $d1Map $d1ZAmpPng
+      $d1ZFileSha = ''
+      if (Test-Path -LiteralPath $d1ZFilePng) { $d1ZFileSha = & $d1Sha $d1ZFilePng }
+      $d1ZAmpSha = ''
+      if (Test-Path -LiteralPath $d1ZAmpPng) { $d1ZAmpSha = & $d1Sha $d1ZAmpPng }
+      $d1ZoomOk = ($d1ZFileRun.Exit -eq 0) -and ($d1ZAmpRun.Exit -eq 0) -and
+        (Test-Path -LiteralPath $d1ZFilePng) -and (Test-Path -LiteralPath $d1ZAmpPng) -and
+        ($null -ne $d1ZFileMap) -and ($null -ne $d1ZAmpMap) -and
+        ($d1ZFileMap['kind'] -ceq 'zoom') -and ($d1ZAmpMap['kind'] -ceq 'zoom') -and
+        ($d1ZFileMap['scale'] -ceq '2') -and ($d1ZAmpMap['scale'] -ceq '2') -and
+        ($d1ZFileMap['png_sha256'] -ceq $d1ZFileSha) -and ($d1ZAmpMap['png_sha256'] -ceq $d1ZAmpSha)
+      ST-Check 'e2e (D-1): zoom publishes its map sidecar under -File AND under & from a parent scope, both sides carry kind=zoom, scale=2 and a hash equal to the PNG they describe' $d1ZoomOk
+      if (-not $d1ZoomOk) {
+        Write-Output ('      D-1 zoom poses: file exit=' + $d1ZFileRun.Exit + ' map=' + ($null -ne $d1ZFileMap) + ' amp exit=' + $d1ZAmpRun.Exit + ' map=' + ($null -ne $d1ZAmpMap) +
+          ' file-out=[' + $d1ZFileRun.Txt.Replace("`n", ' | ') + '] amp-out=[' + $d1ZAmpRun.Txt.Replace("`n", ' | ') + ']')
+      }
+    }
+    # The mapping half: both poses must describe the SAME geometry. imgclick --dry reads the
+    # sidecar the pose wrote and maps one image point back; rect (origin 0,0 scale 1) and zoom
+    # (origin 0,0 scale 2) both land on (100,100), so a pose whose sidecar went missing, stale
+    # or mis-scaled cannot hide behind a present PNG.
+    $d1Pairs = @()
+    $d1DrySpawn = $true
+    foreach ($d1c in @(
+      @($d1FilePng, 100, 'dry-rect-file'),
+      @($d1AmpPng, 100, 'dry-rect-amp'),
+      @($d1ZFilePng, 200, 'dry-zoom-file'),
+      @($d1ZAmpPng, 200, 'dry-zoom-amp')
+    )) {
+      $d1dr = & $d1Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" imgclick "' + $d1c[0] + '" ' + $d1c[1] + ' ' + $d1c[1] + ' --dry') $d1c[2]
+      if (-not $d1dr.Ok) { $d1DrySpawn = $false }
+      $d1sm = [regex]::Match([string]$d1dr.Txt, 'screen \((-?\d+),(-?\d+)\)')
+      if (($d1dr.Exit -eq 0) -and $d1sm.Success) { $d1Pairs += ($d1c[2] + '=' + $d1sm.Groups[1].Value + ',' + $d1sm.Groups[2].Value) }
+      else { $d1Pairs += ($d1c[2] + '=UNPARSED(exit=' + $d1dr.Exit + ')') }
+    }
+    $d1DryOk = ($d1Pairs.Count -eq 4) -and
+      ($d1Pairs[0] -ceq 'dry-rect-file=100,100') -and ($d1Pairs[1] -ceq 'dry-rect-amp=100,100') -and
+      ($d1Pairs[2] -ceq 'dry-zoom-file=100,100') -and ($d1Pairs[3] -ceq 'dry-zoom-amp=100,100')
+    if (-not $d1DrySpawn) {
+      ST-Skip 'e2e (D-1): imgclick --dry maps the same image point through BOTH poses of both commands, and every sidecar resolves it to the same screen point (no pose may pass on a present PNG alone)' 'a child PowerShell could not be spawned for the dry legs'
+    } else {
+      ST-Check 'e2e (D-1): imgclick --dry maps the same image point through BOTH poses of both commands, and every sidecar resolves it to the same screen point (no pose may pass on a present PNG alone)' $d1DryOk
+    }
+    Write-Output ('      D-1 sidecar pairs: ' + ($d1Pairs -join ' / '))
+  } finally {
+    try { if (Test-Path -LiteralPath $d1Dir) { Remove-Item -LiteralPath $d1Dir -Recurse -Force } } catch { }
+  }
+
+  # X-07 (v4.9.1): the VISIBILITY CONTRACT. Screen-edge clipping is a first-class answer,
+  # not a pixel side effect: a region is clamped to the visible intersection, the receipt
+  # names the cut edge, a fully off-screen read is REFUSED (REGION_CLIPPED), a clipped
+  # region's miss is NOT evidence of absence, and an off-screen mapped point is refused
+  # (HIT_OFFSCREEN). These legs use only geometry + real captures, so they run offline.
+  $x7Dir = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-x7-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  [void][System.IO.Directory]::CreateDirectory($x7Dir)
+  try {
+    $x7Run = {
+      param([string]$ArgLine, [string]$OutName)
+      $o = Join-Path $x7Dir $OutName
+      try {
+        $pr = Start-Process -FilePath 'powershell.exe' -ArgumentList $ArgLine -RedirectStandardOutput $o -RedirectStandardError "$o.err" -Wait -PassThru -NoNewWindow
+        $txt = ''
+        if (Test-Path -LiteralPath $o) { $txt += [IO.File]::ReadAllText($o) }
+        if (Test-Path -LiteralPath "$o.err") { $txt += [IO.File]::ReadAllText("$o.err") }
+        return @{ Ok = $true; Exit = [int]$pr.ExitCode; Txt = $txt }
+      } catch { return @{ Ok = $false; Why = [string]$_.Exception.Message; Exit = -1; Txt = '' } }
+    }
+    $x7Map = {
+      param([string]$Png)
+      $mp = $Png + '.map.txt'
+      if (-not (Test-Path -LiteralPath $mp)) { return $null }
+      $kv = @{}
+      foreach ($ln in @([IO.File]::ReadAllLines($mp))) { if ($ln -match '^([A-Za-z0-9_]+)=(.*)$') { $kv[$Matches[1]] = $Matches[2] } }
+      return $kv
+    }
+    $x7Dim = {
+      param([string]$P)
+      if (-not (Test-Path -LiteralPath $P)) { return @{ W = -1; H = -1 } }
+      $img = [System.Drawing.Image]::FromFile($P)
+      try { return @{ W = [int]$img.Width; H = [int]$img.Height } } finally { $img.Dispose() }
+    }
+    $x7Sha = {
+      param([string]$P)
+      $h = [System.Security.Cryptography.SHA256]::Create()
+      try { $s = [System.IO.File]::OpenRead($P); try { ([BitConverter]::ToString($h.ComputeHash($s)) -replace '-','').ToLower() } finally { $s.Dispose() } } finally { $h.Dispose() }
+    }
+    $x7V = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $x7VX = [int]$x7V.X; $x7VY = [int]$x7V.Y; $x7VW = [int]$x7V.Width; $x7VH = [int]$x7V.Height
+    # (1..3) unit legs: the one producer of the intersection, judged on its three shapes.
+    $x7VisIn = Get-VisibleRegion 10 20 30 40
+    $x7VisHalf = Get-VisibleRegion ($x7VX - 50) ($x7VY + 20) 200 60
+    $x7VisOut = Get-VisibleRegion ($x7VX - 4000) ($x7VY + 20) 200 60
+    ST-Check 'unit (X-07): an in-screen region reports clipped=false, zero off-screen pixels and the request as the visible rect (no clip bookkeeping leaks into the normal path)' (
+      (-not [bool]$x7VisIn.Clipped) -and (-not [bool]$x7VisIn.FullyOffscreen) -and
+      ([int]$x7VisIn.ClipLeft -eq 0) -and ([int]$x7VisIn.ClipTop -eq 0) -and
+      ([int]$x7VisIn.ClipRight -eq 0) -and ([int]$x7VisIn.ClipBottom -eq 0) -and
+      ([int]$x7VisIn.CX -eq 10) -and ([int]$x7VisIn.CY -eq 20) -and
+      ([int]$x7VisIn.CW -eq 30) -and ([int]$x7VisIn.CH -eq 40))
+    ST-Check 'unit (X-07): a region 50px past the left edge reports clipped=true, clip_left=50, the visible width (not the requested one), and the left edge by name' (
+      ([bool]$x7VisHalf.Clipped) -and (-not [bool]$x7VisHalf.FullyOffscreen) -and
+      ([int]$x7VisHalf.ClipLeft -eq 50) -and ([int]$x7VisHalf.CW -eq 150) -and
+      ([int]$x7VisHalf.CH -eq 60) -and ([string]$x7VisHalf.Edges -ceq 'left') -and
+      ([int]$x7VisHalf.CX -eq $x7VX))
+    ST-Check 'unit (X-07): a region entirely outside the screen is fully off-screen with zero visible pixels (the refusal case, not a black frame)' (
+      ([bool]$x7VisOut.FullyOffscreen) -and ([int]$x7VisOut.CW -eq 0))
+
+    # (4..6) e2e legs through the real entry: a clipped rect/zoom and a fully off-screen refusal.
+    $x7RectPng = Join-Path $x7Dir 'clip-rect.png'
+    $x7RectRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 "' + $x7RectPng + '" --fit 0') 'clip-rect.txt'
+    $x7RectMap = & $x7Map $x7RectPng
+    $x7RectDim = & $x7Dim $x7RectPng
+    if (-not $x7RectRun.Ok) {
+      ST-Skip 'e2e (X-07): a clipped rect captures only the visible intersection, receipt names the cut edge, sidecar carries the request' $x7RectRun.Why
+    } else {
+      ST-Check 'e2e (X-07): a clipped rect captures only the visible intersection (PNG width 150 not 200, no black bar), receipt says clipped=left:50px, sidecar carries req_w=200 and clip_left=50' (
+        ($x7RectRun.Exit -eq 0) -and (Test-Path -LiteralPath $x7RectPng) -and
+        ([int]$x7RectDim.W -eq 150) -and ([int]$x7RectDim.H -eq 60) -and
+        ([string]$x7RectRun.Txt -match 'clipped=left:50px') -and
+        ($null -ne $x7RectMap) -and ([string]$x7RectMap['clipped'] -ceq 'left') -and
+        ([int]$x7RectMap['req_w'] -eq 200) -and ([int]$x7RectMap['clip_left'] -eq 50) -and
+        ([int]$x7RectMap['origin_x'] -eq $x7VX))
+      if (-not ($x7RectRun.Exit -eq 0)) { Write-Output ('      X-07 clipped rect out=[' + $x7RectRun.Txt.Replace("`n", ' | ') + ']') }
+    }
+    $x7OutPng = Join-Path $x7Dir 'offscreen-rect.png'
+    $x7OutRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect ' + ($x7VX - 4000) + ' ' + ($x7VY + 20) + ' 200 60 "' + $x7OutPng + '" --fit 0') 'offscreen-rect.txt'
+    if (-not $x7OutRun.Ok) {
+      ST-Skip 'e2e (X-07): a fully off-screen rect is refused with REGION_CLIPPED and writes no image' $x7OutRun.Why
+    } else {
+      ST-Check 'e2e (X-07): a fully off-screen rect is refused with REGION_CLIPPED, and NOTHING is written - no black PNG is invented' (
+        ($x7OutRun.Exit -ne 0) -and ([string]$x7OutRun.Txt -match 'REGION_CLIPPED') -and
+        (-not (Test-Path -LiteralPath $x7OutPng)))
+    }
+    $x7ZoomPng = Join-Path $x7Dir 'clip-zoom.png'
+    $x7ZoomRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" zoom ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 2 "' + $x7ZoomPng + '"') 'clip-zoom.txt'
+    $x7ZoomMap = & $x7Map $x7ZoomPng
+    $x7ZoomDim = & $x7Dim $x7ZoomPng
+    if (-not $x7ZoomRun.Ok) {
+      ST-Skip 'e2e (X-07): a clipped zoom enlarges only the visible intersection and says so in the receipt' $x7ZoomRun.Why
+    } else {
+      ST-Check 'e2e (X-07): a clipped zoom enlarges only the visible intersection (300x120 at 2x, not 400x120), receipt says clipped=left:50px, sidecar keeps req_w=200' (
+        ($x7ZoomRun.Exit -eq 0) -and (Test-Path -LiteralPath $x7ZoomPng) -and
+        ([int]$x7ZoomDim.W -eq 300) -and ([int]$x7ZoomDim.H -eq 120) -and
+        ([string]$x7ZoomRun.Txt -match 'clipped=left:50px') -and
+        ($null -ne $x7ZoomMap) -and ([int]$x7ZoomMap['req_w'] -eq 200) -and ([string]$x7ZoomMap['clipped'] -ceq 'left'))
+    }
+
+    # (7) an old/edge map whose point lands outside the virtual screen must be refused.
+    $x7HitPng = Join-Path $x7Dir 'edge-map.png'
+    $x7Bmp = New-Object System.Drawing.Bitmap(2, 2)
+    try { $x7Bmp.Save($x7HitPng, [System.Drawing.Imaging.ImageFormat]::Png) } finally { $x7Bmp.Dispose() }
+    $x7HitSha = & $x7Sha $x7HitPng
+    [void](Write-MapSidecar $x7HitPng ($x7VX + $x7VW) ($x7VY + 20) 1.0 2 2 'rect' $null 0 $null $x7HitSha)
+    $x7DryRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" imgclick "' + $x7HitPng + '" 1 1 --dry') 'edge-dry.txt'
+    if (-not $x7DryRun.Ok) {
+      ST-Skip 'e2e (X-07): imgclick refuses a point that maps outside the virtual screen' $x7DryRun.Why
+    } else {
+      ST-Check 'e2e (X-07): imgclick refuses a mapped point outside the virtual screen with HIT_OFFSCREEN, in dry mode too' (
+        ($x7DryRun.Exit -ne 0) -and ([string]$x7DryRun.Txt -match 'HIT_OFFSCREEN'))
+    }
+
+    # (8) in-screen regression: nothing about the old receipt shape may move.
+    $x7InPng = Join-Path $x7Dir 'in-screen.png'
+    $x7InRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" rect ' + ($x7VX + 10) + ' ' + ($x7VY + 10) + ' 40 40 "' + $x7InPng + '" --fit 0') 'in-screen.txt'
+    $x7InDim = & $x7Dim $x7InPng
+    if (-not $x7InRun.Ok) {
+      ST-Skip 'e2e (X-07): an in-screen capture keeps the old receipt shape and the requested size' $x7InRun.Why
+    } else {
+      ST-Check 'e2e (X-07): an in-screen capture is byte-for-shape unchanged - 40x40 image, receipt carries NO clipped= marker, sidecar carries NO req_ fields' (
+        ($x7InRun.Exit -eq 0) -and ([int]$x7InDim.W -eq 40) -and ([int]$x7InDim.H -eq 40) -and
+        ([string]$x7InRun.Txt -notmatch 'clipped=') -and
+        ($null -ne (& $x7Map $x7InPng)) -and (-not (& $x7Map $x7InPng).ContainsKey('req_x')))
+    }
+
+    # (9..10) the read side, where OCR is required: clipped JSON says clipped+visibleRect,
+    # and a clipped miss is REFUSED instead of claiming absence. No OCR pack = named SKIP.
+    $x7ReadRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" read-text ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 --json') 'clip-read.txt'
+    $x7ReadNoOcr = ([string]$x7ReadRun.Txt -match 'OCR unavailable')
+    if (-not $x7ReadRun.Ok) {
+      ST-Skip 'e2e (X-07): read-text --json on a clipped region reports clipped/visibleRect/offscreenPx' $x7ReadRun.Why
+      ST-Skip 'e2e (X-07): find-text refuses to call a clipped miss absence' $x7ReadRun.Why
+    } elseif ($x7ReadNoOcr) {
+      ST-Skip 'e2e (X-07): read-text --json on a clipped region reports clipped/visibleRect/offscreenPx' 'no OCR language pack - the read road is unavailable, so this is not a regression'
+      ST-Skip 'e2e (X-07): find-text refuses to call a clipped miss absence' 'no OCR language pack - the read road is unavailable, so this is not a regression'
+    } else {
+      $x7JsonObj = $null
+      $x7JsonLine = @([string]$x7ReadRun.Txt -split "`r?`n" | Where-Object { $_.TrimStart().StartsWith('{') }) | Select-Object -Last 1
+      try { $x7JsonObj = [string]$x7JsonLine | ConvertFrom-Json } catch { }
+      ST-Check 'e2e (X-07): read-text --json on a clipped region reports schemaVersion 4 with clipped=true, visibleRect.w=150 at the visible edge and offscreenPx.left=50' (
+        ($x7ReadRun.Exit -eq 0) -and ($null -ne $x7JsonObj) -and
+        ([int]$x7JsonObj.schemaVersion -eq 4) -and ([bool]$x7JsonObj.clipped) -and
+        ([int]$x7JsonObj.visibleRect.w -eq 150) -and ([int]$x7JsonObj.visibleRect.x -eq $x7VX) -and
+        ([int]$x7JsonObj.offscreenPx.left -eq 50))
+      $x7MissRun = & $x7Run ('-NoProfile -ExecutionPolicy Bypass -File "' + $self + '" find-text ' + ($x7VX - 50) + ' ' + ($x7VY + 20) + ' 200 60 ZZQX07NO_SUCH_TOKEN_QZ') 'clip-miss.txt'
+      ST-Check 'e2e (X-07): a miss on a clipped region is refused with REGION_CLIPPED and edge-clipped - absence is NOT claimed from pixels the screen never showed' (
+        ($x7MissRun.Exit -ne 0) -and ([string]$x7MissRun.Txt -match 'REGION_CLIPPED') -and
+        ([string]$x7MissRun.Txt -match 'edge-clipped'))
+    }
+    Write-Output ('      X-07 visibility: virtual screen=(' + $x7VX + ',' + $x7VY + ') ' + $x7VW + 'x' + $x7VH +
+      ' half-clip visible=' + $x7VisHalf.CW + 'x' + $x7VisHalf.CH + ' edges=' + $x7VisHalf.Edges)
+  } finally {
+    try { if (Test-Path -LiteralPath $x7Dir) { Remove-Item -LiteralPath $x7Dir -Recurse -Force } } catch { }
+  }
 }
 
 # lib/selftest-chrome-cdp.ps1 - one family of the selftest section, lifted out of lib/selftest.ps1 by A-14k (A-beta).
@@ -29464,6 +30492,49 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
     ST-Skip 'lint (TB-6): the delivery predicate flags the planted installer copy that drops both the refusal and the copy step, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' 'no skill package / installer in this tree - nothing to plant into'
   }
 
+  # M4: every capabilities command is documented, anchored and exemplified (same banner family as TB-6)
+  # The denominator is the command table itself, never a hand-counted list: a command that gains
+  # an entry in the dispatch table but not in the docs must be named here. Anchors are read from
+  # SKILL.md in whichever face this tree carries, mentions from reference.md, and each anchor's
+  # Example line must name the same command and use only flags that `help <name>` actually lists.
+  $m4Scan = {
+    param($skillText, $refText, $names, $helpLines)
+    $bad = @()
+    foreach ($c in @($names)) {
+      $esc = [regex]::Escape($c)
+      $bx = [regex]::Match([string]$skillText, ('(?ms)^### ' + $esc + '\s*$.*?(?=^### |^## |\z)'))
+      if (-not $bx.Success) { $bad += ('no-anchor=' + $c); continue }
+      $ex = [regex]::Match($bx.Value, ('(?m)^Example: desktop\.ps1 ' + $esc + '(\s.*)?$'))
+      if (-not $ex.Success) { $bad += ('no-example=' + $c) }
+      else {
+        $argv = $ex.Value.Substring(('Example: desktop.ps1 ').Length)
+        $slice = [string](Format-CommandHelp $helpLines $c)
+        foreach ($f in @([regex]::Matches($argv, '--[A-Za-z][A-Za-z0-9-]*') | ForEach-Object { $_.Value })) {
+          if (-not $slice.Contains($f)) { $bad += ('flag-not-in-help=' + $c + '/' + $f) }
+        }
+      }
+      if ([string]$refText -notmatch ('(?<![A-Za-z0-9-])' + $esc + '(?![A-Za-z0-9-])')) { $bad += ('no-reference=' + $c) }
+    }
+    return @($bad)
+  }
+  if ((@($hNames).Count -ge 55) -and (([string]$tb4Texts['SKILL.md']).Length -ge 200) -and (([string]$tb4Texts['reference.md']).Length -ge 200)) {
+    $m4Bad = @(& $m4Scan ([string]$tb4Texts['SKILL.md']) ([string]$tb4Texts['reference.md']) $hNames $hLines)
+    ST-Check 'lint (M4): every capabilities command has its own SKILL anchor, a reference mention, and an Example line whose flags help lists' (
+      (@($m4Bad).Count -eq 0))
+    foreach ($m4B in $m4Bad) { Write-Output ('      M4 coverage: ' + $m4B) }
+    # Teeth: demolish one anchor and hang one invented flag on another example; the SAME predicate
+    # must name both. A predicate that reads "nothing missing" against that mutant is a needle count.
+    $m4Mut = ([string]$tb4Texts['SKILL.md']).Replace('### capabilities', '### capability')
+    $m4Mut = $m4Mut.Replace('Example: desktop.ps1 imgclick C:\Temp\out.png 10 20', 'Example: desktop.ps1 imgclick C:\Temp\out.png 10 20 --not-a-real-flag')
+    $m4MutBad = @(& $m4Scan $m4Mut ([string]$tb4Texts['reference.md']) $hNames $hLines)
+    ST-Check 'lint (M4): the coverage predicate names the planted missing anchor and the planted invented flag (teeth, not decoration)' (
+      (@($m4Bad).Count -eq 0) -and (@($m4MutBad | Where-Object { $_ -eq 'no-anchor=capabilities' }).Count -ge 1) -and (@($m4MutBad | Where-Object { $_ -eq 'flag-not-in-help=imgclick/--not-a-real-flag' }).Count -ge 1))
+    Write-Output ('      M4 planted flags: ' + (@($m4MutBad).Count) + ' (' + (@($m4MutBad) -join '; ') + ')')
+  } else {
+    ST-Skip 'lint (M4): every capabilities command has its own SKILL anchor, a reference mention, and an Example line whose flags help lists' 'outward docs not resolvable here - nothing to measure the command coverage against'
+    ST-Skip 'lint (M4): the coverage predicate names the planted missing anchor and the planted invented flag (teeth, not decoration)' 'outward docs not resolvable here - nothing to plant the mutant into'
+  }
+
 }
 
 # lib/selftest-popup-occlusion.ps1 - one family of the selftest section, lifted out of
@@ -29897,18 +30968,19 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   Write-Output ('      json-contract homes: producer=' + $jkProducer + ' readers=' + $jkReaders + ' literals=' + $jkLits)
   $cGotFind = (@($cFind.PSObject.Properties.Name | Sort-Object) -join ',')
   $cGotRead = (@($cRead.PSObject.Properties.Name | Sort-Object) -join ',')
-  ST-Check 'contract: find-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+hits (add or drop one = breaking)' (
+  ST-Check 'contract: find-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+clipped+visibleRect+offscreenPx+hits (add or drop one = breaking)' (
     $cGotFind -ceq $cWantFind)
-  ST-Check 'contract: read-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+lines (add or drop one = breaking)' (
+  ST-Check 'contract: read-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+clipped+visibleRect+offscreenPx+lines (add or drop one = breaking)' (
     $cGotRead -ceq $cWantRead)
   # v3.0.0 (B-6) BREAKING CHANGE, declared: 1 -> 2, because `contentTrust` joined the key set
   # of every envelope. v3.1.0 (X-01) BREAKING CHANGE, declared: 2 -> 3, because the action
-  # family got an envelope (see Get-ActionJsonCommandSet). The literal expectation stays a
-  # literal ON PURPOSE - bumping the variable without coming here is the mistake this check
-  # exists to make impossible, and the second conjunct proves the builders read the same
-  # variable rather than a copied constant.
-  ST-Check 'contract: both envelopes report the declared schemaVersion, which is 3 since the action family joined the contract' (
-    [int]$script:JsonSchemaVersion -eq 3 -and $cFind.schemaVersion -eq 3 -and $cRead.schemaVersion -eq 3)
+  # family got an envelope (see Get-ActionJsonCommandSet). X-07 (v4.9.1) BREAKING CHANGE,
+  # declared: 3 -> 4, because clipped/visibleRect/offscreenPx joined every read/find envelope.
+  # The literal expectation stays a literal ON PURPOSE - bumping the variable without coming
+  # here is the mistake this check exists to make impossible, and the second conjunct proves
+  # the builders read the same variable rather than a copied constant.
+  ST-Check 'contract: both envelopes report the declared schemaVersion, which is 4 since X-07 added the visibility keys' (
+    [int]$script:JsonSchemaVersion -eq 4 -and $cFind.schemaVersion -eq 4 -and $cRead.schemaVersion -eq 4)
   # the occlusion half of the contract, from a synthetic gate: a gate that ran must
   # produce an INTEGER percent (not 37.4, not ''), and coveredBy must be an array
   # even for a single coverer - a scalar here silently breaks JSON consumers that
@@ -30064,14 +31136,69 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   try {
     $rotLog = Join-Path $rotDir 'actions.log'
     [System.IO.File]::WriteAllText($rotLog, ('x' * 300))
-    $did = Invoke-LogRotation $rotLog 100 2
-    $rotated = (-not (Test-Path $rotLog)) -and (@(Get-ChildItem $rotDir -Filter 'actions_*.log').Count -ge 1)
-    for ($ai = 1; $ai -le 4; $ai++) { [System.IO.File]::WriteAllText((Join-Path $rotDir ('actions_000' + $ai + '.log')), ('y' * 10)) }
-    [System.IO.File]::WriteAllText($rotLog, ('z' * 300))
-    Invoke-LogRotation $rotLog 100 2 | Out-Null
-    $archives = @(Get-ChildItem $rotDir -Filter 'actions_*.log').Count
+    $did = Invoke-LogRotation $rotLog 100 5
+    $rotated = (-not (Test-Path $rotLog)) -and (@(Get-ChildItem $rotDir -Filter 'actions_*.log').Count -eq 1)
     ST-Check 'unit: log rotation archives the over-threshold log' ($did -and $rotated)
-    ST-Check 'unit: log rotation prunes archives beyond keep' ($archives -eq 2)
+    # M7 (2026-11-06): seven archives before the second rotation, eight after; keep=5 retains
+    # five in place and quarantines three. Every archive that existed before must come back
+    # byte-identical (same sha256/bytes; kept files also keep their mtime) - nothing is deleted.
+    for ($ai = 1; $ai -le 6; $ai++) { [System.IO.File]::WriteAllText((Join-Path $rotDir ('actions_2020010' + $ai + 'T000000.log')), ('y' * (10 + $ai))) }
+    $rotShaOf = { param($rp) (([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($rp))) -replace '-', '')).ToLowerInvariant() }
+    $rotBefore = @{}
+    foreach ($rf in @(Get-ChildItem $rotDir -Filter 'actions_*.log')) {
+      $rotBefore[$rf.Name] = [pscustomobject]@{ Sha = (& $rotShaOf $rf.FullName); Bytes = $rf.Length; Mtime = $rf.LastWriteTimeUtc }
+    }
+    Start-Sleep -Milliseconds 1100
+    [System.IO.File]::WriteAllText($rotLog, ('z' * 300))
+    Invoke-LogRotation $rotLog 100 5 | Out-Null
+    $archives = @(Get-ChildItem $rotDir -Filter 'actions_*.log')
+    $quarFiles = @(Get-ChildItem (Join-Path $rotDir 'quarantine') -Filter 'actions_*.log' -ErrorAction SilentlyContinue)
+    $keepIntact = $true
+    foreach ($rf in $archives) {
+      if (-not $rotBefore.ContainsKey($rf.Name)) { continue }
+      $rb = $rotBefore[$rf.Name]
+      if ($rb.Sha -ne (& $rotShaOf $rf.FullName)) { $keepIntact = $false }
+      if ($rb.Bytes -ne $rf.Length) { $keepIntact = $false }
+      if ($rb.Mtime -ne $rf.LastWriteTimeUtc) { $keepIntact = $false }
+    }
+    $quarIntact = $true
+    foreach ($qf in $quarFiles) {
+      if (-not $rotBefore.ContainsKey($qf.Name)) { $quarIntact = $false; continue }
+      $qb = $rotBefore[$qf.Name]
+      if ($qb.Sha -ne (& $rotShaOf $qf.FullName)) { $quarIntact = $false }
+      if ($qb.Bytes -ne $qf.Length) { $quarIntact = $false }
+    }
+    $rotAudit = @(Get-Content -LiteralPath $rotLog -ErrorAction SilentlyContinue)
+    $rotLineOk = ($rotAudit.Count -eq 1) -and
+      ($rotAudit[0] -match ('\| log-rotation \| --keep 5 \| moved=3 deleted=0 quarantine=')) -and
+      ($null -ne (ConvertFrom-ActionLogLine $rotAudit[0]))
+    ST-Check 'unit (M7): rotation keeps the newest five archives in place (sha/bytes/mtime untouched) and quarantines the rest instead of deleting them' (
+      (@($archives).Count -eq 5) -and (@($quarFiles).Count -eq 3) -and $keepIntact -and $quarIntact -and $rotLineOk)
+    $rotManifest = @(Get-Content -LiteralPath (Join-Path $rotDir 'quarantine\MANIFEST.txt') -ErrorAction SilentlyContinue)
+    $rotManifestOk = ($rotManifest.Count -eq 3)
+    foreach ($row in $rotManifest) {
+      $parts = @($row -split '\|')
+      if ($parts.Count -ne 5) { $rotManifestOk = $false; continue }
+      $qPath = Join-Path (Join-Path $rotDir 'quarantine') $parts[0]
+      if (-not (Test-Path -LiteralPath $qPath)) { $rotManifestOk = $false; continue }
+      if ([string]((Get-Item -LiteralPath $qPath).Length) -ne $parts[1]) { $rotManifestOk = $false }
+      if ((& $rotShaOf $qPath) -ne $parts[2]) { $rotManifestOk = $false }
+      if ([string]$parts[3] -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') { $rotManifestOk = $false }
+      if ([string]$parts[4] -notmatch '^beyond-keep\(5\)$') { $rotManifestOk = $false }
+    }
+    ST-Check 'unit (M7): MANIFEST rows are five pipe segments and match the quarantined bytes, sha256, time and reason' ($rotManifestOk)
+    $rotEmptyDir = Join-Path $env:TEMP ('dtrot_empty_' + [guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Force -Path $rotEmptyDir)
+    try {
+      $rotEmptyLog = Join-Path $rotEmptyDir 'actions.log'
+      [System.IO.File]::WriteAllText($rotEmptyLog, 'tiny')
+      $rotEmptyDid = Invoke-LogRotation $rotEmptyLog 100 5
+      ST-Check 'unit (M7): a below-threshold call creates no quarantine, no manifest and no audit line' (
+        (-not $rotEmptyDid) -and (Test-Path -LiteralPath $rotEmptyLog) -and
+        (@(Get-Content -LiteralPath $rotEmptyLog).Count -eq 1) -and
+        (-not (Test-Path -LiteralPath (Join-Path $rotEmptyDir 'quarantine')))
+      )
+    } finally { Remove-Item -LiteralPath $rotEmptyDir -Recurse -Force -ErrorAction SilentlyContinue }
   } finally { Remove-Item -LiteralPath $rotDir -Recurse -Force -ErrorAction SilentlyContinue }
 
   # ---------- v3.0.0 B-4: --dump (write the bulk to a file, print a pointer) ----------
@@ -30324,12 +31451,16 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 9) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 13) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
   # call-sites 7 -> 9 (B-2): the archive-walk e2e adds two child probes (the scope=day read and
   # the refused scope), both through the same runner - the pin moves WITH the measured count.
+  # call-sites 9 -> 10 (M9, 2026-11-06): the failure-envelope e2e adds the paired JSON/text child
+  # probe, again through the same runner - measured, not assumed.
+  # call-sites 10 -> 12 (M8, 2026-11-06): the fallback e2e adds the dpi and wins --json child probes.
+  # call-sites 12 -> 13 (M6, 2026-11-06): the stripped-switch e2e adds the dry-run child probe.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -30390,7 +31521,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $xSigGot = ''
   if ($null -ne $xObj1) { $xSigGot = (@($xObj1.signals.PSObject.Properties.Name) | Sort-Object) -join ',' }
   ST-Check 'contract (X-01): signals carries exactly the eight pinned classes, the pattern map agrees with the pinned list, and the schema is 3 (this class of change was MAJOR in v3.0.0 - the conflict is registered, not eaten)' (
-    $xSigGot -ceq $xWantSigLit -and (Get-ActionJsonSignalKeySet) -ceq $xWantSigLit -and [int]$script:JsonSchemaVersion -eq 3)
+    $xSigGot -ceq $xWantSigLit -and (Get-ActionJsonSignalKeySet) -ceq $xWantSigLit -and [int]$script:JsonSchemaVersion -eq 4)
   # The projection has to be a SUBSET (it invents nothing) and COMPLETE per class (it drops
   # nothing) and must keep an unclassed line - all three on one planted fixture.
   $xL1 = 'hit-window: pid=7 proc=notepad title=T  (inside-target=True occluded=0% coveredBy=-)'
@@ -30460,14 +31591,17 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $xSubTop = ''
   if ($null -ne $xSubObj) { $xSubTop = (@($xSubObj.PSObject.Properties.Name) | Sort-Object) -join ',' }
   $xNegLeg = & $cnpRun -ChildArgs @('click', '10', '10', '--to', 'DTX-NoSuchWindow-ZZ', '--json')
-  $xNegOut = ($xNegLeg.out + "`n" + $xNegLeg.err)
   $xNegCode = $xNegLeg.code
   $xNegRan = $xNegLeg.ran
   $xNegWhy = $xNegLeg.why
+  # M9 (2026-11-06): the refusal leg now speaks the failure envelope on stdout, so the human line
+  # is checked on stderr and the machine line is parsed here.
+  $xNegObj = $null
+  try { $xNegObj = (@($xNegLeg.out) -join "`n") | ConvertFrom-Json } catch { $xNegObj = $null }
   $xSubDump = Format-JsonProbeDump $xSubOut ($null -ne $xSubObj)
   Write-Output ('      action-json e2e: unmap-exit=' + [string]$xSubCode + ' unmap-ran=' + $xSubRan + ' keys=[' + $xSubTop + ']' +
     ' refusal-exit=' + [string]$xNegCode + ' refusal-ran=' + $xNegRan +
-    ' refusal-is-text=' + ($xNegOut.StartsWith('ERROR:')) + ' child-stdout=' + $xSubDump + $(if ($xSubEvidence) { ' ' + $xSubEvidence } else { '' }))
+    ' refusal-json=' + ($null -ne $xNegObj) + ' refusal-err-text=' + ([string]$xNegLeg.err).Contains('ERROR:') + ' child-stdout=' + $xSubDump + $(if ($xSubEvidence) { ' ' + $xSubEvidence } else { '' }))
   if (($xSubWhy -ne '') -or ($xNegWhy -ne '')) {
     # the one thing that used to be invisible: which leg could not be started, and what the runtime said.
     Write-Output ('      action-json e2e spawn failure: unmap=[' + $xSubWhy + '] refusal=[' + $xNegWhy + ']')
@@ -30501,14 +31635,56 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
     ($xCollectAny -eq 5) -and ($xCollectStdout -eq 5))
   }
   if (-not $script:PsChildOk) {
-    ST-Skip 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
+    ST-Skip 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields exit 1 with the refusal named, never an envelope that hides it' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
   } else {
-  ST-Check 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' (
+  ST-Check 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields exit 1 with the refusal named, never an envelope that hides it' (
     $xSubRan -and $xNegRan -and
     $xSubCode -eq 0 -and $xSubTop -ceq (Get-ActionJsonKeySet) -and
-    @($xSubObj.lines).Count -ge 1 -and [int]$xSubObj.schemaVersion -eq 3 -and "$($xSubObj.command)" -eq 'unmap' -and
-    $xNegCode -eq 1 -and $xNegOut.Contains('ERROR:') -and -not $xNegOut.Contains('"schemaVersion"'))
+    @($xSubObj.lines).Count -ge 1 -and [int]$xSubObj.schemaVersion -eq 4 -and "$($xSubObj.command)" -eq 'unmap' -and
+    $xNegCode -eq 1 -and ([string]$xNegLeg.err).Contains('ERROR:') -and $null -ne $xNegObj -and
+    ([bool]$xNegObj.ok -eq $false) -and ([string]$xNegObj.message).Contains('DTX-NoSuchWindow-ZZ'))
   }
+  # M9 (2026-11-06): the failure envelope
+  # The unit leg pins the classifier's stable answers plus the unknown fallback. The two e2e legs
+  # pin the caller's road: under --json the failure is one parseable ok:false line on stdout and
+  # the human ERROR line moves to stderr; without the flag stdout is byte-for-byte the pre-M9 road.
+  $m9Rows = @(
+    @('InvalidArgument', 'ERR_USAGE', 'usage', $false),
+    @('ObjectNotFound', 'ERR_TARGET', 'target', $false),
+    @('OperationTimeout', 'ERR_TIMEOUT', 'timeout', $true),
+    @('OperationStopped', 'ERR_FAILED', 'command', $false),
+    @('PermissionDenied', 'ERR_PERMISSION', 'environment', $false),
+    @('SomethingNew', 'ERR_UNCLASSIFIED', 'internal', $false)
+  )
+  $m9Bad = @()
+  foreach ($m9R in $m9Rows) {
+    $m9ObjUnit = $null
+    try { $m9ObjUnit = (Get-InvocationErrorEnvelope $m9R[0] 'probe message' 'click') | ConvertFrom-Json } catch { $m9ObjUnit = $null }
+    if (($null -eq $m9ObjUnit) -or ([string]$m9ObjUnit.code -cne $m9R[1]) -or ([string]$m9ObjUnit.category -cne $m9R[2]) -or
+      ([bool]$m9ObjUnit.retryable -ne [bool]$m9R[3]) -or ([string]$m9ObjUnit.message -cne 'probe message')) { $m9Bad += [string]$m9R[0] }
+  }
+  ST-Check 'unit (M9): the failure classifier gives five recognised categories and an unknown one their stable code/category/retryable, and the message survives verbatim' (
+    (@($m9Bad).Count -eq 0))
+  if (@($m9Bad).Count -gt 0) { Write-Output ('      classifier drift: ' + ($m9Bad -join ',')) }
+  $m9Top = ''
+  if ($null -ne $xNegObj) { $m9Top = (@($xNegObj.PSObject.Properties.Name) | Sort-Object) -join ',' }
+  $m9WantTop = Get-InvocationErrorKeySet
+  ST-Check 'e2e (M9): under --json a failure is exactly one ok:false envelope on stdout (the pinned seven-key set, ERR_FAILED/command) while the ERROR line stays on stderr and the exit code stays 1' (
+    $xNegRan -and $xNegCode -eq 1 -and $null -ne $xNegObj -and ($m9Top -ceq $m9WantTop) -and
+    ([int]$xNegObj.schemaVersion -eq 4) -and ([string]$xNegObj.command -ceq 'click') -and ([bool]$xNegObj.ok -eq $false) -and
+    ([string]$xNegObj.code -ceq 'ERR_FAILED') -and ([string]$xNegObj.category -ceq 'command') -and
+    ([bool]$xNegObj.retryable -eq $false) -and ([string]$xNegObj.message).Contains('DTX-NoSuchWindow-ZZ') -and
+    ([string]$xNegLeg.err).Contains('ERROR: ') -and -not ([string]$xNegLeg.out).Contains('ERROR:'))
+  $m9TextLeg = & $cnpRun -ChildArgs @('click', '10', '10', '--to', 'DTX-NoSuchWindow-ZZ')
+  $m9TextOut = @($m9TextLeg.out)
+  $m9SameMsg = $false
+  if ($null -ne $xNegObj -and @($m9TextOut).Count -eq 1 -and ([string]$m9TextOut[0]).StartsWith('ERROR: ')) {
+    $m9SameMsg = ([string]$m9TextOut[0]).Substring(7) -ceq [string]$xNegObj.message
+  }
+  ST-Check 'e2e (M9): the same failure without --json keeps the text road byte-exactly - one ERROR: line on stdout, no JSON, the same message and exit 1' (
+    $m9TextLeg.ran -and $m9TextLeg.code -eq 1 -and @($m9TextOut).Count -eq 1 -and
+    ([string]$m9TextOut[0]).StartsWith('ERROR: ') -and $m9SameMsg -and
+    (-not ([string]$m9TextLeg.out).Contains('"schemaVersion"')))
   try { if (Test-Path -LiteralPath $xImg) { Remove-Item -LiteralPath $xImg -Force } } catch { }
   try { if (Test-Path -LiteralPath ($xImg + '.map.txt')) { Remove-Item -LiteralPath ($xImg + '.map.txt') -Force } } catch { }
   # G-23: whole-stream evidence, taken BEFORE any head is cut. Deliberately not a banner rule line: the
@@ -31062,13 +32238,47 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
       (-not $pt6Stop.Out.Contains('#3')) -and (-not $pt6Stop.Out.Contains('PT6-after')))
 
     $pt6Json = & $pt6Run ('script "' + $pt6File + '" --json') 'json'
-    ST-Check 'contract (PT-6): script --json is rejected before step 1 because script has no JSON envelope; it is not accepted and silently emitted as text' (
-      ($pt6Json.Code -eq 1) -and $pt6Json.Out.Contains("--json is not supported by 'script'") -and
+    $pt6JsonObj = $null
+    try { $pt6JsonObj = $pt6Json.Out | ConvertFrom-Json } catch { $pt6JsonObj = $null }
+    ST-Check 'contract (PT-6): script --json is rejected before step 1 because script has no JSON envelope; under the M9 failure envelope stdout is one ok:false line naming the stable code, stderr carries ERROR, and no step ran' (
+      ($pt6Json.Code -eq 1) -and ($null -ne $pt6JsonObj) -and ($pt6JsonObj.ok -eq $false) -and
+      ([string]$pt6JsonObj.command -ceq 'script') -and ([string]$pt6JsonObj.code -ceq 'ERR_FAILED') -and
+      ([string]$pt6JsonObj.category -ceq 'command') -and ([string]$pt6JsonObj.message).Contains("--json is not supported by 'script'") -and
+      $pt6Json.Err.Contains("ERROR: --json is not supported by 'script'") -and
       (-not $pt6Json.Out.Contains('#1')) -and (-not $pt6Json.Out.Contains('slept ')) -and
       (-not (Test-JsonCapableCommand 'script')) -and ([string](Get-UsageText) -notmatch '(?i)ime-state/script'))
     Write-Output ("      PT-6 child streams (stdout/stderr bytes): success=$($pt6Success.OutBytes)/$($pt6Success.ErrBytes) sha=$($pt6Success.OutSha)/$($pt6Success.ErrSha); continue=$($pt6Continue.OutBytes)/$($pt6Continue.ErrBytes) sha=$($pt6Continue.OutSha)/$($pt6Continue.ErrSha); stop=$($pt6Stop.OutBytes)/$($pt6Stop.ErrBytes); json=$($pt6Json.Code)")
   }
   if (Test-Path -LiteralPath $pt6Dir) { Remove-Item -LiteralPath $pt6Dir -Recurse -Force }
+  # M8 (2026-11-06): a forced DPI fallback is visible on stderr and absent from stdout.
+  $m8HadForce = Test-Path Env:\DTX_DPI_FORCE
+  $m8SavedForce = ''
+  if ($m8HadForce) { $m8SavedForce = [string]$env:DTX_DPI_FORCE }
+  $m8Dpi = $null; $m8Wins = $null
+  try {
+    $env:DTX_DPI_FORCE = 'per-monitor-v2'
+    $m8Dpi = & $cnpRun -ChildArgs @('dpi')
+    $m8Wins = & $cnpRun -ChildArgs @('wins', '--json')
+  } finally {
+    if ($m8HadForce) { $env:DTX_DPI_FORCE = $m8SavedForce } else { Remove-Item Env:\DTX_DPI_FORCE -ErrorAction SilentlyContinue }
+  }
+  $m8DpiWarn = @(($m8Dpi.err -split "`r?`n") | Where-Object { $_ -match 'WARNING: dpi=' })
+  $m8WinsObj = $null
+  try { $m8WinsObj = $m8Wins.out | ConvertFrom-Json } catch { $m8WinsObj = $null }
+  $m8WinsWarn = @(($m8Wins.err -split "`r?`n") | Where-Object { $_ -match 'WARNING: dpi=' })
+  ST-Check 'unit (M8): the fallback warning text exists for system/unaware and is empty for per-monitor-v2' (
+    ((Get-DpiFallbackWarning 'per-monitor-v2') -eq '') -and
+    ((Get-DpiFallbackWarning 'system').Contains('per-monitor-v2 unavailable')) -and
+    ((Get-DpiFallbackWarning 'unaware').Contains('system-aware unavailable')))
+  ST-Check 'e2e (M8): a forced v2 fallback prints exactly one dpi WARNING on stderr, reports dpi-mode=system, and adds nothing to stdout' (
+    ($m8Dpi.code -eq 0) -and $m8Dpi.out.Contains('dpi-mode=system') -and (-not $m8Dpi.out.Contains('WARNING: dpi=')) -and (@($m8DpiWarn).Count -eq 1))
+  ST-Check 'e2e (M8): the same fallback leaves a wins --json read array parseable with a real window row and no warning in stdout' (
+    ($m8Wins.code -eq 0) -and (@($m8WinsObj).Count -ge 1) -and ([int](@($m8WinsObj)[0].pid) -gt 0) -and
+    (-not $m8Wins.out.Contains('WARNING: dpi=')) -and (@($m8WinsWarn).Count -eq 1))
+  # M6 (2026-11-06): the value-less global switch must be stripped BEFORE any parser sees it.
+  $m6Dry = & $cnpRun -ChildArgs @('shots-cleanup', '--keep', '5', '--no-auto-trim')
+  ST-Check 'e2e (M6): --no-auto-trim is stripped at the boundary, so shots-cleanup --keep 5 --no-auto-trim dry-runs (exit 0) instead of refusing an unknown flag' (
+    ($m6Dry.code -eq 0) -and (-not $m6Dry.out.Contains('unknown flag')) -and (-not $m6Dry.err.Contains('unknown flag')))
 
 }
 
@@ -31457,6 +32667,37 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
   ST-Check 'unit: autoexpect needle of a whitespace-only payload is empty (readback skipped)' ((Get-AutoExpectNeedle "  `n`t`n") -ceq '')
   ST-Check 'unit: autoexpect needle of an empty payload is empty' ((Get-AutoExpectNeedle '') -ceq '')
 
+  # N-1 (owner real-machine report 2026-11-06): attachment landing is THREE states.
+  # The live chip elides the middle of a long name and appends a size ("...Zeyu.docx (450.7K)"),
+  # so a contiguous full-name needle can never match. The probe takes the head from the stem and
+  # the tail from the FULL name (the extension survives the elision), and neither half is a
+  # strong assertion - the verdict is weak by construction and `absent` is the only non-zero state.
+  $apLong = Get-AttachmentProbe 'LabReport4_20261025-Zeyu.docx'
+  ST-Check 'unit (N-1): attachment probe = 10-char head from the stem + 6-char tail from the FULL name (extension survives the elision)' (
+    ($apLong.HeadChars -eq 10) -and ($apLong.Head -ceq 'LabReport4') -and ($apLong.TailChars -eq 6) -and $apLong.Tail.EndsWith('.docx'))
+  $apShort = Get-AttachmentProbe 'a.docx'
+  ST-Check 'unit (N-1): a short name still yields a usable probe instead of throwing (head and tail never collapse to the same needle)' (
+    ($apShort.HeadChars -ge 1) -and ($apShort.TailChars -ge 1) -and ($apShort.Head -cne $apShort.Tail))
+  $apEmpty = Get-AttachmentProbe ''
+  ST-Check 'unit (N-1): an empty name yields an empty probe (the runner reports unverified instead of asserting)' (
+    ($apEmpty.Head -eq '') -and ($apEmpty.Tail -eq ''))
+  # The two real chip shapes the owner reported: middle elided (head survives) and tail elided
+  # (extension survives). Both carry the " (450.7K)" suffix.
+  $apChipElidedMiddle = 'LabReport4_2...Zeyu.docx (450.7K)'
+  $apChipElidedTail = 'LabReport4_20261025-....docx (450.7K)'
+  ST-Check 'unit (N-1): a chip with the MIDDLE elided still matches the head (and keeps the size suffix out of the needle)' (
+    $apChipElidedMiddle.Contains($apLong.Head))
+  ST-Check 'unit (N-1): a chip with the TAIL elided still matches the survivor (the probe never demands the full name)' (
+    $apChipElidedTail.Contains($apLong.Head) -or $apChipElidedTail.Contains($apLong.Tail))
+  $avHead = Get-AttachmentLandingVerdict @{ HeadHit = $true; TailHit = $false }
+  $avTail = Get-AttachmentLandingVerdict @{ HeadHit = $false; TailHit = $true }
+  ST-Check 'unit (N-1): either half of the name (head or tail) = unverified -> Ok, stable code, weak flag (no full-name equality demanded)' (
+    ($avHead.State -ceq 'unverified') -and ($avHead.Code -ceq 'PASTE_LANDED_UNVERIFIED') -and [bool]$avHead.Ok -and [bool]$avHead.Weak -and
+    ($avTail.State -ceq 'unverified') -and ($avTail.Criterion -ceq 'tail-probe'))
+  $avNone = Get-AttachmentLandingVerdict @{ HeadHit = $false; TailHit = $false }
+  ST-Check 'unit (N-1): nothing speaking = absent, the ONLY state that may exit non-zero (stable code)' (
+    ($avNone.State -ceq 'absent') -and ($avNone.Code -ceq 'PASTE_NOT_LANDED') -and (-not [bool]$avNone.Ok))
+
   $aeMockSeen = New-Object System.Collections.ArrayList
   $aeMockReal = ${function:Invoke-Expectation}
   $aeReceiptSeen = New-Object System.Collections.ArrayList
@@ -31543,6 +32784,23 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     $aeSkip6 = Invoke-AutoPasteExpect $pAnyGone $null 'DTXMOCKTAIL'
     ST-Check 'unit: an --expect-any / --expect-any-gone list counts as an explicit expectation and skips the readback' (
       @($aeMockSeen).Count -eq 0 -and (-not $aeSkip5.Ran) -and (-not $aeSkip6.Ran))
+    # N-1 runner: renders the three states, and an explicit expectation is never overridden.
+    [void]$aeMockSeen.Clear()
+    $script:aeMockOk = $true
+    $alRun = Invoke-AttachmentLanding $pAe $null 'LabReport4_20261025-Zeyu.docx'
+    ST-Check 'unit (N-1): a landed attachment chip is unverified (exit 0), carries the stable code and the do-not-resend wording' (
+      ($null -ne $alRun) -and [bool]$alRun.Ok -and ($alRun.State -ceq 'unverified') -and
+      $alRun.Message.Contains('landing=unverified') -and $alRun.Message.Contains('code=PASTE_LANDED_UNVERIFIED') -and
+      $alRun.Message.Contains('WEAK evidence') -and $alRun.Message.Contains('DO NOT resend'))
+    $alSkip = Invoke-AttachmentLanding $pExplicit $null 'LabReport4_20261025-Zeyu.docx'
+    ST-Check 'unit (N-1): an explicit expectation owns the criterion - the attachment probe refuses to override it' ($null -eq $alSkip)
+    $script:aeMockOk = $false
+    [void]$aeMockSeen.Clear()
+    $alAbsent = Invoke-AttachmentLanding $pAe $null 'LabReport4_20261025-Zeyu.docx'
+    ST-Check 'unit (N-1): a silent target is absent (the only non-zero state) and the probe tried BOTH halves' (
+      ($null -ne $alAbsent) -and (-not [bool]$alAbsent.Ok) -and ($alAbsent.State -ceq 'absent') -and
+      $alAbsent.Message.Contains('code=PASTE_NOT_LANDED') -and (@($aeMockSeen).Count -eq 2))
+    $script:aeMockOk = $true
     # the same gate guards the CHEAP half: a paste that already asserts must not pay for
     # a receipt baseline either. Asserted through the mock, not through the screen.
     [void]$aeMockSeen.Clear()
@@ -31569,8 +32827,8 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     if ($codeLines[$awi] -match '^\s*#') { continue }
     if ($codeLines[$awi].Contains('Invoke-AutoPasteExpect')) { $aeWire += ($awi + 1) }
   }
-  ST-Check 'lint: paste AND paste-file both wire the autoexpect readback (exactly 3 sites: 1 def + 2 calls)' (@($aeWire).Count -eq 3)
-  if (@($aeWire).Count -ne 3) { Write-Output "      autoexpect wiring sites: $(@($aeWire) -join ', ')" }
+  ST-Check 'lint: paste AND paste-file both wire the readback (exactly 4 sites: 1 def + 1 text call + 2 attachment probes)' (@($aeWire).Count -eq 4)
+  if (@($aeWire).Count -ne 4) { Write-Output "      autoexpect wiring sites: $(@($aeWire) -join ', ')" }
   # The skip decision must have ONE producer. Counting calls is not enough on its own:
   # a hand-written enumeration re-added somewhere else would leave the call count alone,
   # so the scan also fails any production line that chains -or through the flags again.
@@ -31591,7 +32849,7 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     if ($tiLine.Contains('Test-ExpectationGiven $')) { $tewCalls += ($ti + 1) }
   }
   ST-Check 'lint: the "an expectation was already given" decision has one producer and no hand-run enumeration left' (
-    ($tewDef -ge 0) -and ($tewEnd -gt $tewDef) -and (@($tewCalls).Count -eq 2) -and (@($tewHand).Count -eq 0))
+    ($tewDef -ge 0) -and ($tewEnd -gt $tewDef) -and (@($tewCalls).Count -eq 3) -and (@($tewHand).Count -eq 0))
   Write-Output ("      expectation-given producer: def=" + (Format-SourceLineRef ($tewDef + 1)) + " calls=" + (Format-SourceLineList $tewCalls) + " hand-run enumerations left=" + @($tewHand).Count)
   $aeNeedleSites = @()
   for ($awi = 0; $awi -lt $codeLines.Count; $awi++) {
@@ -31599,16 +32857,16 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     if ($codeLines[$awi] -match '^\s*#') { continue }
     if ($codeLines[$awi].Contains('Get-AutoExpectNeedle')) { $aeNeedleSites += ($awi + 1) }
   }
-  ST-Check 'lint: both autoexpect call sites derive the needle from the payload (exactly 3 sites)' (@($aeNeedleSites).Count -eq 3)
-  if (@($aeNeedleSites).Count -ne 3) { Write-Output "      needle derivation sites: $(@($aeNeedleSites) -join ', ')" }
+  ST-Check 'lint: the TEXT paste call derives its needle from the payload (exactly 2 sites; attachment uses the probe pair, not the payload tail)' (@($aeNeedleSites).Count -eq 2)
+  if (@($aeNeedleSites).Count -ne 2) { Write-Output "      needle derivation sites: $(@($aeNeedleSites) -join ', ')" }
   $aeGateSites = @()
   for ($awi = 0; $awi -lt $codeLines.Count; $awi++) {
     if ($awi -ge $j5ProdStart -and $awi -lt $j5ProdEnd) { continue }
     if ($codeLines[$awi] -match '^\s*#') { continue }
     if ($codeLines[$awi].Contains('Confirm-AutoExpect')) { $aeGateSites += ($awi + 1) }
   }
-  ST-Check 'lint: both autoexpect call sites run the failure gate (exactly 3 sites: 1 def + 2 calls)' (@($aeGateSites).Count -eq 3)
-  if (@($aeGateSites).Count -ne 3) { Write-Output "      gate wiring sites: $(@($aeGateSites) -join ', ')" }
+  ST-Check 'lint: the TEXT paste call runs the failure gate (exactly 2 sites: 1 def + 1 call; attachment has its own three-state gate)' (@($aeGateSites).Count -eq 2)
+  if (@($aeGateSites).Count -ne 2) { Write-Output "      gate wiring sites: $(@($aeGateSites) -join ', ')" }
   # search string assembled by concatenation: the scan line must not contain its own
   # pattern (the self-match shape that fed "at least N" lints three times in one day)
   $aeUsagePat = "throw 'usage: pas" + "te(-file)? \["
@@ -31796,6 +33054,56 @@ function Invoke-SelftestFamily-ExpectFamily($Ctx) {
     ${function:Format-OcclusionCovering} = $ex5FocReal
     ${function:Get-PasteReceiptOcclusionMax} = $ex5KnobReal
     ${function:Find-OcrHitsScaled} = $ex5OcrReal
+  }
+
+  # N-2 (owner real-machine report 2026-11-06): a whole-window --guard-text hit proves the WINDOW,
+  # not the active conversation - a permanent contact-list entry stays visible after the chat
+  # switches, so the old receipt could pass while looking at somebody else's conversation. The
+  # guard now names its level, and --guard-region title=<needle> maps to the top 48 px title bar.
+  # Level resolution first (pure):
+  ST-Check 'unit (N-2): guard level is window for --guard-text alone, session when --guard-region is given, none when neither' (
+    (Get-GuardLevel 'needle' '') -ceq 'window' -and (Get-GuardLevel '' 'title=needle') -ceq 'session' -and
+    (Get-GuardLevel 'needle' 'title=needle') -ceq 'session' -and (Get-GuardLevel '' '') -ceq 'none')
+  $g2Title = Resolve-GuardRegionSpec 'title=Active Chat' 600 400
+  $g2Rect = Resolve-GuardRegionSpec '10,20,300,80=Active Chat' 600 400
+  $g2Bad = Resolve-GuardRegionSpec 'Active Chat' 600 400
+  ST-Check 'unit (N-2): title=<needle> resolves to the top 48 px of the window, x,y,w,h=<needle> keeps its rect, a spec without = is refused' (
+    ($null -ne $g2Title) -and ($g2Title.Mode -ceq 'title') -and ($g2Title.Needle -ceq 'Active Chat') -and
+    ((@($g2Title.X, $g2Title.Y, $g2Title.W, $g2Title.H)) -join ',') -eq '0,0,600,48' -and
+    ($null -ne $g2Rect) -and ($g2Rect.Mode -ceq 'rect') -and ($g2Rect.Needle -ceq 'Active Chat') -and
+    ((@($g2Rect.X, $g2Rect.Y, $g2Rect.W, $g2Rect.H)) -join ',') -eq '10,20,300,80' -and ($null -eq $g2Bad))
+  # Receipt legs: the real Invoke-ContentGuard runs; only the screen-reading seams are stubbed so the
+  # level wording and the OCR rectangle are measured, not assumed.
+  $g2OcrCalls = New-Object System.Collections.ArrayList
+  $g2Tgt = @{ Handle = [IntPtr]1; Title = 'Mock Chat'; Pid = 7 }
+  $g2OcrReal = ${function:Find-OcrHitsScaled}
+  $g2EngReal = ${function:Get-OcrEngine}
+  $g2TreReal = ${function:Get-TargetRect}
+  $g2OccReal = ${function:Resolve-OcclusionMode}
+  $g2GateReal = ${function:Invoke-OcclusionGate}
+  try {
+    ${function:Get-OcrEngine} = { return @{ Lang = 'mock' } }
+    ${function:Get-TargetRect} = { param($t) return @{ X = 0; Y = 0; W = 600; H = 400 } }
+    ${function:Resolve-OcclusionMode} = { param($v, $a, $s) return @{ Action = 'off' } }
+    ${function:Invoke-OcclusionGate} = { param($r, $h, $a, $g, $d, $sel, $k) return @{ Ran = $false; Pct = 0; Echo = 'mock-skip' } }
+    ${function:Find-OcrHitsScaled} = { param($x, $y, $w, $h, $n, $s, $m, $nt)
+      [void]$g2OcrCalls.Add("$x,$y,$w,$h")
+      return @{ Hits = @(@{ X = 0; Y = 0; W = 10; H = 10; Text = 'mock' }); Lines = @('mock'); Scaled = $false } }
+    $g2Win = @(Invoke-ContentGuard $g2Tgt 'KeepVisible' '' 'auto' 16 $false '' $false 5)
+    $g2Ses = @(Invoke-ContentGuard $g2Tgt '' 'title=Active Chat' 'auto' 16 $false '' $false 5)
+    Write-Output ('      N-2 receipts: window=[' + ($g2Win -join ' / ') + '] session=[' + ($g2Ses -join ' / ') + '] ocr=[' + ($g2OcrCalls -join ';') + ']')
+    ST-Check 'e2e (N-2): a whole-window hit is receipted [level=window] with a WINDOW-level warning and reads the whole window' (
+      (@($g2Win).Count -eq 2) -and ($g2Win[0].Contains('[level=window]')) -and
+      ($g2Win[1] -clike '*WINDOW-level*') -and ($g2OcrCalls[0] -ceq '0,0,600,400'))
+    ST-Check 'e2e (N-2): a title-bar hit is receipted [level=session] with no window warning and reads only the top 48 px' (
+      (@($g2Ses).Count -eq 1) -and ($g2Ses[0] -clike '*title bar*') -and ($g2Ses[0].Contains('[level=session]')) -and
+      (-not ($g2Ses[0] -clike '*WINDOW-level*')) -and ($g2OcrCalls[1] -ceq '0,0,600,48'))
+  } finally {
+    ${function:Find-OcrHitsScaled} = $g2OcrReal
+    ${function:Get-OcrEngine} = $g2EngReal
+    ${function:Get-TargetRect} = $g2TreReal
+    ${function:Resolve-OcclusionMode} = $g2OccReal
+    ${function:Invoke-OcclusionGate} = $g2GateReal
   }
 
 }
@@ -37347,11 +38655,133 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     if ($atRun1 -is [System.Collections.IDictionary] -and $atRun1.Contains('Note')) { $atRun1Note = [string]$atRun1['Note'] }
     ST-Check 'e2e: auto-trim states its own bound and the no-deletion promise in the note' (
       ($atRun1Note -match 'keep newest 1') -and ($atRun1Note -match 'nothing was deleted'))
+    # M8 (2026-11-06): a degraded DPI mode writes one dpi-fallback line on the first audited
+    # command of the process, before that command's own line, and never again afterwards.
+    $m8Tmp = Join-Path $env:TEMP ('dtm8_' + [guid]::NewGuid().ToString('N'))
+    $m8SavedMode = [string]$script:DpiMode
+    $m8SavedLog = [string]$ActionLog
+    $m8SavedNoTrim = [bool]$script:NoAutoTrim
+    [void](New-Item -ItemType Directory -Force -Path $m8Tmp)
+    try {
+      # The guard this family leaves ON (line above) is meant for live fixtures; this block's
+      # dirs are throwaway, so the trim has to be re-armed explicitly or both runs return null.
+      $script:NoAutoTrim = $false
+      # The family keeps its own $ActionLog (see the top of this function); the shared file carries
+      # every earlier round's dpi-fallback line, so this block swaps the LOCAL one that the audit
+      # sees through the call chain, and restores it afterwards.
+      $ActionLog = Join-Path $m8Tmp 'actions.log'
+      $m8Shots = Join-Path $m8Tmp 'shots'; $m8Quar = Join-Path $m8Tmp 'quar'
+      [void](New-Item -ItemType Directory -Force -Path $m8Shots); [void](New-Item -ItemType Directory -Force -Path $m8Quar)
+      Set-Variable -Name 'DpiFallbackLogged' -Scope Script -Value $false -Force
+      $script:DpiMode = 'system'
+      $m8Base = (Get-Date).AddMinutes(-10)
+      foreach ($mi in @(1,2)) {
+        $mp = Join-Path $m8Shots ('m' + $mi + '.png'); [System.IO.File]::WriteAllBytes($mp, (New-Object byte[] 50))
+        (Get-Item -LiteralPath $mp).LastWriteTime = $m8Base.AddMinutes($mi * 2)
+      }
+      $m8Run1 = Trim-ShotDir -Dir $m8Shots -why 'selftest-m8' -Keep 1 -QuarOverride $m8Quar -CmdName 'selftest-m8'
+      foreach ($mi in @(3,4)) {
+        $mp = Join-Path $m8Shots ('m' + $mi + '.png'); [System.IO.File]::WriteAllBytes($mp, (New-Object byte[] 50))
+        (Get-Item -LiteralPath $mp).LastWriteTime = $m8Base.AddMinutes($mi * 2)
+      }
+      $m8Run2 = Trim-ShotDir -Dir $m8Shots -why 'selftest-m8' -Keep 1 -QuarOverride $m8Quar -CmdName 'selftest-m8'
+      $m8LogLines = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue)
+      $m8FallbackLines = @($m8LogLines | Where-Object { $_ -match 'dpi-fallback from=per-monitor-v2 to=system' })
+      $m8FirstFallback = -1; $m8LastTrim = -1
+      for ($ml = 0; $ml -lt $m8LogLines.Count; $ml++) {
+        if ($m8LogLines[$ml] -match 'dpi-fallback from=per-monitor-v2 to=system') { if ($m8FirstFallback -lt 0) { $m8FirstFallback = $ml } }
+        if ($m8LogLines[$ml] -match '\| selftest-m8 \| auto-trim --keep 1 selftest-m8 \|') { $m8LastTrim = $ml }
+      }
+      Write-Output ('      M8 audit: log-lines=' + $m8LogLines.Count + ' fallback=' + @($m8FallbackLines).Count + ' first=' + $m8FirstFallback + ' last-trim=' + $m8LastTrim + ' runs=' + ($null -ne $m8Run1) + '/' + ($null -ne $m8Run2))
+      ST-Check 'unit (M8): a degraded DPI mode adds one dpi-fallback line on the first audited command, before its trim, and never repeats it' (
+        ($null -ne $m8Run1) -and ($null -ne $m8Run2) -and (@($m8FallbackLines).Count -eq 1) -and
+        ($m8FirstFallback -ge 0) -and ($m8LastTrim -gt $m8FirstFallback) -and ($null -ne (ConvertFrom-ActionLogLine $m8FallbackLines[0])))
+    } finally {
+      $ActionLog = $m8SavedLog
+      $script:DpiMode = $m8SavedMode
+      $script:NoAutoTrim = $m8SavedNoTrim
+      Remove-Item -LiteralPath $m8Tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
   } finally {
     if ($atHadAutoTrim) { $env:DTX_SHOT_AUTOTRIM = $atSavedAutoTrim }
     else { Remove-Item Env:\DTX_SHOT_AUTOTRIM -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $atTmp) { Remove-Item -LiteralPath $atTmp -Recurse -Force }
   }
+  # M6 (2026-11-06): the automatic trim now AUDITS "moved, deleted nothing", DTX_SHOT_AUTOTRIM=0
+  # writes nothing at all, and --no-auto-trim is a pure global switch the entry wires to the same
+  # script guard this family exercises. A private log keeps earlier rounds out of "no line" evidence.
+  $m6Tmp = Join-Path $env:TEMP ('dtm6_' + [guid]::NewGuid().ToString('N'))
+  $m6SavedLog = [string]$ActionLog
+  $m6SavedNoTrim = [bool]$script:NoAutoTrim
+  $m6HadAutoTrim = Test-Path Env:\DTX_SHOT_AUTOTRIM
+  $m6SavedAutoTrim = ''
+  if ($m6HadAutoTrim) { $m6SavedAutoTrim = [string]$env:DTX_SHOT_AUTOTRIM }
+  [void](New-Item -ItemType Directory -Force -Path $m6Tmp)
+  try {
+    $ActionLog = Join-Path $m6Tmp 'actions.log'
+    $script:NoAutoTrim = $false
+    $m6Shots = Join-Path $m6Tmp 'shots'
+    $m6Quar = Join-Path $m6Tmp 'quarantine'
+    [void](New-Item -ItemType Directory -Force -Path $m6Shots)
+    [void](New-Item -ItemType Directory -Force -Path $m6Quar)
+    $m6Names = @('m6a.png', 'm6b.png', 'm6c.png')
+    $m6Hashes = @{}
+    $m6Sha = [System.Security.Cryptography.SHA256]::Create()
+    for ($mi = 0; $mi -lt $m6Names.Count; $mi++) {
+      $m6Bytes = [byte[]](1..(10 * ($mi + 1)) | ForEach-Object { [byte](($_ + $mi) % 251) })
+      $m6Path = Join-Path $m6Shots $m6Names[$mi]
+      [System.IO.File]::WriteAllBytes($m6Path, $m6Bytes)
+      $m6Hashes[$m6Names[$mi]] = [BitConverter]::ToString($m6Sha.ComputeHash($m6Bytes)).Replace('-', '').ToLower()
+      (Get-Item -LiteralPath $m6Path).LastWriteTime = (Get-Date).AddMinutes(-30 + 2 * $mi)
+    }
+    $env:DTX_SHOT_AUTOTRIM = '1'
+    $m6Run = Trim-ShotDir -Dir $m6Shots -why 'selftest-m6' -Keep 1 -QuarOverride $m6Quar -CmdName 'selftest-m6'
+    $m6Log = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue)
+    $m6Audit = @($m6Log | Where-Object { $_ -match '\| selftest-m6 \| auto-trim --keep 1 selftest-m6 \|' })
+    $m6Moved = @(Get-ChildItem -LiteralPath $m6Quar -File -Filter '*.png' -Recurse)
+    $m6ShaOk = $true
+    foreach ($m6File in $m6Moved) {
+      $m6Hash = [BitConverter]::ToString($m6Sha.ComputeHash([System.IO.File]::ReadAllBytes($m6File.FullName))).Replace('-', '').ToLower()
+      if ((-not $m6Hashes.ContainsKey($m6File.Name)) -or ($m6Hashes[$m6File.Name] -ne $m6Hash)) { $m6ShaOk = $false }
+    }
+    Write-Output ('      M6 audit: moved=' + $m6Moved.Count + ' rows=' + $m6Audit.Count + ' sha-ok=' + $m6ShaOk)
+    ST-Check 'e2e (M6): auto-trim records moved=N and deleted=0 in its audit line, and the quarantined bytes hash the same as the originals' (
+      ($null -ne $m6Run) -and (@($m6Moved).Count -eq 2) -and (@($m6Audit).Count -eq 1) -and
+      (@($m6Audit)[0].Contains('moved=2 ')) -and (@($m6Audit)[0].Contains('deleted=0 ')) -and $m6ShaOk)
+    $m6OffShots = Join-Path $m6Tmp 'shots-off'
+    [void](New-Item -ItemType Directory -Force -Path $m6OffShots)
+    foreach ($m6OffName in @('o1.png', 'o2.png')) {
+      [System.IO.File]::WriteAllBytes((Join-Path $m6OffShots $m6OffName), [byte[]](1..8))
+      (Get-Item -LiteralPath (Join-Path $m6OffShots $m6OffName)).LastWriteTime = (Get-Date).AddMinutes(-20)
+    }
+    $m6LogBefore = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue).Count
+    $env:DTX_SHOT_AUTOTRIM = '0'
+    $m6Off = Trim-ShotDir -Dir $m6OffShots -why 'selftest-m6-off' -Keep 1 -QuarOverride $m6Quar -CmdName 'selftest-m6-off'
+    $m6LogAfter = @(Get-Content -LiteralPath $ActionLog -ErrorAction SilentlyContinue).Count
+    ST-Check 'e2e (M6): DTX_SHOT_AUTOTRIM=0 moves nothing and writes no audit line' (
+      ($null -eq $m6Off) -and (@(Get-ChildItem -LiteralPath $m6OffShots -File).Count -eq 2) -and ($m6LogAfter -eq $m6LogBefore))
+    $m6No = Split-NoAutoTrimFlag @('shots-cleanup', '--keep', '5')
+    $m6Yes = Split-NoAutoTrimFlag @('--no-auto-trim', 'shot', '--no-auto-trim', '--tag', 'x')
+    ST-Check 'unit (M6): Split-NoAutoTrimFlag leaves non-flag tokens in order, removes every occurrence of the value-less switch, and reports presence' (
+      (($m6No.Flag -eq $false) -and ((@($m6No.Args) -join '|') -ceq 'shots-cleanup|--keep|5')) -and
+      (($m6Yes.Flag -eq $true) -and ((@($m6Yes.Args) -join '|') -ceq 'shot|--tag|x')))
+    $m6FlagTok = '(Split-NoAutoTrimF' + 'lag $Rest).Flag'
+    $m6ArmTok = "Set-Variable -Name 'NoAutoT" + "rim' -Scope Script -Value `$true"
+    $m6ArgsTok = '(Split-NoAutoTrimF' + 'lag $Rest).Args'
+    $m6GuardTok = 'if ($script:NoAutoT' + 'rim) { return $null }'
+    ST-Check 'lint (M6): the entry asks the same helper at the boundary, arms the guard Trim-ShotDir honors with the verdict, and rewrites $Rest from the kept list' (
+      (@($codeLines | Where-Object { $_.Contains($m6FlagTok) }).Count -eq 1) -and
+      (@($codeLines | Where-Object { $_.Contains($m6ArmTok) }).Count -eq 1) -and
+      (@($codeLines | Where-Object { $_.Contains($m6ArgsTok) }).Count -eq 1) -and
+      (@($codeLines | Where-Object { $_.Contains($m6GuardTok) }).Count -eq 1))
+  } finally {
+    $ActionLog = $m6SavedLog
+    $script:NoAutoTrim = $m6SavedNoTrim
+    if ($m6HadAutoTrim) { $env:DTX_SHOT_AUTOTRIM = $m6SavedAutoTrim }
+    else { Remove-Item Env:\DTX_SHOT_AUTOTRIM -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $m6Tmp -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
   # Tokens are assembled at runtime so THIS check's own lines never satisfy the shapes it
   # counts - the same evasion the README badge lint uses, and for the same reason.
   $mvTok = '= Move-ShotsTo' + 'Quarantine '
@@ -37929,6 +39359,10 @@ exit 0
     $ccBoundaryParent = [pscustomobject]@{ ParentPid = 0; ParentName = 'unknown'; ParentStartUtc = ''; ParentStartFileTime = ''; Known = $false }
     $ccBoundaryContext = [ordered]@{ RootBase = $ccFullBoundaryRoot; WindowsSessionId = '778'; DesktopName = 'Default'; CallerLabel = 'unknown'; CallerSessionId = 'unknown'; ParentInfo = $ccBoundaryParent; SourcePath = 'D:\synthetic\unknown.ps1'; ToolVersion = '4.5.0' }
     [Console]::SetError($ccBoundaryBuffer)
+    # N-4: the once-per-process guard is reset here on purpose - this block starts its OWN
+    # simulated CLI process boundary, so the unknown-identity line must be observable again
+    # while the second tracking call below still must not repeat it.
+    Set-Variable -Name 'DtxIdentityWarningShown' -Scope Script -Value $false -Force
     $ccTimedOutLease = Start-DtxCallTracking 'info' @() $ccBoundaryContext
     $ccLockWarning = $ccBoundaryBuffer.ToString()
     $ccLockStream.Dispose(); $ccLockStream = $null
@@ -37943,6 +39377,13 @@ exit 0
       $ccCorruptRegistered -and $ccCorruptWarning.Contains('call-state=unknown; one or more state records could not be verified') -and
       $ccCorruptWarning.Contains('caller identity=unknown') -and $ccCorruptKept -and ($ccRemaining -eq 1)
     $ccBoundarySummary = 'lock-timeout=unknown;' + 'corrupt-preserved=' + $ccCorruptKept + ';identity-unknown=' + $ccCorruptWarning.Contains('caller identity=unknown') + ';active-json=' + $ccRemaining
+    # N-4 (2026-11-06): the unlabeled-caller line is a CONTRACT (the live identity legs read its
+    # substring), not a per-call narration. This process started tracking twice with unknown
+    # identity above, so the line must appear exactly once - and its tail is the compact one.
+    $ccIdWarnLines = @(($ccCorruptWarning -split "`r?`n") | Where-Object { $_.Contains('caller identity=unknown') })
+    ST-Check 'unit (N-4): an unknown-caller warning is emitted once per process, keeps the pinned substring and stays a compact single line' (
+      (@($ccIdWarnLines).Count -eq 1) -and (@($ccIdWarnLines)[0].Contains('desktop exclusivity not established')) -and
+      (@($ccIdWarnLines)[0].Length -le 120))
   } catch {
     $ccBoundarySummary = 'state-boundary-error=' + $_.Exception.Message
   } finally {
@@ -38171,11 +39612,14 @@ exit 0
   # production-scoped on purpose: the two literals below are also written into this check's own
   # source, so an unscoped scan counts the scanner (same self-reference the pixel-hash token had
   # to be assembled at runtime to dodge).
-  $aeFive = 0; $aeThree = 0
+  $aeFive = 0; $aeThree = 0; $aeAtt = 0; $aeAttHead = 0; $aeAttTail = 0
   foreach ($aeL in $mvProd) {
     $aeT = "$aeL"
     if ($aeT.Contains($aeProbeTok)) { $aeFive++ }
     if ($aeT.Contains('Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)')) { $aeThree++ }
+    if ($aeT.Contains('Invoke-AttachmentLanding $p $target $fi.Name')) { $aeAtt++ }
+    if ($aeT.Contains('Invoke-AutoPasteExpect $p $target $headArg')) { $aeAttHead++ }
+    if ($aeT.Contains('Invoke-AutoPasteExpect $p $target ([string]$probe.Tail)')) { $aeAttTail++ }
   }
   $aeDoc = ''
   $aeDocsSeen = 0
@@ -38191,8 +39635,8 @@ exit 0
   # (a lint enforces exactly that, and it bit the first draft of this check).
   $aeNeedle = 'paste-file` ' + [string]::Join('', @([char]0x4E0D, [char]0x8D70, [char]0x8FD9, [char]0x6761, [char]0x8DEF))
   if ($aeDocsSeen -gt 0) {
-    ST-Check 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length, paste-file passes neither) and the README still says so - a silent convergence would be a behaviour change' (
-      ($aeFive -eq 1) -and ($aeThree -eq 1) -and ($aeDoc.Contains($aeNeedle)))
+    ST-Check 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length; paste-file routes through the attachment probe pair and passes NEITHER) and the README still says so - a silent convergence would be a behaviour change' (
+      ($aeFive -eq 1) -and ($aeThree -eq 0) -and ($aeAtt -eq 1) -and ($aeAttHead -eq 1) -and ($aeAttTail -eq 1) -and ($aeDoc.Contains($aeNeedle)))
   } else {
     ST-Skip 'lint (P-06): paste and paste-file differ in the receipt chain ON PURPOSE (paste passes the base and the length, paste-file passes neither) and the README still says so - a silent convergence would be a behaviour change' 'no README found in this tree - nothing to cross-check the code shape against'
   }
@@ -38490,6 +39934,70 @@ public static class DtxWheelProbe {
   function Get-WheelProbePointObservation([int]$X, [int]$Y, $Target, [string]$Phase, [bool]$RequireForeground = $false) {
     return [pscustomobject]@{ X = $X; Y = $Y; Hit = @{ Hwnd = [IntPtr]77; Pid = 91; Title = 'synthetic-wheel-target' }; Foreground = [IntPtr]::Zero; Rect = $null; TargetVerified = $false; Phase = $Phase }
   }
+  # L1 (2026-11-06): three probe texts were run through the old string runner on the promise that
+  # only known names were ever spliced in. The promise is now a gate: parse, refuse ANY command or
+  # type outside the pinned set (refusal is red and nothing runs), then execute the string as a
+  # scriptblock in THIS scope. The constant set's hash is pinned beside the checks, so a new name
+  # needs both the constant and the fixtures changed at once.
+  function Get-ProbeAllowedCommands {
+    return @(
+      'Add-Member', 'Convert-PointSpace', 'ConvertTo-ExpectChangeRect', 'ConvertTo-WheelProbeExpectRect',
+      'Default-ShotProbeName', 'Emit-ResolveNote', 'Format-ModifierReceipt', 'Get-ExpectChangeBaseline',
+      'Get-ExpectChangeRegion', 'Get-HashKeys', 'Get-OptValue', 'Get-PointSpaceOrigin', 'Get-RegionHash',
+      'Get-ShotProbeVirtualScreen', 'Get-WheelPointObservation-probe', 'Get-WheelProbeBaseline',
+      'Get-WheelProbeExpectRegion', 'Get-WheelProbeHash',
+      'Get-WheelProbeHitWindow', 'Get-WheelProbePointObservation', 'Get-WheelProbeRect',
+      'Get-WheelProbeScrollObservation', 'Get-WheelProbeVisibleTextObservation',
+      'Get-WheelScrollObservation', 'Get-WheelVisibleTextObservation', 'Invoke-ExpectChangeCheck',
+      'Invoke-ModifierGesture', 'Invoke-ShotProbeOwners', 'Invoke-TargetBlockGuard', 'Invoke-WheelProbeClick',
+      'Invoke-WheelProbeEmitResolveNote', 'Invoke-WheelProbeExpectChange', 'Invoke-WheelProbeLog',
+      'Invoke-WheelProbeSleep', 'New-CaptureQualityDefaults', 'New-Object', 'Parse-CaptureFlags-shot-probe',
+      'Read-FlagNumber', 'Resolve-MouseModifiers', 'Resolve-OcclGridArg', 'Resolve-OccludeModeArg',
+      'Resolve-ShotOutputPath', 'Resolve-ShotProbeOcclusionMode', 'Resolve-Target', 'Resolve-WheelProbeTarget',
+      'Resolve-WheelRequest', 'Save-ShotProbeRect', 'Split-OcclusionFlags-shot-probe', 'Split-Target',
+      'Strip-OwnFlags', 'Test-CaptureQualityFlag', 'Test-PointSpaceArg', 'Test-WheelScrollBoundary',
+      'Test-WheelScrollBoundary-probe', 'Test-WheelScrollDirection', 'Test-WheelScrollDirection-probe',
+      'Where-Object', 'Write-Output'
+    )
+  }
+  function Get-ProbeAllowedTypes {
+    return @('DtxWheelProbe', 'Math', 'string', 'System.Diagnostics.Stopwatch', 'System.Runtime.InteropServices.Marshal')
+  }
+  function Test-ProbeTextAllowed([string]$Text, [string]$Label) {
+    $probeTokens = $null; $probeErrors = $null
+    $probeAst = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$probeTokens, [ref]$probeErrors)
+    if (@($probeErrors).Count -gt 0) { throw "probe $Label no longer parses" }
+    # `& $sb` carries no command name, so the whitelist cannot see what it would invoke. The one
+    # shape these texts are allowed to use is a call through a scriptblock literal assigned in the
+    # same text (wheelSend), and the scan below resolves that before the name check runs. The body
+    # of such a literal is itself scanned, so the allowance cannot smuggle an unlisted name in.
+    $probeSbVars = @{}
+    foreach ($probeAssign in $probeAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+      $probeRhs = $probeAssign.Right
+      if ($probeRhs -is [System.Management.Automation.Language.CommandExpressionAst]) { $probeRhs = $probeRhs.Expression }
+      if (($probeAssign.Left -is [System.Management.Automation.Language.VariableExpressionAst]) -and ($probeRhs -is [System.Management.Automation.Language.ScriptBlockExpressionAst])) {
+        $probeSbVars[[string]$probeAssign.Left.VariablePath.UserPath] = $true
+      }
+    }
+    $probeAllowed = Get-ProbeAllowedCommands
+    $probeBad = New-Object System.Collections.ArrayList
+    foreach ($probeCmd in $probeAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+      $probeName = $probeCmd.GetCommandName()
+      if ($null -eq $probeName) {
+        $probeCall = [regex]::Match($probeCmd.Extent.Text.Trim(), '^&\s*\$([A-Za-z0-9_]+)$')
+        if ($probeCall.Success -and $probeSbVars.ContainsKey($probeCall.Groups[1].Value)) { continue }
+        [void]$probeBad.Add(($probeCmd.Extent.Text.Trim() -split "`n")[0])
+        continue
+      }
+      if ($probeAllowed -notcontains $probeName) { [void]$probeBad.Add($probeName) }
+    }
+    if ($probeBad.Count -gt 0) { throw "probe $Label reached an unlisted command: $(@($probeBad) -join ', ')" }
+    $probeTypes = @($probeAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.TypeExpressionAst] }, $true) | ForEach-Object { $_.TypeName.FullName })
+    $probeOkTypes = Get-ProbeAllowedTypes
+    $probeBadTypes = @($probeTypes | Where-Object { $probeOkTypes -notcontains $_ })
+    if (@($probeBadTypes).Count -gt 0) { throw "probe $Label reached an unlisted type: $($probeBadTypes -join ',')" }
+    return $true
+  }
   $wheelAllText = $codeLines -join "`n"
   $wheelTokens = $null; $wheelParseErrors = $null
   $wheelAst = [System.Management.Automation.Language.Parser]::ParseInput($wheelAllText, [ref]$wheelTokens, [ref]$wheelParseErrors)
@@ -38500,7 +40008,9 @@ public static class DtxWheelProbe {
   $wheelProbeText = $wheelProbeText.Replace('[DT]', '[DtxWheelProbe]').Replace('DT+POINT', 'DtxWheelProbe+POINT')
   $wheelProbeText = $wheelProbeText.Replace('Start-Sleep -Milliseconds', 'Invoke-WheelProbeSleep -Milliseconds')
   $wheelProbeText = $wheelProbeText.Replace('Log-Action ', 'Invoke-WheelProbeLog ').Replace('Resolve-Window ', 'Resolve-WheelProbeWindow ').Replace('Move-Click ', 'Invoke-WheelProbeClick ')
-  if ($wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) { Invoke-Expression $wheelProbeText }
+  if ($wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) {
+    if (Test-ProbeTextAllowed $wheelProbeText 'wheel-no-target') { . ([scriptblock]::Create($wheelProbeText)) }
+  }
   [DtxWheelProbe]::Reset()
   $wheelProbeOutput = @()
   if ($wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) {
@@ -38679,7 +40189,8 @@ public static class DtxWheelProbe {
     $wheelProbeHandlerText = $wheelProbeHandlerText.Replace([string]$wheelReplacement.Old, [string]$wheelReplacement.New)
   }
   if ($wheelObservationAst -and $wheelHandlerAst -and @($wheelParseErrors).Count -eq 0) {
-    Invoke-Expression ($wheelProbeObservationText + "`n" + $wheelBoundaryText + "`n" + $wheelDirectionText + "`n" + $wheelProbeHandlerText)
+    $wheelObservationCombined = $wheelProbeObservationText + "`n" + $wheelBoundaryText + "`n" + $wheelDirectionText + "`n" + $wheelProbeHandlerText
+    if (Test-ProbeTextAllowed $wheelObservationCombined 'wheel-observation') { . ([scriptblock]::Create($wheelObservationCombined)) }
   }
 
   Reset-WheelProbe
@@ -38962,7 +40473,10 @@ public static class DtxWheelProbe {
   $shotCaptureAst = $wheelAst.Find({ param($node) ($node -is [System.Management.Automation.Language.FunctionDefinitionAst]) -and ($node.Name -ceq 'Parse-CaptureFlags') }, $true)
   $shotOcclusionText = if ($shotOcclusionAst) { $shotOcclusionAst.Extent.Text.Replace('function Split-OcclusionFlags(', 'function Split-OcclusionFlags-shot-probe(') } else { '' }
   $shotCaptureText = if ($shotCaptureAst) { $shotCaptureAst.Extent.Text.Replace('function Parse-CaptureFlags(', 'function Parse-CaptureFlags-shot-probe(') } else { '' }
-  if ($shotOcclusionText -and $shotCaptureText -and $shotProbeText) { Invoke-Expression ($shotOcclusionText + "`n" + $shotCaptureText + "`n" + $shotProbeText) }
+  if ($shotOcclusionText -and $shotCaptureText -and $shotProbeText) {
+    $shotProbeCombined = $shotOcclusionText + "`n" + $shotCaptureText + "`n" + $shotProbeText
+    if (Test-ProbeTextAllowed $shotProbeCombined 'shot-capture') { . ([scriptblock]::Create($shotProbeCombined)) }
+  }
   function Reset-ShotProbe {
     $script:ShotProbeScreenReads = 0; $script:ShotProbeSaveCalls = 0; $script:ShotProbeSavedPath = ''
   }
@@ -39017,12 +40531,57 @@ public static class DtxWheelProbe {
     $shotResolveAt -ge 0 -and $shotResolveAt -lt $shotScreenAt -and $shotScreenAt -lt $shotSaveAt -and $shotHelpContract)
   Write-Output ('      shot probe: invalid-cases=' + $shotBadCount + '/' + @($shotBadCases).Count + ' screen-reads=' + $script:ShotProbeScreenReads + ' save-calls=' + $script:ShotProbeSaveCalls)
 
+  # L1 (2026-11-06): the three probe texts above used to be handed to the string runner on the promise
+  # that only known names were ever spliced in. The promise is now a gate, and the three rows below
+  # prove the three properties the plan asked for: an unlisted name is refused BEFORE the body runs,
+  # the constant set is pinned by a hash, and each call site gates first and executes the text as a
+  # scriptblock in this scope (the shape the probe definitions depend on).
+  $l1MarkPath = Join-Path ([System.IO.Path]::GetTempPath()) ('dtx-l1-refuse-' + [guid]::NewGuid().ToString('N') + '.txt')
+  $l1Refused = $false
+  $l1RefusalText = "Set-Content -LiteralPath '" + $l1MarkPath + "' -Value 'ran'`n"
+  try { if (Test-ProbeTextAllowed $l1RefusalText 'l1-refusal') { . ([scriptblock]::Create($l1RefusalText)) } }
+  catch { $l1Refused = $true }
+  $l1Marker = Test-Path -LiteralPath $l1MarkPath
+  if ($l1Marker) { Remove-Item -LiteralPath $l1MarkPath -ErrorAction SilentlyContinue }
+  $l1AllowedText = 'function Get-L1ProbeSentinel { return 7 }'
+  $l1AllowedRan = $false
+  try {
+    if (Test-ProbeTextAllowed $l1AllowedText 'l1-allowed') { . ([scriptblock]::Create($l1AllowedText)) }
+    $l1AllowedRan = ((Get-L1ProbeSentinel) -eq 7)
+  } catch { $l1AllowedRan = $false }
+  ST-Check 'unit (L1): an unlisted command in a probe text is refused before the body runs, and a listed text still executes in the scope that declares it' (
+    $l1Refused -and (-not $l1Marker) -and $l1AllowedRan)
+  Write-Output ('      L1 gate: refused=' + $l1Refused + ' marker=' + $l1Marker + ' allowed-ran=' + $l1AllowedRan)
+
+  $l1CmdSet = @(Get-ProbeAllowedCommands | Sort-Object)
+  $l1TypeSet = @(Get-ProbeAllowedTypes | Sort-Object)
+  $l1Blob = 'commands' + "`n" + ($l1CmdSet -join "`n") + "`ntypes`n" + ($l1TypeSet -join "`n")
+  $l1Hasher = [System.Security.Cryptography.SHA256]::Create()
+  $l1Hash = (@($l1Hasher.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($l1Blob)) | ForEach-Object { $_.ToString('x2') }) -join '')
+  $l1HashPin = '7a09c40c09415923a65f00735c3eca83dd0775283ecce4f0fc11e01a11ac4066'
+  $l1OldRunner = 'Invoke' + '-Expression'
+  $l1OldCount = @([regex]::Matches(($srcLines -join "`n"), [regex]::Escape([string]$l1OldRunner))).Count
+  ST-Check 'lint (L1): the probe whitelist hashes to the pinned constant, and the removed string runner appears nowhere in the aggregated source' (
+    ($l1Hash -ceq $l1HashPin) -and ($l1OldCount -eq 0))
+  Write-Output ('      L1 whitelist: cmds=' + $l1CmdSet.Count + ' types=' + $l1TypeSet.Count + ' sha=' + $l1Hash + ' old-runner=' + $l1OldCount)
+
+  $l1SiteNames = @('wheelProbeText', 'wheelObservationCombined', 'shotProbeCombined')
+  $l1SrcText = $srcLines -join "`n"
+  $l1SiteGate = 0; $l1SiteRun = 0
+  foreach ($l1SiteName in $l1SiteNames) {
+    if ($l1SrcText.Contains('if (Test-ProbeTextAllowed $' + $l1SiteName + ' ')) { $l1SiteGate++ }
+    if ($l1SrcText.Contains('{ . ([scriptblock]::Create($' + $l1SiteName + ')) }')) { $l1SiteRun++ }
+  }
+  ST-Check 'lint (L1): all three probe blocks pass the gate before running and execute through a scriptblock in the caller''s scope' (
+    @($l1SiteNames).Count -eq 3 -and $l1SiteGate -eq 3 -and $l1SiteRun -eq 3)
+  Write-Output ('      L1 call sites: gated=' + $l1SiteGate + '/3 executed=' + $l1SiteRun + '/3')
+
 }
 
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.9.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -40139,6 +41698,8 @@ desktop.ps1 v4.9.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     was already running when you set them needs a
                                     restart - and the default is ON, so a setting that
                                     did not land keeps trimming rather than stopping.
+                                    Pass the global --no-auto-trim to skip the automatic
+                                    pass for that one run only.
 
     help [<cmd>|--<flag>]           this page with no argument; ONE command's entry as
                                     'help shot'; every line that mentions a flag as
@@ -40164,6 +41725,13 @@ desktop.ps1 v4.9.0 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     (wins/info/rect-of/color-at/find-color/
                                     find-text/read-text/hash/wait-stable/
                                     ime-state/ocr-cap and the script summary)
+    --no-auto-trim                  disarm the AUTOMATIC capture-folder trim for THIS
+                                    run only. The manual shots-cleanup --go path and
+                                    the persistent DTX_SHOT_KEEP / DTX_SHOT_AUTOTRIM
+                                    policy are untouched, so the next run trims again
+                                    unless it also passes this. Value-less and
+                                    stripped before dispatch, so no command parser
+                                    can ever read it as a word (M6).
     --ocr-lang <tag>                pin the OCR recognizer language; validated
                                     against the installed packs (an unavailable
                                     tag errors with the available list)
@@ -40409,7 +41977,11 @@ function Usage { Get-UsageText }
 # class of change is MAJOR (the v3.0.0 B-6 note says so on record); this round ships it on the
 # Y position because the X position is the owner's to call. That conflict is registered as an
 # open adjudication item, not silently eaten.
-$script:JsonSchemaVersion = 3
+# X-07 (v4.9.1) BREAKING CHANGE, declared: 3 -> 4. Every read/find envelope gained
+# clipped / visibleRect / offscreenPx, and find's envelope carries the same three.
+# The version moves because the contract surface grew (the v3.1.0 rationale, applied
+# again); README and the exact key-set selftest move in this same commit.
+$script:JsonSchemaVersion = 4
 
 # X-02: script-scope STATE defaults, declared here rather than left to appear on first write.
 # Under Set-StrictMode -Version Latest a read of a variable that was never assigned is a
@@ -40426,17 +41998,30 @@ $script:ActivationNotice = ''
 $script:ResolveNote = ''
 $script:OcrCapNoteShown = $false
 
-function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
+function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue, $visibility = $null) {
   $occJ = $null
   $covJ = @()
   if ($null -ne $gate) {
     if (-not $gate.Err) { $occJ = [int][math]::Round($gate.Pct) }
     $covJ = @($gate.Covering | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; title = $_.Title; count = $_.Count } })
   }
+  # X-07: clipped / visibleRect / offscreenPx are ALWAYS present so the key set stays
+  # fixed. clipped=false + visibleRect=null + zero offscreenPx is the in-screen case;
+  # a clipped read names the exact visible intersection and the pixels that do not exist.
+  $clipped = $false
+  $visibleRect = $null
+  $offscreenPx = @{ left = 0; top = 0; right = 0; bottom = 0 }
+  if ($null -ne $visibility) {
+    $clipped = [bool]$visibility.Clipped
+    if ($clipped) {
+      $visibleRect = @{ x = [int]$visibility.CX; y = [int]$visibility.CY; w = [int]$visibility.CW; h = [int]$visibility.CH }
+      $offscreenPx = @{ left = [int]$visibility.ClipLeft; top = [int]$visibility.ClipTop; right = [int]$visibility.ClipRight; bottom = [int]$visibility.ClipBottom }
+    }
+  }
   # hashtable first, then cast: a [pscustomobject] literal cannot take a dynamic
   # key name, and the key ORDER of the emitted JSON is hashtable order either way
   # (v1.5.1's shape already was) - consumers must key by name, not position.
-  $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; contentTrust = (Get-UntrustedContentTag); occluded = $occJ; coveredBy = $covJ }
+  $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; contentTrust = (Get-UntrustedContentTag); occluded = $occJ; coveredBy = $covJ; clipped = $clipped; visibleRect = $visibleRect; offscreenPx = $offscreenPx }
   $map[$payloadKey] = $payloadValue
   return [pscustomobject]$map
 }
@@ -40542,6 +42127,12 @@ function Get-ActionJsonSignalKeySet {
 function Get-ActionJsonKeySet {
   return (@('schemaVersion', 'command', 'lines', 'signals') | Sort-Object) -join ','
 }
+# M9 (2026-11-06): the failure road's public key set. Seven names, sorted for the contract check;
+# it is the success set minus lines/signals plus the four failure fields. `ok` is the switch, and
+# code/category/retryable are the stable machine answers - no caller parses the English message.
+function Get-InvocationErrorKeySet {
+  return (@('schemaVersion', 'command', 'ok', 'code', 'category', 'retryable', 'message') | Sort-Object) -join ','
+}
 # The single emission point. Returns ONE compressed JSON string; the caller at the process
 # boundary decides whether to print it or --dump it. It never throws and never drops a line:
 # `lines` is the complete text output, `signals` is a pure subset projection of it.
@@ -40556,6 +42147,41 @@ function Format-ActionJsonEnvelope([string]$cmd, $lines) {
   }
   $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; command = $cmd; lines = $ls; signals = [pscustomobject]$sig }
   return ([pscustomobject]$map | ConvertTo-Json -Compress -Depth 4)
+}
+
+# M9 (2026-11-06): the failure road gets the same single producer as the success road. The
+# classifier is deliberately small: the categories the dispatcher can actually recognise, plus one
+# stable fallback, so a caller branches on code/category instead of parsing English. Text mode
+# never calls this, which is how the text bytes stay untouched; every unknown category lands on
+# ERR_UNCLASSIFIED rather than leaking a raw .NET category name.
+function Get-InvocationErrorEnvelope([string]$category, [string]$message, [string]$cmd) {
+  $code = 'ERR_UNCLASSIFIED'
+  $cat = 'internal'
+  $retry = $false
+  switch ([string]$category) {
+    'InvalidArgument' { $code = 'ERR_USAGE'; $cat = 'usage' }
+    'InvalidData' { $code = 'ERR_USAGE'; $cat = 'usage' }
+    'ParserError' { $code = 'ERR_USAGE'; $cat = 'usage' }
+    'ObjectNotFound' { $code = 'ERR_TARGET'; $cat = 'target' }
+    'ResourceUnavailable' { $code = 'ERR_TARGET'; $cat = 'target' }
+    'OperationTimeout' { $code = 'ERR_TIMEOUT'; $cat = 'timeout'; $retry = $true }
+    # Most handler refusals are a plain `throw 'text'`, whose CategoryInfo is OperationStopped.
+    # Naming that explicitly is what keeps every ordinary refusal out of "internal".
+    'OperationStopped' { $code = 'ERR_FAILED'; $cat = 'command' }
+    'PermissionDenied' { $code = 'ERR_PERMISSION'; $cat = 'environment' }
+    'SecurityError' { $code = 'ERR_PERMISSION'; $cat = 'environment' }
+    default { }
+  }
+  $map = [ordered]@{
+    schemaVersion = [int]$script:JsonSchemaVersion
+    command = [string]$cmd
+    ok = $false
+    code = $code
+    category = $cat
+    retryable = $retry
+    message = [string]$message
+  }
+  return ([pscustomobject]$map | ConvertTo-Json -Compress)
 }
 
 # v3.0.0 (B-6, borrowed from the built-in page tool, which puts this in its own tool
@@ -40983,6 +42609,20 @@ function Strip-OwnFlags([string[]]$tokens, [string]$cmd) {
     $i++
   }
   return @{ Rest = @($rest); Values = $vals; Present = $present }
+}
+
+# M6 (2026-11-06): --no-auto-trim is a GLOBAL, value-less switch. The pure split keeps the entry
+# boundary and the offline gate asking the same question: WHICH tokens remain, and was the
+# switch present. Every occurrence is removed regardless of position - it takes no value, so a
+# token after it is never "its value" and can never be swallowed by it.
+function Split-NoAutoTrimFlag([string[]]$Tokens) {
+  $kept = New-Object System.Collections.ArrayList
+  $seen = $false
+  foreach ($tok in @($Tokens)) {
+    if ("$tok" -eq '--no-auto-trim') { $seen = $true; continue }
+    [void]$kept.Add("$tok")
+  }
+  return @{ Args = @($kept); Flag = $seen }
 }
 
 # v1.5.5 (D-8): an unnamed covering window used to print as `''`, which reads as
@@ -42375,6 +44015,16 @@ try {
     $Rest = @($tmp)
   }
 
+  # M6 (2026-11-06): --no-auto-trim (global, value-less). Disarms the automatic capture-folder
+  # trim for THIS run only - the per-command path and the env/registry policy are untouched -
+  # and is stripped at this boundary so no command parser ever sees it as a word. The pure
+  # helper is asked twice on purpose (verdict, then remaining tokens): this block adds no new
+  # load-time variable beyond the $Rest write the ledger already tracks.
+  if ((Split-NoAutoTrimFlag $Rest).Flag) {
+    Set-Variable -Name 'NoAutoTrim' -Scope Script -Value $true
+    $Rest = @((Split-NoAutoTrimFlag $Rest).Args)
+  }
+
   # v4.6.13 (D-3): --origin <tag>. Consumed at this boundary like the other cross-command
   # flags, because its meaning is "label every audit line THIS RUN writes", not "change one
   # command". The tag is a single token: letters, digits, '.', '-' and '_' (1..32 chars).
@@ -42495,7 +44145,15 @@ try {
   $script:InvocationResult = 'error'
   $script:InvocationExitCode = 1
   try { $script:InvocationErrorCategory = [string]$_.CategoryInfo.Category } catch { $script:InvocationErrorCategory = 'unknown' }
-  Write-Output "ERROR: $($_.Exception.Message)"
+  # M9 (2026-11-06): under --json the failure road keeps stdout parseable: one ok:false envelope
+  # from the same producer family as the success envelope, and the human ERROR line moves to
+  # stderr. Without the flag nothing changes - same text, same stream, same exit code 1.
+  if ($script:Json) {
+    Write-Output (Get-InvocationErrorEnvelope $script:InvocationErrorCategory $_.Exception.Message $Cmd)
+    [Console]::Error.WriteLine("ERROR: $($_.Exception.Message)")
+  } else {
+    Write-Output "ERROR: $($_.Exception.Message)"
+  }
   exit 1
 } finally {
   # v2.0.1 (P-3) last-resort watchdog: whichever way this process leaves (normal end,

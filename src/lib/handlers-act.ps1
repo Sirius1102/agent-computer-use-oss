@@ -1102,7 +1102,7 @@ function Invoke-Handler-dialog-cancel([string]$Cmd, [string[]]$Rest) {
         throw "dialog-cancel: handle pin - this call may only act on $($pin.Expected) but '$sel' is hwnd=$($pin.Actual) pid=$($w.Pid) '$($w.Title)' ($(Format-HandlePinReason $pin)) - NOTHING was pressed."
       }
       Log-Action $Rest "pid=$($w.Pid) title='$($w.Title)'" $Cmd
-      "target: pid=$($w.Pid) hwnd=$($w.Handle) class='$($w.Class)' title='$($w.Title)' (no activation - UIA invoke needs no foreground)"
+      "target: pid=$($w.Pid) hwnd=$($w.Handle) class='$($w.Class)' title='$($w.Title)' (UIA invoke needs no foreground; the Escape fallback activates the dialog first)"
       $r = Invoke-DialogCancel $w ([bool]$own.Values['--allow-window'])
       "cancelled-via=$($r.Via) pressed='$($r.Pressed)' window-gone=$([bool]$r.Confirmed) waited=$($r.WaitedMs)ms"
       "detail: $($r.Note)"

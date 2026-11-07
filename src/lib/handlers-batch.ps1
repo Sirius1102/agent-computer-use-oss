@@ -41,6 +41,14 @@ function Invoke-Handler-imgclick([string]$Cmd, [string[]]$Rest) {
       if ($ix -lt 0 -or $ix -ge $map.OutW -or $iy -lt 0 -or $iy -ge $map.OutH) { throw "imgclick: image coords ($ix,$iy) outside $($map.OutW)x$($map.OutH) of $img" }
       $st = Test-MapSidecarStale $map
       $sp = Convert-ImageToScreen $map $ix $iy
+      # X-07: a mapped point must exist on the screen. The map's origin is the visible
+      # intersection, so a point beyond that edge is not clickable - clicking it would
+      # move the cursor onto a monitor that does not exist. Refused in BOTH dry and
+      # live modes, with the stable code HIT_OFFSCREEN.
+      $spVis = Get-VisibleRegion $sp.X $sp.Y 1 1
+      if ($spVis.FullyOffscreen) {
+        throw "imgclick: HIT_OFFSCREEN: image ($ix,$iy) maps to screen ($($sp.X),$($sp.Y)), outside the virtual screen ($($spVis.VX),$($spVis.VY)) $($spVis.VW)x$($spVis.VH) - the point is not clickable; re-capture inside the screen"
+      }
       $staleNote = ''
       if ($st.Verdict -eq 'unverifiable') { $staleNote = "  ($($st.Msg))" }
       elseif ($st.Verdict -eq 'stale' -and $staleOk) { $staleNote = "  [stale-ok] $($st.Msg)" }
@@ -164,6 +172,13 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
         }
       }
       if ($scale -lt 1 -or $scale -gt 8) { throw 'zoom: scale must be within 1..8' }
+      # X-07: same visibility contract as Save-RectEx. A partially off-screen zoom
+      # enlarges only the visible part (no black filler is ever amplified into the
+      # image), and a fully off-screen one is refused with REGION_CLIPPED.
+      $reqX = $x; $reqY = $y; $reqW = $w; $reqH = $h
+      $zVis = Get-VisibleRegion $x $y $w $h
+      if ($zVis.FullyOffscreen) { throw (Format-RegionClippedError $zVis 'zoom') }
+      if ($zVis.Clipped) { $x = [int]$zVis.CX; $y = [int]$zVis.CY; $w = [int]$zVis.CW; $h = [int]$zVis.CH }
       if (-not $path) { $path = Default-ShotName 'zoom' }
       $contentRoi = Resolve-ContentRoi $contentRoiArg $w $h
       $hostWin = $null; $hostSnap = $null
@@ -222,10 +237,16 @@ function Invoke-Handler-zoom([string]$Cmd, [string[]]$Rest) {
       try { $dst.Save($msZ, [System.Drawing.Imaging.ImageFormat]::Png); $zBytes = $msZ.ToArray() } finally { $msZ.Dispose(); $dst.Dispose() }
       $shaZ = [System.Security.Cryptography.SHA256]::Create()
       try { $zSha = ([BitConverter]::ToString($shaZ.ComputeHash($zBytes)) -replace '-','').ToLower() } finally { $shaZ.Dispose() }
-      $zMapPublish = { Write-MapSidecar $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha $null '' $contentInfo }.GetNewClosure()
+      # D-1 fix: carry the resolved ScriptBlock into the closure; a bare function name is not
+      # visible inside GetNewClosure()'s dynamic module when the entry is invoked with & from a
+      # parent scope (only -File puts those functions in the session scope).
+      $wmsFnZ = ${function:Write-MapSidecar}
+      $zMapPublish = { & $wmsFnZ $path $x $y $scale $ow $oh 'zoom' $hostWin 0 $hostSnap $zSha $null '' $contentInfo $zVis }.GetNewClosure()
       Publish-CapturePair $path $zBytes $zMapPublish
       $size = $zBytes.Length
-      "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size"
+      $zClip = ''
+      if ([bool]$zVis.Clipped) { $zClip = "  clipped=$(Format-VisibilityClip $zVis) req=($reqX,$reqY) ${reqW}x${reqH} captured=($x,$y) ${w}x${h}" }
+      "saved $path  src=($x,$y) ${w}x${h} scale=${scale}x image=${ow}x${oh}  bytes=$size$zClip"
       "click mapping: screen = ($x + ix/$scale, $y + iy/$scale)  (ix,iy = pixel in zoom image)"
       "map: $path.map.txt  (imgclick <image> <ix> <iy> maps back and clicks; unmap prints only)"
       if ($hostWin) { "host binding: --to '$($hb.Sel)' bound pid=$($hostWin.Pid) handle=$(([IntPtr]$hostWin.Handle).ToInt64()) - the sidecar records this window's rect so imgclick --require-verified can compare the crop against it" }
@@ -503,6 +524,9 @@ function Invoke-Handler-unmap([string]$Cmd, [string[]]$Rest) {
       if ($st.Verdict -eq 'gone') { throw "unmap: $($st.Msg)" }
       if ($st.Verdict -eq 'stale' -and -not $staleOk) { throw "unmap: $($st.Msg)" }
       $sp = Convert-ImageToScreen $map $ix $iy
+      # X-07: unmap stays a PURE coordinate calculator - it prints the arithmetic, it does
+      # not click, so an off-screen result is still a legitimate answer here. The refusal
+      # belongs to the action path (imgclick), where the point must actually exist.
       $staleNote = ''
       if ($st.Verdict -eq 'unverifiable') { $staleNote = "  ($($st.Msg))" }
       elseif ($st.Verdict -eq 'stale') { $staleNote = "  [stale-ok] $($st.Msg)" }

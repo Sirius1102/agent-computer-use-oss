@@ -1721,19 +1721,25 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
         "pasted file $($fi.Name) bytes=$($fi.Length), target pid=$($target.Pid) title='$($target.Title)'  (foreground after send: $(Get-ForegroundInfo))  [$restoreNote]"
       }
       Invoke-ActionExpectation $p $target ($(if ($useImage) { 'pasted image' } else { 'pasted file' }))
-      # v1.5.9 (P-1): same default-on readback as paste; the FileDrop's name is the
-      # payload handle the target renders, so the needle comes from the file name.
+      # v1.5.9 (P-1): default-on readback in this case; the FileDrop's name is the payload
+      # handle the target renders. N-1 keeps that promise but routes it through
+      # Invoke-AttachmentLanding, because the live chip elides the middle of the name.
       # CU-OPS package G (v4.6.4): for --image there is nothing textual to read back, and
       # claiming a window effect from a receipt would be exactly the false-green this package
       # exists to kill - so the row says the window was NOT read back instead of faking one.
       if ($useImage) {
         Write-Output '      readback: carrier=image - this tool cannot read pixels back out of a target window; the clipboard digest above proves the PAYLOAD, not the receiving app'
       } else {
-        $auto = Invoke-AutoPasteExpect $p $target (Get-AutoExpectNeedle $fi.Name)
-        if ($auto.Ran) {
-          Log-Action @("autoexpect=$($auto.NeedleChars)chars") "target pid=$($target.Pid) verified=$(if ($auto.Ok) { 'yes' } else { 'no' })" $Cmd
+        # N-1 (owner real-machine report 2026-11-06): the attachment chip elides the middle of a
+        # long name, so the old full-name tail needle was a guaranteed false negative that exited
+        # 1 - scripts read that as "not pasted" and re-sent. Landing is now a THREE-STATE answer
+        # (confirmed / unverified / absent); only `absent` may exit non-zero, and `unverified`
+        # says out loud that it is weak evidence and must not be re-sent blindly.
+        $auto = Invoke-AttachmentLanding $p $target $fi.Name
+        if ($null -ne $auto) {
+          Log-Action @("landing=$($auto.State)", "code=$($auto.Code)") "target pid=$($target.Pid) verified=$(if ($auto.Weak) { 'weak' } elseif ($auto.Ok) { 'yes' } else { 'no' })" $Cmd
           Write-Output $auto.Message
-          Confirm-AutoExpect $auto
+          if (-not $auto.Ok) { throw ('paste-file: landing=absent code=' + $auto.Code + ' - the attachment did not prove its landing; inspect the target before any retry (do NOT resend blindly)') }
         }
       }
       if ($warn) { Write-Output $warn; if ($warn -notlike 'NOTICE*') { exit 1 } }
@@ -1747,25 +1753,36 @@ function Invoke-Handler-paste-file([string]$Cmd, [string[]]$Rest) {
 
 # v4.4.0 (A-15): copy-file - the case body, verbatim
 function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
-      # copy-file [--image] [--replace-clipboard] <path>
+      # copy-file [--image] [--replace-clipboard] [--clipboard-backup <file>] <path>
       # - put a local file on the clipboard as FileDrop (default) or as the IMAGE carrier
-      #   (--image: PNG/BMP pixels, not a path), and verify what landed. Deliberately does NOT
-      #   restore the previous clipboard: leaving the payload there is the point of this
-      #   command (paste / paste-file do restore).
+      #   (--image: PNG/BMP pixels, not a path), and verify what landed. On SUCCESS the payload
+      #   deliberately stays there (that is the point of this command; paste / paste-file restore).
       # - CU-OPS package G (v4.6.4): before ANY write the current clipboard is snapshotted and
       #   the write gate runs. A clipboard holding formats this tool cannot put back is refused
-      #   with their names, unless --replace-clipboard says the loss is intended. This is also
-      #   what makes the flag meaningful for a command that never restores.
+      #   with their names, unless --replace-clipboard says the loss is intended.
+      # - N-3 (owner real-machine report 2026-11-06): --clipboard-backup writes ONE file with the
+      #   OLD content before the destructive write (readable text is backed up automatically when
+      #   --replace-clipboard is used). A failed write/send RESTORES the old clipboard and says
+      #   whether it really came back.
       $useImage = $false
       $replace = $false
+      $backupPath = ''
       $words = New-Object System.Collections.ArrayList
-      foreach ($a in @($Rest)) {
-        $s = "$a"
+      $restList = @($Rest)
+      for ($ri = 0; $ri -lt $restList.Count; $ri++) {
+        $s = "$($restList[$ri])"
         if ($s -eq '--image') { $useImage = $true; continue }
         if ($s -eq '--replace-clipboard') { $replace = $true; continue }
+        if ($s -eq '--clipboard-backup') {
+          if ($ri + 1 -ge $restList.Count) { throw 'copy-file: --clipboard-backup needs a file path' }
+          $backupPath = [string]$restList[$ri + 1]
+          if ($backupPath.StartsWith('--')) { throw 'copy-file: --clipboard-backup got a flag-like token; pass a file path' }
+          $ri++
+          continue
+        }
         [void]$words.Add($s)
       }
-      if ($words.Count -lt 1) { throw 'usage: copy-file [--image] [--replace-clipboard] <path> - --image puts the PNG/BMP PIXELS on the clipboard instead of a FileDrop path' }
+      if ($words.Count -lt 1) { throw 'usage: copy-file [--image] [--replace-clipboard] [--clipboard-backup <file>] <path> - --image puts the PNG/BMP PIXELS on the clipboard instead of a FileDrop path' }
       if ($words.Count -gt 1) { throw ('copy-file takes exactly one path; extra arguments: ' + (@($words | Select-Object -Skip 1) -join ' ')) }
       $srcPath = [string]$words[0]
       # The payload is validated BEFORE the clipboard is read: a bad image path changes nothing.
@@ -1784,13 +1801,36 @@ function Invoke-Handler-copy-file([string]$Cmd, [string[]]$Rest) {
       $fi = Get-Item -LiteralPath $srcPath
       $carrierName = if ($useImage) { 'image' } else { 'file' }
       Log-Action $Rest "file=$($fi.FullName) bytes=$($fi.Length) carrier=$carrierName" $Cmd
+      # N-3: the backup lands BEFORE the destructive write, so a refused backup writes nothing.
+      $autoBackup = $false
+      if (($backupPath -eq '') -and $replace -and (($clip.Kind -eq 'text') -or ($clip.Kind -eq 'both'))) {
+        $backupPath = Join-Path ([System.IO.Path]::GetTempPath()) ('desktop-clipboard-backup-' + (Get-Date).ToString('yyyyMMdd-HHmmss-fff') + '.txt')
+        $autoBackup = $true
+      }
+      if ($backupPath -ne '') {
+        $bk = Write-ClipboardBackupFile $clip $backupPath
+        if (-not [bool]$bk.Ok) {
+          throw ('copy-file: clipboard backup failed (' + $bk.Reason + '); nothing was written, the clipboard is unchanged')
+        }
+        $how = if ($autoBackup) { 'auto backup of readable text' } else { 'backup' }
+        Log-Action @("clipboard-backup=$backupPath", "kind=$($bk.Kind)", "bytes=$($bk.Bytes)") "file=$($fi.FullName) carrier=$carrierName" $Cmd
+        Write-Output ("clipboard $($how): $backupPath (kind=$($bk.Kind), $($bk.Bytes) bytes) - the previous clipboard can be put back from this file")
+      }
       if ($useImage) {
         $ok = Set-ClipboardImageCarrier $carrier
-        if (-not $ok) { throw ('copy-file: the image did not come back after the write (size/digest check failed); the clipboard state is not what the caller asked for: ' + $fi.FullName + '. copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either') }
+        if (-not $ok) {
+          $rf = Get-ClipboardFailureNote $clip ('copy-file: the image did not come back after the write (size/digest check failed): ' + $fi.FullName)
+          Log-Action @("clipboard-restore=$($rf.Verdict)") "file=$($fi.FullName) carrier=image" $Cmd
+          throw ($rf.Text + '. Inspect the clipboard before relying on it again' + $(if ($backupPath -ne '') { '; the old content is recoverable from ' + $backupPath } else { '' }))
+        }
         ("copied image $($carrier.Name)  $($carrier.W)x$($carrier.H)  digest=$($carrier.Hash)  bytes=$($fi.Length)  carrier=image  clipboard verified (same pixels read back)")
       } else {
         $ok = Set-ClipboardFileDrop $fi.FullName
-        if (-not $ok) { throw "copy-file: clipboard verification failed for: $($fi.FullName). copy-file never restores the previous clipboard (leaving the payload is its contract), so the old content was not put back either" }
+        if (-not $ok) {
+          $rf = Get-ClipboardFailureNote $clip ('copy-file: clipboard verification failed for: ' + $fi.FullName)
+          Log-Action @("clipboard-restore=$($rf.Verdict)") "file=$($fi.FullName) carrier=file" $Cmd
+          throw ($rf.Text + '. Inspect the clipboard before relying on it again' + $(if ($backupPath -ne '') { '; the old content is recoverable from ' + $backupPath } else { '' }))
+        }
         "copied $($fi.Name)  bytes=$($fi.Length)  carrier=file  clipboard verified: $($fi.FullName)"
       }
 }

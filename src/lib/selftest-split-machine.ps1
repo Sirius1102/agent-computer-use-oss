@@ -16,6 +16,22 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
   ST-Check 'lint: UTF-8 BOM present + pure ASCII beyond it (v1.5.0 task invariant; BOM+ASCII parses identically on PS 5.1)' ($hasBom -and (([regex]::Matches($src, '[^\x00-\x7F]')).Count -eq 0))
   ST-Check 'lint: file is pure ASCII' (([regex]::Matches($src, '[^\x00-\x7F]')).Count -eq 0)
+  # M2 (2026-11-06): the BOM promise covers every file in the aggregate.
+  # Two lib files shipped without a BOM because only the entry was ever measured. The entry keeps
+  # its stronger ASCII rule above; every other declared source must still start with EF BB BF, and
+  # the list is pinned at 23 so a file that misses the table cannot skip the check.
+  $m2NoBom = @()
+  if ("$script:StSourceMode" -ceq 'aggregate') {
+    foreach ($m2F in @($script:StSourceFiles)) {
+      $m2B = [System.IO.File]::ReadAllBytes([string]$script:StFileMap[$m2F])
+      if (-not ($m2B.Length -ge 3 -and $m2B[0] -eq 0xEF -and $m2B[1] -eq 0xBB -and $m2B[2] -eq 0xBF)) { $m2NoBom += [string]$m2F }
+    }
+    ST-Check 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' (
+      (@($script:StSourceFiles).Count -eq 23) -and (@($m2NoBom).Count -eq 0))
+    if (@($m2NoBom).Count -gt 0) { Write-Output ('      missing BOM: ' + ($m2NoBom -join ',')) }
+  } else {
+    ST-Skip 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' 'single-file source mode (no lib/ beside the entry) - the artifact inlines every file, so there is no per-file BOM table to measure'
+  }
   # ---------- v4.4.0 (A-03): the source set is under test, not merely in use ----------
   # Planted fixtures: until the first lib/ file exists the aggregate path is unreachable in
   # the live tree, so the loader, the order it promises and the mode split are measured here
@@ -228,9 +244,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 59 sites, table sums to the same 59)' (
-    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 59) -and
-    ($a07OwnerSum -eq 59) -and (@($script:StCommandOwners).Count -eq 41))
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 62 sites, table sums to the same 62)' (
+    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 62) -and
+    ($a07OwnerSum -eq 62) -and (@($script:StCommandOwners).Count -eq 41))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -241,9 +257,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a07A2 in @($script:StCommandExclusions)) { if ([string]$a07A1 -ceq [string]$a07A2) { $a07C = $a07C + 1 } }
     if ($a07C -gt 1) { $a07AnchorDup = $a07AnchorDup + 1 }
   }
-  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the ten exclusions, and no exclusion certifies two lines (69 = 59 + 10)' (
-    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 69) -and (@($script:StCommandExclusions).Count -eq 10) -and
-    ($a07AnchorDup -eq 0) -and (($a07SiteCount + 10) -eq $a07Mentions))
+  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the thirteen exclusions, and no exclusion certifies two lines (75 = 62 + 13)' (
+    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 75) -and (@($script:StCommandExclusions).Count -eq 13) -and
+    ($a07AnchorDup -eq 0) -and (($a07SiteCount + 13) -eq $a07Mentions))
   if ($a07MentionGap -ne '') { Write-Output ('      mention gap: ' + $a07MentionGap) }
   $a07FtKeys = @()
   foreach ($a07K in @((Get-FunctionScopeNameList $a07Parsed) -split ';')) {
@@ -252,8 +268,14 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   }
   $a07FtCount = @($a07FtKeys).Count
   $a07FtGap = Get-InventoryDiscrepancy ($a07FtKeys -join ';') $script:StFunctionScopeRefs
-  ST-Check 'lint (A-07): the function-table test-double family equals the registered eleven names across forty-nine references' (
-    ($a07FtGap -ceq '') -and ($a07FtCount -eq 49) -and (@($script:StFunctionScopeRefs).Count -eq 11))
+  # D-1 (2026-11-06): the two map publishers now carry ${function:Write-MapSidecar} as a
+  # capture - registered, not exempted, because a capture is exactly what this table counts.
+  # N-2 (2026-11-06): four more names join it because the guard-receipt legs stub the reading
+  # seams; the table is sixteen names across sixty-six references, still registered, never exempted.
+  # N-3 (2026-11-06): the clipboard backup e2e adds four seams (three references each) and three
+  # more audit-double handles - twenty names across eighty-one references.
+  ST-Check 'lint (A-07): the function-table test-double family equals the registered twenty names across eighty-one references' (
+    ($a07FtGap -ceq '') -and ($a07FtCount -eq 81) -and (@($script:StFunctionScopeRefs).Count -eq 20))
   if ($a07FtGap -ne '') { Write-Output ('      function table: ' + $a07FtGap) }
   $a07LtList = Get-TopLevelAssignmentNameList $a07Parsed
   $a07LtGap = Get-InventoryDiscrepancy "$a07LtList" $script:StLoadTimeNames
@@ -271,8 +293,10 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   # v4.7.0 B-2 (measured, not relaxed): the two $script:LogOriginMode load-time assignments at the
   # dispatcher (empty default + the selftest-mode set) put the table at 91 names / 118 assignments;
   # the pins below were still the D-3 numbers (90/116) and lagged the table they sit next to.
+  # M6 (2026-11-06): the --no-auto-trim boundary adds one $Rest write (4->5) but no new name:
+  # verdict and remaining tokens both come from the same pure helper, so the table is 91 names / 119.
   ST-Check 'lint (A-07): the load-time assignment family equals the registered table, and every statement marked for a move is in it (the count is in the inventory line, not in the name)' (
-    ($a07LtGap -ceq '') -and ($a07LtCount -eq 118) -and (@($script:StLoadTimeNames).Count -eq 91) -and
+    ($a07LtGap -ceq '') -and ($a07LtCount -eq 119) -and (@($script:StLoadTimeNames).Count -eq 91) -and
     ($a07MovedSplit.Count -eq 14) -and (($a07MovedNotes -join ';') -ceq ''))
   if ($a07LtGap -ne '') { Write-Output ('      load time: ' + $a07LtGap) }
   if (@($a07MovedNotes).Count -gt 0) { Write-Output ('      moved-marked absent: ' + ($a07MovedNotes -join ';')) }
@@ -312,8 +336,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all fifty-nine (none left reading caller scope)' (
-    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 59) -and (@($script:StCommandNameArgs).Count -eq 3))
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all sixty-two (none left reading caller scope)' (
+    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 62) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
   ST-Check 'lint (A-08): the six helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all six are actually on the list' (
     (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 6))
@@ -396,7 +420,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09PlantNote = Get-UndeclaredVarUseDiscrepancy $a09PlantParsed $a09Var $true
   ST-Check 'lint (A-09): every use of the dispatcher command variable sits in an owner that declares it, a planted borrower is named with its count while a planted owner is left alone, and the top-level exemption is itself load-bearing' (
     ($a09Undeclared -ceq '') -and ($a09PlantNote.Contains('fn:F-Borrower=uses1-undeclared')) -and
-    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses17-without-entry-param')))
+    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses18-without-entry-param')))
   if ($a09Undeclared -ne '') { Write-Output ('      undeclared uses: ' + $a09Undeclared) }
   $a09DYes = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Owner' 'Cmd'
   $a09DNo = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Borrower' 'Cmd'
@@ -410,6 +434,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   # The shape is pinned below by counting call ASTs: one site reused twice would be calls=1, and a
   # genuine duplicate would put two sites in the same arm (preflight=2 or direct=2). The shared
   # helper must read no dispatcher variable at all - it logs under its own $CmdName parameter.
+  # N-3 (2026-11-06): 94 -> 97 - copy-file's three added receipts read the dispatcher parameter.
+  # M9 (2026-11-06): 97 -> 98 - the catch hands the command name to the failure envelope.
   $a09ObsNames = @('click', 'dblclick', 'imgclick', 'rclick', 'relclick')
   $a09ObsNotes = @()
   $a09ObsOk = $true
@@ -442,7 +468,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09HelperCmd = Get-VarUseCountInFunction $a07Parsed 'Invoke-ObservedMouseInput' $a09Var
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, the registered owners account for every use of the dispatcher variable, and each observed-input handler hands the name over at exactly two mutually exclusive sites (the counts are in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 94) -and (@($script:StCmdVarUses).Count -eq 46) -and
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 98) -and (@($script:StCmdVarUses).Count -eq 46) -and
     ($a09ObsOk) -and ($a09HelperCmd -ceq '0'))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
@@ -587,7 +613,10 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     # until its fragment learned the title's version prefix), the B-2 origin/archive banner in
     # audit-output, the B-3 grid-proximity banner and the C capture-quality banner in
     # window-targeting bring the body to 177.
-    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 177) -and (@($script:StFamilyOrder).Count -eq 15) -and
+    # D-1 (2026-11-06): the window-targeting family gained the GetNewClosure closure lint
+    # and its dual-pose e2e banner, so the body pin moves to 178 - measured, agreement still
+    # required to be empty.
+    ("$a14Notes" -ceq '') -and ($a14BannerCount -eq 178) -and (@($script:StFamilyOrder).Count -eq 15) -and
     (@($script:StFamilyCounts.Keys).Count -eq 15))
   if ("$a14Notes" -ne '') { Write-Output ('      family attribution drift: ' + $a14Notes) }
   Write-Output ('      A-14a families=' + @($script:StFamilyOrder).Count + ' banners=' + $a14BannerCount + ' measured=[' + (("$a14Assign" -split "`n") -join ' / ') + ']')

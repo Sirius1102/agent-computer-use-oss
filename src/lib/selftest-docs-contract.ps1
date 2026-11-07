@@ -660,4 +660,47 @@ function Invoke-SelftestFamily-DocsContract($Ctx) {
     ST-Skip 'lint (TB-6): the delivery predicate flags the planted installer copy that drops both the refusal and the copy step, loses the refusal-before-first-write order, and the one-byte carrier mutation changes the hash (teeth, not decoration)' 'no skill package / installer in this tree - nothing to plant into'
   }
 
+  # M4: every capabilities command is documented, anchored and exemplified (same banner family as TB-6)
+  # The denominator is the command table itself, never a hand-counted list: a command that gains
+  # an entry in the dispatch table but not in the docs must be named here. Anchors are read from
+  # SKILL.md in whichever face this tree carries, mentions from reference.md, and each anchor's
+  # Example line must name the same command and use only flags that `help <name>` actually lists.
+  $m4Scan = {
+    param($skillText, $refText, $names, $helpLines)
+    $bad = @()
+    foreach ($c in @($names)) {
+      $esc = [regex]::Escape($c)
+      $bx = [regex]::Match([string]$skillText, ('(?ms)^### ' + $esc + '\s*$.*?(?=^### |^## |\z)'))
+      if (-not $bx.Success) { $bad += ('no-anchor=' + $c); continue }
+      $ex = [regex]::Match($bx.Value, ('(?m)^Example: desktop\.ps1 ' + $esc + '(\s.*)?$'))
+      if (-not $ex.Success) { $bad += ('no-example=' + $c) }
+      else {
+        $argv = $ex.Value.Substring(('Example: desktop.ps1 ').Length)
+        $slice = [string](Format-CommandHelp $helpLines $c)
+        foreach ($f in @([regex]::Matches($argv, '--[A-Za-z][A-Za-z0-9-]*') | ForEach-Object { $_.Value })) {
+          if (-not $slice.Contains($f)) { $bad += ('flag-not-in-help=' + $c + '/' + $f) }
+        }
+      }
+      if ([string]$refText -notmatch ('(?<![A-Za-z0-9-])' + $esc + '(?![A-Za-z0-9-])')) { $bad += ('no-reference=' + $c) }
+    }
+    return @($bad)
+  }
+  if ((@($hNames).Count -ge 55) -and (([string]$tb4Texts['SKILL.md']).Length -ge 200) -and (([string]$tb4Texts['reference.md']).Length -ge 200)) {
+    $m4Bad = @(& $m4Scan ([string]$tb4Texts['SKILL.md']) ([string]$tb4Texts['reference.md']) $hNames $hLines)
+    ST-Check 'lint (M4): every capabilities command has its own SKILL anchor, a reference mention, and an Example line whose flags help lists' (
+      (@($m4Bad).Count -eq 0))
+    foreach ($m4B in $m4Bad) { Write-Output ('      M4 coverage: ' + $m4B) }
+    # Teeth: demolish one anchor and hang one invented flag on another example; the SAME predicate
+    # must name both. A predicate that reads "nothing missing" against that mutant is a needle count.
+    $m4Mut = ([string]$tb4Texts['SKILL.md']).Replace('### capabilities', '### capability')
+    $m4Mut = $m4Mut.Replace('Example: desktop.ps1 imgclick C:\Temp\out.png 10 20', 'Example: desktop.ps1 imgclick C:\Temp\out.png 10 20 --not-a-real-flag')
+    $m4MutBad = @(& $m4Scan $m4Mut ([string]$tb4Texts['reference.md']) $hNames $hLines)
+    ST-Check 'lint (M4): the coverage predicate names the planted missing anchor and the planted invented flag (teeth, not decoration)' (
+      (@($m4Bad).Count -eq 0) -and (@($m4MutBad | Where-Object { $_ -eq 'no-anchor=capabilities' }).Count -ge 1) -and (@($m4MutBad | Where-Object { $_ -eq 'flag-not-in-help=imgclick/--not-a-real-flag' }).Count -ge 1))
+    Write-Output ('      M4 planted flags: ' + (@($m4MutBad).Count) + ' (' + (@($m4MutBad) -join '; ') + ')')
+  } else {
+    ST-Skip 'lint (M4): every capabilities command has its own SKILL anchor, a reference mention, and an Example line whose flags help lists' 'outward docs not resolvable here - nothing to measure the command coverage against'
+    ST-Skip 'lint (M4): the coverage predicate names the planted missing anchor and the planted invented flag (teeth, not decoration)' 'outward docs not resolvable here - nothing to plant the mutant into'
+  }
+
 }

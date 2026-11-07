@@ -167,7 +167,11 @@ function Usage { Get-UsageText }
 # class of change is MAJOR (the v3.0.0 B-6 note says so on record); this round ships it on the
 # Y position because the X position is the owner's to call. That conflict is registered as an
 # open adjudication item, not silently eaten.
-$script:JsonSchemaVersion = 3
+# X-07 (v4.9.1) BREAKING CHANGE, declared: 3 -> 4. Every read/find envelope gained
+# clipped / visibleRect / offscreenPx, and find's envelope carries the same three.
+# The version moves because the contract surface grew (the v3.1.0 rationale, applied
+# again); README and the exact key-set selftest move in this same commit.
+$script:JsonSchemaVersion = 4
 
 # X-02: script-scope STATE defaults, declared here rather than left to appear on first write.
 # Under Set-StrictMode -Version Latest a read of a variable that was never assigned is a
@@ -184,17 +188,30 @@ $script:ActivationNotice = ''
 $script:ResolveNote = ''
 $script:OcrCapNoteShown = $false
 
-function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue) {
+function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue, $visibility = $null) {
   $occJ = $null
   $covJ = @()
   if ($null -ne $gate) {
     if (-not $gate.Err) { $occJ = [int][math]::Round($gate.Pct) }
     $covJ = @($gate.Covering | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; title = $_.Title; count = $_.Count } })
   }
+  # X-07: clipped / visibleRect / offscreenPx are ALWAYS present so the key set stays
+  # fixed. clipped=false + visibleRect=null + zero offscreenPx is the in-screen case;
+  # a clipped read names the exact visible intersection and the pixels that do not exist.
+  $clipped = $false
+  $visibleRect = $null
+  $offscreenPx = @{ left = 0; top = 0; right = 0; bottom = 0 }
+  if ($null -ne $visibility) {
+    $clipped = [bool]$visibility.Clipped
+    if ($clipped) {
+      $visibleRect = @{ x = [int]$visibility.CX; y = [int]$visibility.CY; w = [int]$visibility.CW; h = [int]$visibility.CH }
+      $offscreenPx = @{ left = [int]$visibility.ClipLeft; top = [int]$visibility.ClipTop; right = [int]$visibility.ClipRight; bottom = [int]$visibility.ClipBottom }
+    }
+  }
   # hashtable first, then cast: a [pscustomobject] literal cannot take a dynamic
   # key name, and the key ORDER of the emitted JSON is hashtable order either way
   # (v1.5.1's shape already was) - consumers must key by name, not position.
-  $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; contentTrust = (Get-UntrustedContentTag); occluded = $occJ; coveredBy = $covJ }
+  $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; contentTrust = (Get-UntrustedContentTag); occluded = $occJ; coveredBy = $covJ; clipped = $clipped; visibleRect = $visibleRect; offscreenPx = $offscreenPx }
   $map[$payloadKey] = $payloadValue
   return [pscustomobject]$map
 }
@@ -300,6 +317,12 @@ function Get-ActionJsonSignalKeySet {
 function Get-ActionJsonKeySet {
   return (@('schemaVersion', 'command', 'lines', 'signals') | Sort-Object) -join ','
 }
+# M9 (2026-11-06): the failure road's public key set. Seven names, sorted for the contract check;
+# it is the success set minus lines/signals plus the four failure fields. `ok` is the switch, and
+# code/category/retryable are the stable machine answers - no caller parses the English message.
+function Get-InvocationErrorKeySet {
+  return (@('schemaVersion', 'command', 'ok', 'code', 'category', 'retryable', 'message') | Sort-Object) -join ','
+}
 # The single emission point. Returns ONE compressed JSON string; the caller at the process
 # boundary decides whether to print it or --dump it. It never throws and never drops a line:
 # `lines` is the complete text output, `signals` is a pure subset projection of it.
@@ -314,6 +337,41 @@ function Format-ActionJsonEnvelope([string]$cmd, $lines) {
   }
   $map = @{ schemaVersion = [int]$script:JsonSchemaVersion; command = $cmd; lines = $ls; signals = [pscustomobject]$sig }
   return ([pscustomobject]$map | ConvertTo-Json -Compress -Depth 4)
+}
+
+# M9 (2026-11-06): the failure road gets the same single producer as the success road. The
+# classifier is deliberately small: the categories the dispatcher can actually recognise, plus one
+# stable fallback, so a caller branches on code/category instead of parsing English. Text mode
+# never calls this, which is how the text bytes stay untouched; every unknown category lands on
+# ERR_UNCLASSIFIED rather than leaking a raw .NET category name.
+function Get-InvocationErrorEnvelope([string]$category, [string]$message, [string]$cmd) {
+  $code = 'ERR_UNCLASSIFIED'
+  $cat = 'internal'
+  $retry = $false
+  switch ([string]$category) {
+    'InvalidArgument' { $code = 'ERR_USAGE'; $cat = 'usage' }
+    'InvalidData' { $code = 'ERR_USAGE'; $cat = 'usage' }
+    'ParserError' { $code = 'ERR_USAGE'; $cat = 'usage' }
+    'ObjectNotFound' { $code = 'ERR_TARGET'; $cat = 'target' }
+    'ResourceUnavailable' { $code = 'ERR_TARGET'; $cat = 'target' }
+    'OperationTimeout' { $code = 'ERR_TIMEOUT'; $cat = 'timeout'; $retry = $true }
+    # Most handler refusals are a plain `throw 'text'`, whose CategoryInfo is OperationStopped.
+    # Naming that explicitly is what keeps every ordinary refusal out of "internal".
+    'OperationStopped' { $code = 'ERR_FAILED'; $cat = 'command' }
+    'PermissionDenied' { $code = 'ERR_PERMISSION'; $cat = 'environment' }
+    'SecurityError' { $code = 'ERR_PERMISSION'; $cat = 'environment' }
+    default { }
+  }
+  $map = [ordered]@{
+    schemaVersion = [int]$script:JsonSchemaVersion
+    command = [string]$cmd
+    ok = $false
+    code = $code
+    category = $cat
+    retryable = $retry
+    message = [string]$message
+  }
+  return ([pscustomobject]$map | ConvertTo-Json -Compress)
 }
 
 # v3.0.0 (B-6, borrowed from the built-in page tool, which puts this in its own tool
@@ -741,6 +799,20 @@ function Strip-OwnFlags([string[]]$tokens, [string]$cmd) {
     $i++
   }
   return @{ Rest = @($rest); Values = $vals; Present = $present }
+}
+
+# M6 (2026-11-06): --no-auto-trim is a GLOBAL, value-less switch. The pure split keeps the entry
+# boundary and the offline gate asking the same question: WHICH tokens remain, and was the
+# switch present. Every occurrence is removed regardless of position - it takes no value, so a
+# token after it is never "its value" and can never be swallowed by it.
+function Split-NoAutoTrimFlag([string[]]$Tokens) {
+  $kept = New-Object System.Collections.ArrayList
+  $seen = $false
+  foreach ($tok in @($Tokens)) {
+    if ("$tok" -eq '--no-auto-trim') { $seen = $true; continue }
+    [void]$kept.Add("$tok")
+  }
+  return @{ Args = @($kept); Flag = $seen }
 }
 
 # v1.5.5 (D-8): an unnamed covering window used to print as `''`, which reads as

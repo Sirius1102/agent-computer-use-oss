@@ -64,18 +64,19 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   Write-Output ('      json-contract homes: producer=' + $jkProducer + ' readers=' + $jkReaders + ' literals=' + $jkLits)
   $cGotFind = (@($cFind.PSObject.Properties.Name | Sort-Object) -join ',')
   $cGotRead = (@($cRead.PSObject.Properties.Name | Sort-Object) -join ',')
-  ST-Check 'contract: find-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+hits (add or drop one = breaking)' (
+  ST-Check 'contract: find-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+clipped+visibleRect+offscreenPx+hits (add or drop one = breaking)' (
     $cGotFind -ceq $cWantFind)
-  ST-Check 'contract: read-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+lines (add or drop one = breaking)' (
+  ST-Check 'contract: read-text --json top-level keys are exactly schemaVersion+occluded+coveredBy+clipped+visibleRect+offscreenPx+lines (add or drop one = breaking)' (
     $cGotRead -ceq $cWantRead)
   # v3.0.0 (B-6) BREAKING CHANGE, declared: 1 -> 2, because `contentTrust` joined the key set
   # of every envelope. v3.1.0 (X-01) BREAKING CHANGE, declared: 2 -> 3, because the action
-  # family got an envelope (see Get-ActionJsonCommandSet). The literal expectation stays a
-  # literal ON PURPOSE - bumping the variable without coming here is the mistake this check
-  # exists to make impossible, and the second conjunct proves the builders read the same
-  # variable rather than a copied constant.
-  ST-Check 'contract: both envelopes report the declared schemaVersion, which is 3 since the action family joined the contract' (
-    [int]$script:JsonSchemaVersion -eq 3 -and $cFind.schemaVersion -eq 3 -and $cRead.schemaVersion -eq 3)
+  # family got an envelope (see Get-ActionJsonCommandSet). X-07 (v4.9.1) BREAKING CHANGE,
+  # declared: 3 -> 4, because clipped/visibleRect/offscreenPx joined every read/find envelope.
+  # The literal expectation stays a literal ON PURPOSE - bumping the variable without coming
+  # here is the mistake this check exists to make impossible, and the second conjunct proves
+  # the builders read the same variable rather than a copied constant.
+  ST-Check 'contract: both envelopes report the declared schemaVersion, which is 4 since X-07 added the visibility keys' (
+    [int]$script:JsonSchemaVersion -eq 4 -and $cFind.schemaVersion -eq 4 -and $cRead.schemaVersion -eq 4)
   # the occlusion half of the contract, from a synthetic gate: a gate that ran must
   # produce an INTEGER percent (not 37.4, not ''), and coveredBy must be an array
   # even for a single coverer - a scalar here silently breaks JSON consumers that
@@ -231,14 +232,69 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   try {
     $rotLog = Join-Path $rotDir 'actions.log'
     [System.IO.File]::WriteAllText($rotLog, ('x' * 300))
-    $did = Invoke-LogRotation $rotLog 100 2
-    $rotated = (-not (Test-Path $rotLog)) -and (@(Get-ChildItem $rotDir -Filter 'actions_*.log').Count -ge 1)
-    for ($ai = 1; $ai -le 4; $ai++) { [System.IO.File]::WriteAllText((Join-Path $rotDir ('actions_000' + $ai + '.log')), ('y' * 10)) }
-    [System.IO.File]::WriteAllText($rotLog, ('z' * 300))
-    Invoke-LogRotation $rotLog 100 2 | Out-Null
-    $archives = @(Get-ChildItem $rotDir -Filter 'actions_*.log').Count
+    $did = Invoke-LogRotation $rotLog 100 5
+    $rotated = (-not (Test-Path $rotLog)) -and (@(Get-ChildItem $rotDir -Filter 'actions_*.log').Count -eq 1)
     ST-Check 'unit: log rotation archives the over-threshold log' ($did -and $rotated)
-    ST-Check 'unit: log rotation prunes archives beyond keep' ($archives -eq 2)
+    # M7 (2026-11-06): seven archives before the second rotation, eight after; keep=5 retains
+    # five in place and quarantines three. Every archive that existed before must come back
+    # byte-identical (same sha256/bytes; kept files also keep their mtime) - nothing is deleted.
+    for ($ai = 1; $ai -le 6; $ai++) { [System.IO.File]::WriteAllText((Join-Path $rotDir ('actions_2020010' + $ai + 'T000000.log')), ('y' * (10 + $ai))) }
+    $rotShaOf = { param($rp) (([System.BitConverter]::ToString(([System.Security.Cryptography.SHA256]::Create()).ComputeHash([System.IO.File]::ReadAllBytes($rp))) -replace '-', '')).ToLowerInvariant() }
+    $rotBefore = @{}
+    foreach ($rf in @(Get-ChildItem $rotDir -Filter 'actions_*.log')) {
+      $rotBefore[$rf.Name] = [pscustomobject]@{ Sha = (& $rotShaOf $rf.FullName); Bytes = $rf.Length; Mtime = $rf.LastWriteTimeUtc }
+    }
+    Start-Sleep -Milliseconds 1100
+    [System.IO.File]::WriteAllText($rotLog, ('z' * 300))
+    Invoke-LogRotation $rotLog 100 5 | Out-Null
+    $archives = @(Get-ChildItem $rotDir -Filter 'actions_*.log')
+    $quarFiles = @(Get-ChildItem (Join-Path $rotDir 'quarantine') -Filter 'actions_*.log' -ErrorAction SilentlyContinue)
+    $keepIntact = $true
+    foreach ($rf in $archives) {
+      if (-not $rotBefore.ContainsKey($rf.Name)) { continue }
+      $rb = $rotBefore[$rf.Name]
+      if ($rb.Sha -ne (& $rotShaOf $rf.FullName)) { $keepIntact = $false }
+      if ($rb.Bytes -ne $rf.Length) { $keepIntact = $false }
+      if ($rb.Mtime -ne $rf.LastWriteTimeUtc) { $keepIntact = $false }
+    }
+    $quarIntact = $true
+    foreach ($qf in $quarFiles) {
+      if (-not $rotBefore.ContainsKey($qf.Name)) { $quarIntact = $false; continue }
+      $qb = $rotBefore[$qf.Name]
+      if ($qb.Sha -ne (& $rotShaOf $qf.FullName)) { $quarIntact = $false }
+      if ($qb.Bytes -ne $qf.Length) { $quarIntact = $false }
+    }
+    $rotAudit = @(Get-Content -LiteralPath $rotLog -ErrorAction SilentlyContinue)
+    $rotLineOk = ($rotAudit.Count -eq 1) -and
+      ($rotAudit[0] -match ('\| log-rotation \| --keep 5 \| moved=3 deleted=0 quarantine=')) -and
+      ($null -ne (ConvertFrom-ActionLogLine $rotAudit[0]))
+    ST-Check 'unit (M7): rotation keeps the newest five archives in place (sha/bytes/mtime untouched) and quarantines the rest instead of deleting them' (
+      (@($archives).Count -eq 5) -and (@($quarFiles).Count -eq 3) -and $keepIntact -and $quarIntact -and $rotLineOk)
+    $rotManifest = @(Get-Content -LiteralPath (Join-Path $rotDir 'quarantine\MANIFEST.txt') -ErrorAction SilentlyContinue)
+    $rotManifestOk = ($rotManifest.Count -eq 3)
+    foreach ($row in $rotManifest) {
+      $parts = @($row -split '\|')
+      if ($parts.Count -ne 5) { $rotManifestOk = $false; continue }
+      $qPath = Join-Path (Join-Path $rotDir 'quarantine') $parts[0]
+      if (-not (Test-Path -LiteralPath $qPath)) { $rotManifestOk = $false; continue }
+      if ([string]((Get-Item -LiteralPath $qPath).Length) -ne $parts[1]) { $rotManifestOk = $false }
+      if ((& $rotShaOf $qPath) -ne $parts[2]) { $rotManifestOk = $false }
+      if ([string]$parts[3] -notmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') { $rotManifestOk = $false }
+      if ([string]$parts[4] -notmatch '^beyond-keep\(5\)$') { $rotManifestOk = $false }
+    }
+    ST-Check 'unit (M7): MANIFEST rows are five pipe segments and match the quarantined bytes, sha256, time and reason' ($rotManifestOk)
+    $rotEmptyDir = Join-Path $env:TEMP ('dtrot_empty_' + [guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Force -Path $rotEmptyDir)
+    try {
+      $rotEmptyLog = Join-Path $rotEmptyDir 'actions.log'
+      [System.IO.File]::WriteAllText($rotEmptyLog, 'tiny')
+      $rotEmptyDid = Invoke-LogRotation $rotEmptyLog 100 5
+      ST-Check 'unit (M7): a below-threshold call creates no quarantine, no manifest and no audit line' (
+        (-not $rotEmptyDid) -and (Test-Path -LiteralPath $rotEmptyLog) -and
+        (@(Get-Content -LiteralPath $rotEmptyLog).Count -eq 1) -and
+        (-not (Test-Path -LiteralPath (Join-Path $rotEmptyDir 'quarantine')))
+      )
+    } finally { Remove-Item -LiteralPath $rotEmptyDir -Recurse -Force -ErrorAction SilentlyContinue }
   } finally { Remove-Item -LiteralPath $rotDir -Recurse -Force -ErrorAction SilentlyContinue }
 
   # ---------- v3.0.0 B-4: --dump (write the bulk to a file, print a pointer) ----------
@@ -491,12 +547,16 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 9) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 13) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
   # call-sites 7 -> 9 (B-2): the archive-walk e2e adds two child probes (the scope=day read and
   # the refused scope), both through the same runner - the pin moves WITH the measured count.
+  # call-sites 9 -> 10 (M9, 2026-11-06): the failure-envelope e2e adds the paired JSON/text child
+  # probe, again through the same runner - measured, not assumed.
+  # call-sites 10 -> 12 (M8, 2026-11-06): the fallback e2e adds the dpi and wins --json child probes.
+  # call-sites 12 -> 13 (M6, 2026-11-06): the stripped-switch e2e adds the dry-run child probe.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -557,7 +617,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $xSigGot = ''
   if ($null -ne $xObj1) { $xSigGot = (@($xObj1.signals.PSObject.Properties.Name) | Sort-Object) -join ',' }
   ST-Check 'contract (X-01): signals carries exactly the eight pinned classes, the pattern map agrees with the pinned list, and the schema is 3 (this class of change was MAJOR in v3.0.0 - the conflict is registered, not eaten)' (
-    $xSigGot -ceq $xWantSigLit -and (Get-ActionJsonSignalKeySet) -ceq $xWantSigLit -and [int]$script:JsonSchemaVersion -eq 3)
+    $xSigGot -ceq $xWantSigLit -and (Get-ActionJsonSignalKeySet) -ceq $xWantSigLit -and [int]$script:JsonSchemaVersion -eq 4)
   # The projection has to be a SUBSET (it invents nothing) and COMPLETE per class (it drops
   # nothing) and must keep an unclassed line - all three on one planted fixture.
   $xL1 = 'hit-window: pid=7 proc=notepad title=T  (inside-target=True occluded=0% coveredBy=-)'
@@ -627,14 +687,17 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $xSubTop = ''
   if ($null -ne $xSubObj) { $xSubTop = (@($xSubObj.PSObject.Properties.Name) | Sort-Object) -join ',' }
   $xNegLeg = & $cnpRun -ChildArgs @('click', '10', '10', '--to', 'DTX-NoSuchWindow-ZZ', '--json')
-  $xNegOut = ($xNegLeg.out + "`n" + $xNegLeg.err)
   $xNegCode = $xNegLeg.code
   $xNegRan = $xNegLeg.ran
   $xNegWhy = $xNegLeg.why
+  # M9 (2026-11-06): the refusal leg now speaks the failure envelope on stdout, so the human line
+  # is checked on stderr and the machine line is parsed here.
+  $xNegObj = $null
+  try { $xNegObj = (@($xNegLeg.out) -join "`n") | ConvertFrom-Json } catch { $xNegObj = $null }
   $xSubDump = Format-JsonProbeDump $xSubOut ($null -ne $xSubObj)
   Write-Output ('      action-json e2e: unmap-exit=' + [string]$xSubCode + ' unmap-ran=' + $xSubRan + ' keys=[' + $xSubTop + ']' +
     ' refusal-exit=' + [string]$xNegCode + ' refusal-ran=' + $xNegRan +
-    ' refusal-is-text=' + ($xNegOut.StartsWith('ERROR:')) + ' child-stdout=' + $xSubDump + $(if ($xSubEvidence) { ' ' + $xSubEvidence } else { '' }))
+    ' refusal-json=' + ($null -ne $xNegObj) + ' refusal-err-text=' + ([string]$xNegLeg.err).Contains('ERROR:') + ' child-stdout=' + $xSubDump + $(if ($xSubEvidence) { ' ' + $xSubEvidence } else { '' }))
   if (($xSubWhy -ne '') -or ($xNegWhy -ne '')) {
     # the one thing that used to be invisible: which leg could not be started, and what the runtime said.
     Write-Output ('      action-json e2e spawn failure: unmap=[' + $xSubWhy + '] refusal=[' + $xNegWhy + ']')
@@ -668,14 +731,56 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
     ($xCollectAny -eq 5) -and ($xCollectStdout -eq 5))
   }
   if (-not $script:PsChildOk) {
-    ST-Skip 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
+    ST-Skip 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields exit 1 with the refusal named, never an envelope that hides it' ($script:PsChildWhy + ' - the check spawns a child through the call operator, so there is nothing to measure')
   } else {
-  ST-Check 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields ERROR + exit 1, never an envelope that hides the refusal' (
+  ST-Check 'contract (X-01): a real action subprocess with --json yields parseable JSON with the pinned four keys (unmap, side-effect-free) - and a refused action still yields exit 1 with the refusal named, never an envelope that hides it' (
     $xSubRan -and $xNegRan -and
     $xSubCode -eq 0 -and $xSubTop -ceq (Get-ActionJsonKeySet) -and
-    @($xSubObj.lines).Count -ge 1 -and [int]$xSubObj.schemaVersion -eq 3 -and "$($xSubObj.command)" -eq 'unmap' -and
-    $xNegCode -eq 1 -and $xNegOut.Contains('ERROR:') -and -not $xNegOut.Contains('"schemaVersion"'))
+    @($xSubObj.lines).Count -ge 1 -and [int]$xSubObj.schemaVersion -eq 4 -and "$($xSubObj.command)" -eq 'unmap' -and
+    $xNegCode -eq 1 -and ([string]$xNegLeg.err).Contains('ERROR:') -and $null -ne $xNegObj -and
+    ([bool]$xNegObj.ok -eq $false) -and ([string]$xNegObj.message).Contains('DTX-NoSuchWindow-ZZ'))
   }
+  # M9 (2026-11-06): the failure envelope
+  # The unit leg pins the classifier's stable answers plus the unknown fallback. The two e2e legs
+  # pin the caller's road: under --json the failure is one parseable ok:false line on stdout and
+  # the human ERROR line moves to stderr; without the flag stdout is byte-for-byte the pre-M9 road.
+  $m9Rows = @(
+    @('InvalidArgument', 'ERR_USAGE', 'usage', $false),
+    @('ObjectNotFound', 'ERR_TARGET', 'target', $false),
+    @('OperationTimeout', 'ERR_TIMEOUT', 'timeout', $true),
+    @('OperationStopped', 'ERR_FAILED', 'command', $false),
+    @('PermissionDenied', 'ERR_PERMISSION', 'environment', $false),
+    @('SomethingNew', 'ERR_UNCLASSIFIED', 'internal', $false)
+  )
+  $m9Bad = @()
+  foreach ($m9R in $m9Rows) {
+    $m9ObjUnit = $null
+    try { $m9ObjUnit = (Get-InvocationErrorEnvelope $m9R[0] 'probe message' 'click') | ConvertFrom-Json } catch { $m9ObjUnit = $null }
+    if (($null -eq $m9ObjUnit) -or ([string]$m9ObjUnit.code -cne $m9R[1]) -or ([string]$m9ObjUnit.category -cne $m9R[2]) -or
+      ([bool]$m9ObjUnit.retryable -ne [bool]$m9R[3]) -or ([string]$m9ObjUnit.message -cne 'probe message')) { $m9Bad += [string]$m9R[0] }
+  }
+  ST-Check 'unit (M9): the failure classifier gives five recognised categories and an unknown one their stable code/category/retryable, and the message survives verbatim' (
+    (@($m9Bad).Count -eq 0))
+  if (@($m9Bad).Count -gt 0) { Write-Output ('      classifier drift: ' + ($m9Bad -join ',')) }
+  $m9Top = ''
+  if ($null -ne $xNegObj) { $m9Top = (@($xNegObj.PSObject.Properties.Name) | Sort-Object) -join ',' }
+  $m9WantTop = Get-InvocationErrorKeySet
+  ST-Check 'e2e (M9): under --json a failure is exactly one ok:false envelope on stdout (the pinned seven-key set, ERR_FAILED/command) while the ERROR line stays on stderr and the exit code stays 1' (
+    $xNegRan -and $xNegCode -eq 1 -and $null -ne $xNegObj -and ($m9Top -ceq $m9WantTop) -and
+    ([int]$xNegObj.schemaVersion -eq 4) -and ([string]$xNegObj.command -ceq 'click') -and ([bool]$xNegObj.ok -eq $false) -and
+    ([string]$xNegObj.code -ceq 'ERR_FAILED') -and ([string]$xNegObj.category -ceq 'command') -and
+    ([bool]$xNegObj.retryable -eq $false) -and ([string]$xNegObj.message).Contains('DTX-NoSuchWindow-ZZ') -and
+    ([string]$xNegLeg.err).Contains('ERROR: ') -and -not ([string]$xNegLeg.out).Contains('ERROR:'))
+  $m9TextLeg = & $cnpRun -ChildArgs @('click', '10', '10', '--to', 'DTX-NoSuchWindow-ZZ')
+  $m9TextOut = @($m9TextLeg.out)
+  $m9SameMsg = $false
+  if ($null -ne $xNegObj -and @($m9TextOut).Count -eq 1 -and ([string]$m9TextOut[0]).StartsWith('ERROR: ')) {
+    $m9SameMsg = ([string]$m9TextOut[0]).Substring(7) -ceq [string]$xNegObj.message
+  }
+  ST-Check 'e2e (M9): the same failure without --json keeps the text road byte-exactly - one ERROR: line on stdout, no JSON, the same message and exit 1' (
+    $m9TextLeg.ran -and $m9TextLeg.code -eq 1 -and @($m9TextOut).Count -eq 1 -and
+    ([string]$m9TextOut[0]).StartsWith('ERROR: ') -and $m9SameMsg -and
+    (-not ([string]$m9TextLeg.out).Contains('"schemaVersion"')))
   try { if (Test-Path -LiteralPath $xImg) { Remove-Item -LiteralPath $xImg -Force } } catch { }
   try { if (Test-Path -LiteralPath ($xImg + '.map.txt')) { Remove-Item -LiteralPath ($xImg + '.map.txt') -Force } } catch { }
   # G-23: whole-stream evidence, taken BEFORE any head is cut. Deliberately not a banner rule line: the
@@ -1229,12 +1334,46 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
       (-not $pt6Stop.Out.Contains('#3')) -and (-not $pt6Stop.Out.Contains('PT6-after')))
 
     $pt6Json = & $pt6Run ('script "' + $pt6File + '" --json') 'json'
-    ST-Check 'contract (PT-6): script --json is rejected before step 1 because script has no JSON envelope; it is not accepted and silently emitted as text' (
-      ($pt6Json.Code -eq 1) -and $pt6Json.Out.Contains("--json is not supported by 'script'") -and
+    $pt6JsonObj = $null
+    try { $pt6JsonObj = $pt6Json.Out | ConvertFrom-Json } catch { $pt6JsonObj = $null }
+    ST-Check 'contract (PT-6): script --json is rejected before step 1 because script has no JSON envelope; under the M9 failure envelope stdout is one ok:false line naming the stable code, stderr carries ERROR, and no step ran' (
+      ($pt6Json.Code -eq 1) -and ($null -ne $pt6JsonObj) -and ($pt6JsonObj.ok -eq $false) -and
+      ([string]$pt6JsonObj.command -ceq 'script') -and ([string]$pt6JsonObj.code -ceq 'ERR_FAILED') -and
+      ([string]$pt6JsonObj.category -ceq 'command') -and ([string]$pt6JsonObj.message).Contains("--json is not supported by 'script'") -and
+      $pt6Json.Err.Contains("ERROR: --json is not supported by 'script'") -and
       (-not $pt6Json.Out.Contains('#1')) -and (-not $pt6Json.Out.Contains('slept ')) -and
       (-not (Test-JsonCapableCommand 'script')) -and ([string](Get-UsageText) -notmatch '(?i)ime-state/script'))
     Write-Output ("      PT-6 child streams (stdout/stderr bytes): success=$($pt6Success.OutBytes)/$($pt6Success.ErrBytes) sha=$($pt6Success.OutSha)/$($pt6Success.ErrSha); continue=$($pt6Continue.OutBytes)/$($pt6Continue.ErrBytes) sha=$($pt6Continue.OutSha)/$($pt6Continue.ErrSha); stop=$($pt6Stop.OutBytes)/$($pt6Stop.ErrBytes); json=$($pt6Json.Code)")
   }
   if (Test-Path -LiteralPath $pt6Dir) { Remove-Item -LiteralPath $pt6Dir -Recurse -Force }
+  # M8 (2026-11-06): a forced DPI fallback is visible on stderr and absent from stdout.
+  $m8HadForce = Test-Path Env:\DTX_DPI_FORCE
+  $m8SavedForce = ''
+  if ($m8HadForce) { $m8SavedForce = [string]$env:DTX_DPI_FORCE }
+  $m8Dpi = $null; $m8Wins = $null
+  try {
+    $env:DTX_DPI_FORCE = 'per-monitor-v2'
+    $m8Dpi = & $cnpRun -ChildArgs @('dpi')
+    $m8Wins = & $cnpRun -ChildArgs @('wins', '--json')
+  } finally {
+    if ($m8HadForce) { $env:DTX_DPI_FORCE = $m8SavedForce } else { Remove-Item Env:\DTX_DPI_FORCE -ErrorAction SilentlyContinue }
+  }
+  $m8DpiWarn = @(($m8Dpi.err -split "`r?`n") | Where-Object { $_ -match 'WARNING: dpi=' })
+  $m8WinsObj = $null
+  try { $m8WinsObj = $m8Wins.out | ConvertFrom-Json } catch { $m8WinsObj = $null }
+  $m8WinsWarn = @(($m8Wins.err -split "`r?`n") | Where-Object { $_ -match 'WARNING: dpi=' })
+  ST-Check 'unit (M8): the fallback warning text exists for system/unaware and is empty for per-monitor-v2' (
+    ((Get-DpiFallbackWarning 'per-monitor-v2') -eq '') -and
+    ((Get-DpiFallbackWarning 'system').Contains('per-monitor-v2 unavailable')) -and
+    ((Get-DpiFallbackWarning 'unaware').Contains('system-aware unavailable')))
+  ST-Check 'e2e (M8): a forced v2 fallback prints exactly one dpi WARNING on stderr, reports dpi-mode=system, and adds nothing to stdout' (
+    ($m8Dpi.code -eq 0) -and $m8Dpi.out.Contains('dpi-mode=system') -and (-not $m8Dpi.out.Contains('WARNING: dpi=')) -and (@($m8DpiWarn).Count -eq 1))
+  ST-Check 'e2e (M8): the same fallback leaves a wins --json read array parseable with a real window row and no warning in stdout' (
+    ($m8Wins.code -eq 0) -and (@($m8WinsObj).Count -ge 1) -and ([int](@($m8WinsObj)[0].pid) -gt 0) -and
+    (-not $m8Wins.out.Contains('WARNING: dpi=')) -and (@($m8WinsWarn).Count -eq 1))
+  # M6 (2026-11-06): the value-less global switch must be stripped BEFORE any parser sees it.
+  $m6Dry = & $cnpRun -ChildArgs @('shots-cleanup', '--keep', '5', '--no-auto-trim')
+  ST-Check 'e2e (M6): --no-auto-trim is stripped at the boundary, so shots-cleanup --keep 5 --no-auto-trim dry-runs (exit 0) instead of refusing an unknown flag' (
+    ($m6Dry.code -eq 0) -and (-not $m6Dry.out.Contains('unknown flag')) -and (-not $m6Dry.err.Contains('unknown flag')))
 
 }

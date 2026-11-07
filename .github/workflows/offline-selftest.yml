@@ -1,0 +1,65 @@
+name: offline-selftest
+
+# The offline gate only: no secret, no live desktop, no --live.
+# Two legs pin the engine split - Windows PowerShell 5.1 and PowerShell 7.
+# The declared total is read from CHECK-TOTAL.txt when the tree ships one
+# (source form), and from desktop.ps1's $script:DeclaredCheckTotal otherwise
+# (the standalone public build). Both legs must report the same total.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline:
+    name: offline (${{ matrix.engine }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the offline selftest and check the summary
+        shell: ${{ matrix.engine }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = 'transcript-${{ matrix.engine }}.txt'
+          & .\desktop.ps1 selftest *> $log
+          $exit = $LASTEXITCODE
+          Get-Content $log -Tail 25
+
+          $line = (Select-String -Path $log -Pattern '^----- selftest: (\d+) passed, (\d+) failed, (\d+) skipped -----' |
+            Select-Object -Last 1)
+          if (-not $line) { throw 'summary line missing - the gate did not finish cleanly' }
+          $passed = [int]$line.Matches[0].Groups[1].Value
+          $failed = [int]$line.Matches[0].Groups[2].Value
+          $skipped = [int]$line.Matches[0].Groups[3].Value
+
+          $declared = $null
+          $source = ''
+          if (Test-Path .\CHECK-TOTAL.txt) {
+            $m = Select-String -Path .\CHECK-TOTAL.txt -Pattern '^offline=(\d+)'
+            if ($m) { $declared = [int]$m.Matches[0].Groups[1].Value; $source = 'CHECK-TOTAL.txt' }
+          }
+          if ($null -eq $declared) {
+            $m = Select-String -Path .\desktop.ps1 -Pattern '\$script:DeclaredCheckTotal\s*=\s*(\d+)'
+            if ($m) { $declared = [int]$m.Matches[0].Groups[1].Value; $source = 'desktop.ps1 DeclaredCheckTotal' }
+          }
+          if ($null -eq $declared) { throw 'declared total not found in CHECK-TOTAL.txt or desktop.ps1' }
+
+          "engine=${{ matrix.engine }} passed=$passed failed=$failed skipped=$skipped total=$($passed + $skipped) declared=$declared via=$source"
+          if ($failed -ne 0) { throw "selftest reported $failed failure(s)" }
+          if (($passed + $skipped) -ne $declared) { throw "total mismatch: passed+skipped=$($passed + $skipped) declared=$declared" }
+          if ($exit -ne 0) { throw "selftest exit=$exit (summary line was read, but the process disagreed)" }
+
+      - name: Upload transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-selftest-${{ matrix.engine }}
+          path: transcript-${{ matrix.engine }}.txt
+          if-no-files-found: warn
