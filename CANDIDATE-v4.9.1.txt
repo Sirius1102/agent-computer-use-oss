@@ -1,8 +1,8 @@
 agent-computer-use v4.9.1 portable candidate
-state: CANDIDATE v4.9.1 - artifacts built and gated in this tree; tag v4.9.1 and the GitHub release are pending; v4.8.0/v4.9.0 tags and assets untouched
+state: RELEASED v4.9.1 - tag v4.9.1; the GitHub release carries the four assets; v4.8.0/v4.9.0 assets untouched
 private-source-commit: 15cb9e9016bc48b92c257e66abc84b671056f1a6
-public-artifact-commit: pending (this commit; the candidate-note commit rewrites this line with its SHA)
-candidate-note-commit: pending (its only difference from the artifact commit is this file)
+public-artifact-commit: 29df56b41cf9f08fb6cab3d96eb76056963f9b58
+candidate-note-commit: this commit (its only difference from the artifact commit is this file and the root SHA256SUMS.txt)
 stitched-desktop.ps1 sha256: bbb2ed9549402270d5a905626c39d26877c1f983bab45b777e94227b06871410
 portable-zip sha256: 06f06ecae44b539b5261177ebdf7848d735f38b7db3f61f214cfbbaa0e5c86ad
 members-v4.9.1.txt sha256: 12113a9f7dd1fcddad82c5541747052c16be458b2cdd88d0142a2de0c6f91fa8
