@@ -380,7 +380,7 @@ desktop.ps1 replay shots\actions_20261028T005646.log --last 50
 13. **整窗读文本可能读到秘密。** 实测对聊天窗口做整窗 `read-text`，读数里带出过含会话 key 的支付 URL。请用 `--max-lines` / `--filter` 收窄，也不要记录你不必记录的原文。
 14. **`selftest --live` 会真动桌面。** 它创建并关闭自己的 `DTX-*` 夹具窗口；只在没有别的东西需要前台时运行。另外：夹具进程仍是 System-aware DPI，而工具进程是 Per-Monitor V2 —— 单屏无影响，混合 DPI 多屏下夹具可能落偏。
 15. **按键是物理输入** —— agent 在驱动时人不要碰鼠标键盘；agent 在做不可逆动作（发消息、删除）之前必须先用截图确认目标窗口。
-16. **`selftest --live` 必须从**路径不含空格**的目录里跑。** live 套件用 `Start-Process -ArgumentList` 起它的辅助子进程，而这个 API **不会**给含空的值加引号——于是 `-File D:\My Tools\desktop.ps1` 到子进程手里被从空格处截断，子进程静默地什么都没跑（本机实测：不加引号 `exit=-196608`，PowerShell 抱怨 `…\Temp\qt` 不是 `.ps1`；加引号 `exit=0`）。**工具本身不受影响**——调用方自己给 `-File` 参数加引号，任何路径都正常；坏的是测试装置，它会报出 `pressed-by-child=False` 这类与代码无关的红。把所有起子进程的地方补上引号已单独立为一轮。在那之前，请从不含空格的目录跑套件，否则这样的红要读成装置问题，不是回归。
+16. **`Start-Process` 不会给含空的值加引号。** live 套件过去以数组元素传 `-File`、`$path`，而这个 API 用空格拼接数组、自身不加任何引号——于是 `-File D:\My Tools\desktop.ps1` 到子进程手里被从空格处截断，子进程静默地什么都没跑（本机实测：不加引号 `exit=-196608`，PowerShell 抱怨 `…\Temp\qt` 不是 `.ps1`；加引号 `exit=0`）。现在套件里每个数组形式的启动都经同一个引号 helper，`selftest --live` 可以从含空格的路径跑；这条坑对你自己传的 `-File` 参数仍然成立，仍需自己加引号。
 
 ## 截图坐标系（读一次，少踩所有脱靶）
 

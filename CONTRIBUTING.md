@@ -80,3 +80,35 @@ the tool's own regression gate is the arbiter for all of them.
   the desktop, just without a warning.
 - The tool's source file is pure ASCII by invariant (PowerShell 5.1 decoding);
   do not add non-ASCII literals to it. Docs are UTF-8 and bilingual.
+
+## Release assets
+
+A release publishes three manifests beside the portable zip. Generate them from
+a clean tree at the tagged commit; do not hand-edit rows.
+
+1. `members-v<ver>.txt` — one row per file **inside** the portable zip, in zip
+   order: `<sha256>  <size>  <relative path>` (two spaces between columns).
+2. `src-SHA256SUMS-v<ver>.txt` — every tracked file under `src/`, sorted by
+   path, same row shape. The zip carries the built `desktop.ps1`; the source
+   tree it is stitched from is published only through git, so it gets its own
+   manifest rather than being mixed into the zip's row list.
+3. `SHA256SUMS-v<ver>.txt` — the release assets themselves: the portable zip,
+   the root `desktop.ps1`, `members-v<ver>.txt` and `src-SHA256SUMS-v<ver>.txt`.
+
+All three are UTF-8 without BOM, LF line endings, trailing newline. The `src/`
+manifest is reproducible with:
+
+```powershell
+$ver = '<version>'
+$rows = git ls-files src | Sort-Object | ForEach-Object {
+  $p = $_ -replace '/', '\'
+  '{0}  {1}  {2}' -f (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLower(), (Get-Item -LiteralPath $p).Length, $_
+}
+[System.IO.File]::WriteAllText("src-SHA256SUMS-v$ver.txt", (($rows -join "`n") + "`n"),
+  (New-Object System.Text.UTF8Encoding($false)))
+```
+
+Existing manifests are historical: `members-v4.9.1.txt` and
+`SHA256SUMS-v4.9.1.txt` keep the bytes they were published with, even after
+later commits change `desktop.ps1` or `src/`. A changed tree produces a new
+version's manifests, never an in-place edit.
