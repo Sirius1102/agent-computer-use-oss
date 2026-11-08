@@ -1,0 +1,8 @@
+[
+  {"warmup": ""},
+  {"shot": "warmup-chain-1"},
+  {"assert-text": {"region": [0, 0, 3840, 2160], "needle": "REPLACE-WITH-A-NEEDLE-ON-YOUR-SCREEN"}},
+  {"assert-color": {"at": [10, 10], "hex": "#000000", "tolerance": 255}},
+  {"sleep": 30},
+  {"shot": "warmup-chain-2"}
+]

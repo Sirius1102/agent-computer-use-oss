@@ -2,7 +2,7 @@
 
 One level below `SKILL.md`. Everything here is optional depth: the quick reference in `SKILL.md` is enough to start; come here for flags, exit codes and recipes.
 
-Current tool version: v4.10.1.
+Current tool version: v4.11.0.
 
 ## Invocation
 
@@ -133,7 +133,7 @@ When `copy-file --replace-clipboard` runs without `--clipboard-backup`, the prev
 
 ## Batch · Replay · Housekeeping
 
-- `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]` — a JSON array of steps in ONE process; `desc` names each step receipt; ordinary failures continue by default and still make the final exit code 1, while `--stop-on-error` stops after the first; `ok` means step execution/delivery, not business success, so add an assertion such as `assert-text` or `expectText`. `script --json` is refused because script has no JSON envelope. `to` per step = foreground guard; asserts as checkpoints; `require-popup` arms a popup survival guard for later steps; `press-down`/`drag-to`/`press-up` are valid steps.
+- `script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n] [--reset-on-exit] [--warmup]` — a JSON array of steps in ONE process; `desc` names each step receipt; ordinary failures continue by default and still make the final exit code 1, while `--stop-on-error` stops after the first; `ok` means step execution/delivery, not business success, so add an assertion such as `assert-text` or `expectText`. `script --json` is refused because script has no JSON envelope. `to` per step = foreground guard; asserts as checkpoints; `require-popup` arms a popup survival guard for later steps; `press-down`/`drag-to`/`press-up` are valid steps. `--warmup` (or a handwritten `{"warmup": ""}` first step) prepends/runs a read-only pre-flight — one receipt line `warmup: foreground=pid=N dpi=<mode> ocr=available (<lang>, langs=N, maxDim=N) elapsed=Nms` — and dedups: a file whose first step is already warmup is never double-prepended. A failed probe prints `#N warmup FAIL: probe=<name>` plus an abort line, runs NO later step and exits 1; the dry-run plan lists the warmup step with `probes=foreground,dpi,ocr` and executes nothing.
 - `replay [<actions.log>] [--last n] [--grep s] [--go]` — re-run recorded act/text/clipboard commands; DRY by default. Redacted payloads (`<redacted:Nchars>`) are refused, never typed as placeholders.
 - `shots-cleanup [--keep n] [--go] [--quarantine <dir>]` — bound the screenshot folder; dry by default; `--go` moves files into a quarantine dir with a MANIFEST (nothing is deleted). Since v2.6.0 the same bound is applied automatically after every capture (newest 100 by default; `DTX_SHOT_KEEP=<n>` changes it, `DTX_SHOT_AUTOTRIM=0` stops the automatic pass); it skips with a stated reason when no quarantine is configured, and never runs during selftest. The `--go` target, in order: `--quarantine <dir>`, then `DTX_QUARANTINE` from the process environment, then `DTX_QUARANTINE` from the User-scope registry, then Machine-scope, else the command refuses (exit 2) naming both remedies — no baked-in machine path.
 

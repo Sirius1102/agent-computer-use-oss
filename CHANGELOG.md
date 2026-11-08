@@ -2,6 +2,35 @@
 
 All notable changes to this project are documented in this file.
 
+## v4.11.0 - 2026-11-08
+
+- **`warmup` step and `script --warmup` (batch pre-flight).** `{"warmup": ""}` is a new script
+  step type that runs one read-only pre-flight — foreground window identity, DPI mode, OCR
+  engine availability — through the same read helpers `doctor` uses; the receipt is one line
+  (`warmup: foreground=pid=N dpi=<mode> ocr=available (<lang>, langs=N, maxDim=N) elapsed=Nms`)
+  and the step writes no audit line (nothing was acted on). A probe that cannot produce its
+  value aborts the WHOLE script before any real step runs (`#N warmup FAIL: probe=<name>`,
+  exit 1) — a broken environment fails loudly at step 1 instead of quietly failing every later
+  step. `--warmup` is sugar for writing the step by hand: it prepends exactly one warmup step
+  and NEVER double-prepends a file whose first step is already warmup. The dry-run plan lists
+  the warmup step with `[probes=foreground,dpi,ocr]` and executes nothing.
+- **Why.** Chains of desktop actions belong in one `script` process (each separate call pays a
+  fresh PowerShell cold start); the first chain after a cold boot or fresh session additionally
+  pays one-time engine init. The warmup pre-flight pays that cost deliberately, before the real
+  steps, and turns "environment broken" into a named, immediate verdict. Measured medians for
+  five-separate-calls vs `script` vs `script --warmup` ship in the READMEs and in
+  `samples/warmup-chain.md` (authoring machine; re-measure before quoting).
+- **New sample: `samples/warmup-chain.json` + `samples/warmup-chain.md`** — a read-only
+  5-step chain with the warmup step written by hand, plus the two invocation forms.
+- **Offline gate: 1380 -> 1384 checks** (+4 warmup e2e legs: happy receipt shape / handwritten-
+  vs-switch dedup / dry-run plan / injected-failure abort via the `DTX_WARMUP_FAIL` hook;
+  mutation-verified: removing the dedup guard, dropping the elapsed figure and weakening the
+  abort each turn exactly one named leg red).
+
+<!-- B7 留档 (record from the UU research round): if named sessions ever become allowed here,
+     the blueprint is ready — UU's terminal multiplexer semantics (new/attach/ls/has/rename/kill)
+     plus a `__warm__` pre-warmed session that absorbs the cold start once per boot. -->
+
 ## v4.10.1 - 2026-11-08
 
 - **The shipped-policy contract understands repository layouts (fix).** The "quirks.json ships

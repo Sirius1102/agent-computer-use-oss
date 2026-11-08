@@ -5,7 +5,7 @@ description: Operates a real Windows desktop for an agent — screenshots, windo
 
 # Agent Computer Use
 
-Tool version: v4.10.1.
+Tool version: v4.11.0.
 
 首次使用先阅读[电脑操控快速上手](快速上手指南.md)。这份文档随技能包一起交付（仓库根目录与本目录各一份，两份逐字节相同由离线判据钉死，改一处必改两处），它把截图、定位、动作和回读串成一条标准流程，并说明中文输入法下 `type`、`uia-settext`、`paste` 的选择。
 
@@ -37,7 +37,7 @@ Every command is one invocation:
 powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-dir>/scripts/desktop.ps1" <command> [arguments...]
 ```
 
-The tool is **stateless**: each call is a fresh process; nothing persists between calls except the audit log and saved screenshots. Long chains can be batched in one process via the `script` command.
+The tool is **stateless**: each call is a fresh process; nothing persists between calls except the audit log and saved screenshots. Long chains can be batched in one process via the `script` command (see **Batch Chains: One Process, Not Five** below).
 
 ## Command Quick Reference
 
@@ -115,7 +115,7 @@ Use `--guard-text` or `--guard-region` when the expected pre-action content is r
 
 ### Batch And Replay
 
-- `script <steps.json> [--dry-run] [--stop-on-error] [--reset-on-exit]` — run a JSON list of steps in one process (guards as checkpoints); add `desc` to name receipts; default continues after an ordinary failure and exits 1, while `--stop-on-error` stops there; `ok` means the step ran, not that the business result succeeded; use an assertion such as `assert-text`; `--reset-on-exit` snapshots the clipboard before step 1 and restores it on every exit road with a receipt; `script --json` is refused because this command has no JSON envelope; e.g. `script plan.json --dry-run`
+- `script <steps.json> [--dry-run] [--stop-on-error] [--reset-on-exit] [--warmup]` — run a JSON list of steps in one process (guards as checkpoints); add `desc` to name receipts; default continues after an ordinary failure and exits 1, while `--stop-on-error` stops there; `ok` means the step ran, not that the business result succeeded; use an assertion such as `assert-text`; `--reset-on-exit` snapshots the clipboard before step 1 and restores it on every exit road with a receipt; `--warmup` (or a handwritten `{"warmup": ""}` first step) runs a read-only pre-flight first — foreground identity, DPI mode, OCR engine — and a probe that cannot produce its value aborts the whole script before any real step runs (a file that already starts with warmup is never double-prepended); `script --json` is refused because this command has no JSON envelope; e.g. `script plan.json --warmup`
 - `replay [<actions.log>] [--go]` — re-run recorded commands (dry by default); e.g. `replay --last 10`
 
 ### Self-Check
@@ -131,6 +131,24 @@ Use `--guard-text` or `--guard-region` when the expected pre-action content is r
 3. **On `REFUSED`, read the reason — do not improvise.** The refusal names the expected/actual values and the supported fallback roads (`find` / `find-text` / `uia-find` / `imgclick`). Never "solve" a refusal by eyeballing a screenshot and clicking guessed coordinates — that is exactly what the guards exist to prevent.
 4. **A zero is not absence.** When a locator reports 0 hits, read its echo: it names what both roads measured and whether a re-contact happened. Use the suggested alternative road instead of falling back to blind coordinates.
 5. **Prefer the order: `find` → `uia-find` → `find-text` / `find-click` → `imgclick`.** This ladder is printed by `help`; guessing coordinates off a fitted/downscaled screenshot is not a step in it.
+
+## Batch Chains: One Process, Not Five
+
+Every separate call pays a fresh PowerShell process. The rule of thumb, measured on the authoring machine (see the table): a chain of desktop actions belongs in ONE `script` call, not N separate calls.
+
+- **When**: 2+ desktop actions in one task → write a steps file, dry-run it, run it once. Five separate calls also re-pay process start, screen re-attach and OCR engine init each time; `script` pays them once.
+- **Warmup pre-flight**: the first run in a fresh environment (new boot, new session, first OCR use) should pay engine init BEFORE the real steps. Either write `{"warmup": ""}` as the first step, or pass `--warmup` and let the tool prepend one (a steps file that already starts with warmup is never double-prepended). The step is read-only — it reports foreground identity, DPI mode and OCR engine availability — and a probe that cannot produce its value aborts the whole script before any real step runs, so a broken environment fails loudly instead of failing every later step quietly.
+- **Dry-run still applies**: `script plan.json --warmup --dry-run` prints the plan (the warmup step shows `probes=foreground,dpi,ocr`) and executes nothing.
+
+Measured chain (5 steps: two shots, one full-screen OCR `assert-text`, one pixel read, one sleep), 10 runs, median, 3840x2160, PowerShell 5.1:
+
+| invocation form | median per chain |
+|---|---|
+| five separate desktop.ps1 calls | 10036 ms |
+| `script`, one process, no warmup | 3455 ms |
+| `script --warmup`, one process, pre-flight | 3488 ms |
+
+The per-call saving is the A−B delta; the one-time warmup cost is the C−B delta. Re-measure on your own machine before quoting these numbers elsewhere — they are an authoring-machine figure, not a contract.
 
 ## Permissions And Risk
 
@@ -553,7 +571,7 @@ Example: desktop.ps1 unmap C:\Temp\out.png 10 20
 Example: desktop.ps1 zoom 100 200 800 600
 
 ### script
-`script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]`
+`script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n] [--reset-on-exit] [--warmup]`
 Example: desktop.ps1 script plan.json --dry-run
 
 ### replay

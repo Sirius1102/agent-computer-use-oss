@@ -992,8 +992,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   ST-Check 'lint (A-23): every exit inside a moved handler body is named by its case, the eight registered cases account for exactly fourteen, and a fifteenth is red' (
     ($a23GapHandler -ceq '') -and (@($a23CaseKeys).Count -eq 14) -and (@($script:StHandlerExitAllowList).Count -eq 8))
   if ($a23GapHandler -ne '') { Write-Output ('      handler exits: ' + $a23GapHandler) }
-  ST-Check 'lint (A-23): the eleven exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the fourteen above' (
-    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 11) -and (@($a23Keys).Count -eq 25) -and (@($a23CaseKeys).Count -eq 14))
+  ST-Check 'lint (A-23): the twelve exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the fourteen above' (
+    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 12) -and (@($a23Keys).Count -eq 26) -and (@($a23CaseKeys).Count -eq 14))
   if ($a23GapEntry -ne '') { Write-Output ('      entry exits: ' + $a23GapEntry) }
   # positive control for the predicate itself: a clean fixture counted by case, a planted handler named
   # as an owner nobody declared, a count that moved named, an entry that is gone named, and '-no-parse'

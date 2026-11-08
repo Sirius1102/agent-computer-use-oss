@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.10.1  (version sync list lives in the project overview doc)
+# version: 4.11.0  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.10.1'
+$script:ToolVersion = '4.11.0'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -574,7 +574,7 @@ Set-StrictMode -Version Latest
 # 107 -> 114, and the quirks policy contract block (shipped-inert contract, validator accept, ten-case
 # rejection ladder, matcher semantics, window-lookup defaults) takes RepoContract 30 -> 35, both
 # measured by re-running the A-14b AST counter over the two family bodies; 1368 -> 1380.
-$script:DeclaredCheckTotal = 1380
+$script:DeclaredCheckTotal = 1384
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -2496,7 +2496,7 @@ $script:StFamilyCounts = @{
   # v4.8.0 (B-2) (b-wip-r3): the origin-resolution / archive-walk banner and its 5 checks (one
   # is the child-process e2e, one a conditional SKIP) add one banner and 99 lines
   # (+1 -> 12, +99 -> 1150), measured by the b-wip-r3 attribution run on this tree.
-  'audit-output' = 'banners=12,lines=1481'
+  'audit-output' = 'banners=12,lines=1524'
   # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
@@ -2722,7 +2722,7 @@ $script:StFamilyCheckCounts = @(
   # lib/selftest-split-machine.ps1.
   'Invoke-SelftestFamily-SplitMachine=68',
   'Invoke-SelftestFamily-PopupOcclusion=48',
-  'Invoke-SelftestFamily-AuditOutput=114',
+  'Invoke-SelftestFamily-AuditOutput=118',
   'Invoke-SelftestFamily-ExpectFamily=101',
   'Invoke-SelftestFamily-DragPress=22',
   # v4.6.13: the occlusion true-negative leg grew its own ST-Skip branch (premise not established),
@@ -2752,7 +2752,7 @@ $script:StFamilyCheckCounts = @(
 # combination handler reuses the same post-send foreground guard as type/keys, which exits 1 so a script
 # step records FAIL instead of dying.
 $script:StHandlerExitAllowList = @('challenge-probe=3', 'ime-en=1', 'key=1', 'keys=1', 'paste=1', 'paste-file=1', 'shots-cleanup=5', 'type=1')
-$script:StEntryExitAllowList = @('<script>=2', 'fn:Invoke-ReplayLog=4', 'fn:Invoke-ScriptBatch=5')
+$script:StEntryExitAllowList = @('<script>=2', 'fn:Invoke-ReplayLog=4', 'fn:Invoke-ScriptBatch=6')
 
 # '$script:' targets are keyed without the dollar (script:CdpPort), because the AST's left extent
 # keeps the qualifier and dropping the sigil here is what makes the two sides comparable.
@@ -21975,8 +21975,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   ST-Check 'lint (A-23): every exit inside a moved handler body is named by its case, the eight registered cases account for exactly fourteen, and a fifteenth is red' (
     ($a23GapHandler -ceq '') -and (@($a23CaseKeys).Count -eq 14) -and (@($script:StHandlerExitAllowList).Count -eq 8))
   if ($a23GapHandler -ne '') { Write-Output ('      handler exits: ' + $a23GapHandler) }
-  ST-Check 'lint (A-23): the eleven exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the fourteen above' (
-    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 11) -and (@($a23Keys).Count -eq 25) -and (@($a23CaseKeys).Count -eq 14))
+  ST-Check 'lint (A-23): the twelve exits that were never inside a moved body are named by owner too, so an exit planted outside a handler cannot be absorbed into the fourteen above' (
+    ($a23GapEntry -ceq '') -and (@($a23OtherKeys).Count -eq 12) -and (@($a23Keys).Count -eq 26) -and (@($a23CaseKeys).Count -eq 14))
   if ($a23GapEntry -ne '') { Write-Output ('      entry exits: ' + $a23GapEntry) }
   # positive control for the predicate itself: a clean fixture counted by case, a planted handler named
   # as an owner nobody declared, a count that moved named, an entry that is gone named, and '-no-parse'
@@ -32012,7 +32012,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 19) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 25) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
@@ -32025,6 +32025,8 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # call-sites 13 -> 19 (UU-absorb, v4.10.0): the failure-receipt block adds six probes - doctor
   # text+json, proc-list --json, and the script reset trio (clean / dry / mistyped flag) - all
   # through the same runner, measured, not assumed.
+  # call-sites 19 -> 25 (A4, v4.11.0): the warmup block adds six probes - happy, handwritten,
+  # dedup, default-unchanged, dry plan, and the injected-failure road - same runner, measured.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -32962,6 +32964,47 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
     ($uarReset.code -eq 0) -and ($uarReset.out -cmatch 'script: reset-on-exit clipboard=(restored|nothing-to-restore|NOT-restored|partial) ') -and
     ($uarResetDry.code -eq 0) -and $uarResetDry.out.Contains('nothing to reset') -and
     ($uarResetBad.code -eq 1) -and $uarResetBad.out.Contains('--reset-on-exit'))
+  # v4.11.0 (A4): the script warmup step and the --warmup switch.
+  # The probes are reads through doctor's own helpers, so a real child runs them for real; the
+  # failure road is deterministic through the DTX_WARMUP_FAIL injection hook (the DTX_DPI_FORCE
+  # shape: save / set / restore in finally, never set by the product).
+  $wuSteps1 = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-wu1-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.json')
+  $wuSteps2 = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-wu2-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.json')
+  $wuEnc = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($wuSteps1, '[{"sleep":50}]', $wuEnc)
+  [System.IO.File]::WriteAllText($wuSteps2, '[{"warmup":""},{"sleep":50}]', $wuEnc)
+  $wuHappy = & $cnpRun -ChildArgs @('script', $wuSteps1, '--warmup')
+  $wuHand = & $cnpRun -ChildArgs @('script', $wuSteps2)
+  $wuDup = & $cnpRun -ChildArgs @('script', $wuSteps2, '--warmup')
+  $wuPlain = & $cnpRun -ChildArgs @('script', $wuSteps1)
+  $wuDry = & $cnpRun -ChildArgs @('script', $wuSteps1, '--warmup', '--dry-run')
+  $wuHadFail = Test-Path Env:\DTX_WARMUP_FAIL
+  $wuSavedFail = ''
+  if ($wuHadFail) { $wuSavedFail = [string]$env:DTX_WARMUP_FAIL }
+  $wuFail = $null
+  try {
+    $env:DTX_WARMUP_FAIL = 'ocr'
+    $wuFail = & $cnpRun -ChildArgs @('script', $wuSteps2)
+  } finally {
+    if ($wuHadFail) { $env:DTX_WARMUP_FAIL = $wuSavedFail } else { Remove-Item Env:\DTX_WARMUP_FAIL -ErrorAction SilentlyContinue }
+  }
+  if (Test-Path -LiteralPath $wuSteps1) { Remove-Item -LiteralPath $wuSteps1 -Force }
+  if (Test-Path -LiteralPath $wuSteps2) { Remove-Item -LiteralPath $wuSteps2 -Force }
+  ST-Check 'e2e (A4): script --warmup prepends one real pre-flight - the receipt names all three probes (foreground pid, dpi mode, ocr available) with an elapsed figure, the flag-inserted step is #1 and the later steps still run' (
+    ($wuHappy.code -eq 0) -and $wuHappy.out.Contains('#1 warmup ok') -and
+    ($wuHappy.out -cmatch 'warmup: foreground=pid=[0-9]+ dpi=\S+ ocr=available \(.+, langs=[0-9]+, maxDim=[0-9]+\) elapsed=[0-9]+ms') -and
+    $wuHappy.out.Contains('#2 sleep ok') -and $wuHappy.out.Contains('script: 2 steps, all ok'))
+  ST-Check 'e2e (A4): a handwritten first warmup step and the --warmup switch agree - both run exactly ONE warmup (the dedup rule), and without either the script is byte-for-byte today''s behavior (one step, no warmup receipt)' (
+    ($wuHand.code -eq 0) -and (@([regex]::Split($wuHand.out, "\r?\n") | Where-Object { $_ -like '#* warmup ok' }).Count -eq 1) -and
+    ($wuDup.code -eq 0) -and (@([regex]::Split($wuDup.out, "\r?\n") | Where-Object { $_ -like '#* warmup ok' }).Count -eq 1) -and
+    ($wuPlain.code -eq 0) -and ($wuPlain.out.Contains('script: 1 steps, all ok')) -and (-not $wuPlain.out.Contains('warmup ok')))
+  ST-Check 'e2e (A4): --warmup --dry-run prints the PLAN with the probe list and executes nothing (no probe receipt on the dry road)' (
+    ($wuDry.code -eq 0) -and $wuDry.out.Contains('#1 warmup') -and $wuDry.out.Contains('probes=foreground,dpi,ocr') -and
+    (-not $wuDry.out.Contains('warmup: foreground=')))
+  ST-Check 'e2e (A4): a failed warmup probe aborts by name - the injected ocr failure prints probe=ocr, says nothing after the step ran, runs NO later step, and exits 1' (
+    ($wuFail.code -eq 1) -and $wuFail.out.Contains('#1 warmup FAIL: probe=ocr') -and
+    $wuFail.out.Contains("script aborted: warmup probe 'ocr' failed (nothing after this step ran)") -and
+    (-not $wuFail.out.Contains('#2 sleep ok')))
 
 }
 
@@ -41304,7 +41347,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.10.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.11.0 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -42318,7 +42361,7 @@ desktop.ps1 v4.10.1 - Windows desktop automation (DPI-aware, absolute screen pix
 
   batch
     (2 or more fixed steps: batch them here - one process, not one per step)
-    script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n] [--reset-on-exit]
+    script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n] [--reset-on-exit] [--warmup]
                                     run a JSON array of steps in one process:
                                     per-step "to" = hard foreground guard (a
                                     guard failure aborts everything), asserts as
@@ -42361,6 +42404,19 @@ desktop.ps1 v4.10.1 - Windows desktop automation (DPI-aware, absolute screen pix
                                     partial, the paste family's vocabulary); held
                                     buttons stay covered by the P-3 exit watchdog.
                                     Opt-in: without the flag nothing changes.
+                                    --warmup (v4.11.0) prepends ONE read-only pre-flight
+                                    step (skipped when the file's first step is already
+                                    'warmup'): it probes the foreground window, the DPI
+                                    mode and the OCR engine through the same helpers
+                                    doctor uses, so the expensive first OCR load is paid
+                                    once inside this process. A probe that cannot produce
+                                    its value ABORTS the whole script before step 1 of
+                                    real work runs, naming the probe
+                                    (#1 warmup FAIL: probe=<name>). The warmup step
+                                    touches nothing - no screenshot, no clipboard, no
+                                    activation - so the audit stays silent for it, the
+                                    same rule wait-win keeps. The step type 'warmup'
+                                    written by hand has the identical semantics.
     replay [<actions.log>] [--last n] [--grep s] [--go]
                                     re-run recorded act/text/clipboard commands;
                                     DRY RUN by default, --go executes. Unknown
@@ -44140,8 +44196,57 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 # 2026-09-29 #11: the two largest inline cases became named handlers so the
 # dispatch switch stays a dispatch). No direct Log-Action here - steps log
 # through their own commands, so audit semantics are unchanged.
+
+# v4.11.0 (A4): the warmup probe set - the read-only pre-flight the script step type
+# 'warmup' runs, and the ONLY thing --warmup inserts. Three probes, all reads through the
+# same helpers doctor uses (no second reader for any fact): the foreground window identity
+# (a script acts on A window; a locked/empty desktop has none and every later step would
+# misfire), the DPI mode + virtual screen (the coordinate space every later step computes
+# in), and the OCR engine (the expensive first-load - WinRT init is exactly the component
+# cost a cold start pays twice when the chain locates by text). A probe that cannot produce
+# its value FAILS the warmup by name: this is a pre-flight check, not an advisory - the
+# task order says a failed warmup aborts the remaining steps before any of them runs. The
+# probes touch nothing: no screenshot, no clipboard, no activation, no state change (audit
+# stays silent for the same reason wait-win stays silent - reads are not actions).
+# DTX_WARMUP_FAIL=<probe> forces that one probe to fail, for offline injection only (the
+# same shape and the same caveat as DTX_DPI_FORCE); it is read once, here, and never set
+# by the product.
+function Invoke-ScriptWarmupProbes {
+  $sw = [System.Diagnostics.Stopwatch]::StartNew()
+  foreach ($wuF in @('foreground', 'dpi', 'ocr')) {
+    if ([string]$env:DTX_WARMUP_FAIL -ceq $wuF) {
+      return @{ Ok = $false; Probe = $wuF; Reason = 'forced by DTX_WARMUP_FAIL (offline injection only)'; ElapsedMs = 0 }
+    }
+  }
+  $wuFg = @{ }
+  try { $wuFg = Get-ForegroundIdentity } catch {
+    return @{ Ok = $false; Probe = 'foreground'; Reason = $_.Exception.Message; ElapsedMs = $sw.ElapsedMilliseconds }
+  }
+  if ([int]$wuFg.Pid -eq 0) {
+    return @{ Ok = $false; Probe = 'foreground'; Reason = 'no foreground window (pid=0 - a locked or empty desktop cannot host a script)'; ElapsedMs = $sw.ElapsedMilliseconds }
+  }
+  try { [void][string]$script:DpiMode; [void][System.Windows.Forms.SystemInformation]::VirtualScreen } catch {
+    return @{ Ok = $false; Probe = 'dpi'; Reason = $_.Exception.Message; ElapsedMs = $sw.ElapsedMilliseconds }
+  }
+  $wuOcr = @{ }
+  try {
+    $null = [Windows.Media.Ocr.OcrEngine,Windows.Media.Ocr,ContentType=WindowsRuntime]
+    $wuEng = Get-OcrEngine
+    if ($null -eq $wuEng) {
+      return @{ Ok = $false; Probe = 'ocr'; Reason = 'no OCR engine available (a locate step would fail; install a language pack or drop the warmup)'; ElapsedMs = $sw.ElapsedMilliseconds }
+    }
+    $wuLangs = @()
+    try { $wuLangs = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag }) } catch { $wuLangs = @() }
+    $wuOcr = @{ current = [string]$wuEng.RecognizerLanguage.LanguageTag; langs = @($wuLangs).Count; maxDim = [int64](Get-OcrMaxDimension) }
+  } catch {
+    return @{ Ok = $false; Probe = 'ocr'; Reason = $_.Exception.Message; ElapsedMs = $sw.ElapsedMilliseconds }
+  }
+  $sw.Stop()
+  return @{ Ok = $true; Probe = ''; Reason = ''; Fg = $wuFg; DpiMode = [string]$script:DpiMode; Ocr = $wuOcr; ElapsedMs = $sw.ElapsedMilliseconds }
+}
+
 function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
-      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit]
+      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit] [--warmup]
       # Runs a JSON array of steps in ONE process launch, with a foreground
       # guard between steps and assert checkpoints - the replacement for
       # "action -> read echo -> screenshot -> next action" call cycles.
@@ -44168,13 +44273,14 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
       #   assert-window "sel"  assert-text {sel|region,needle}
       #   assert-color {at:[x,y],hex,tolerance}  assert-hash {region,op,hash}
       #   assert-stable {sel|region,timeout}
-      $file = $null; $dry = $false; $stopOnError = $false; $shotAt = -1; $resetOnExit = $false
+      $file = $null; $dry = $false; $stopOnError = $false; $shotAt = -1; $resetOnExit = $false; $warmupFlag = $false
       $tok = @($Rest)
       for ($ti = 0; $ti -lt $tok.Count; $ti++) {
         $t = "$($tok[$ti])"
         if ($t -eq '--dry-run' -or $t -eq '--dry') { $dry = $true }
         elseif ($t -eq '--stop-on-error') { $stopOnError = $true }
         elseif ($t -eq '--reset-on-exit') { $resetOnExit = $true }
+        elseif ($t -eq '--warmup') { $warmupFlag = $true }
         elseif ($t -match '^--shot-at=(\d+)$') { $shotAt = [int]$Matches[1] }
         elseif ($t -eq '--shot-at') {
           # v1.5.2 (audit R-07): the space form is what README, help and this
@@ -44189,11 +44295,11 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
           # A mistyped safety flag must never degrade into "run it for real":
           # `--dry` used to fall through and be treated as nothing, so the
           # supposed dry run executed every step.
-          throw "script: unknown flag '$t' (valid: --dry-run | --stop-on-error | --shot-at <n> | --reset-on-exit)"
+          throw "script: unknown flag '$t' (valid: --dry-run | --stop-on-error | --shot-at <n> | --reset-on-exit | --warmup)"
         }
         elseif ($null -eq $file) { $file = $t }
       }
-      if (-not $file) { throw 'usage: script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit]' }
+      if (-not $file) { throw 'usage: script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit] [--warmup]' }
       if (-not (Test-Path $file)) { throw "file not found: $file" }
       # Assign BEFORE wrapping: ConvertFrom-Json emits a JSON array as ONE
       # Object[] on the pipeline, so @(expr | ConvertFrom-Json) yields
@@ -44203,12 +44309,21 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
       $rawSteps = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
       $steps = @($rawSteps)
       if ($steps.Count -eq 0) { throw 'script: steps file contains no steps' }
-      $known = @('click','rclick','dblclick','move','hover','drag','press-down','drag-to','press-up','relclick','wheel','focus','type','keys','paste','paste-file','sleep','shot','wait-win','wait-gone','wait-stable','menu-pick','find-click','open-and-pick','win-move','win-resize','win-max','win-min','win-restore','win-close','dialog-cancel','assert-window','assert-text','assert-color','assert-hash','assert-stable','require-popup','release-popup')
+      $known = @('click','rclick','dblclick','move','hover','drag','press-down','drag-to','press-up','relclick','wheel','focus','type','keys','paste','paste-file','sleep','shot','wait-win','wait-gone','wait-stable','menu-pick','find-click','open-and-pick','win-move','win-resize','win-max','win-min','win-restore','win-close','dialog-cancel','assert-window','assert-text','assert-color','assert-hash','assert-stable','require-popup','release-popup','warmup')
       foreach ($s in $steps) {
         $keys = @($s.PSObject.Properties.Name | Where-Object { $_ -in $known })
         if ($keys.Count -eq 0) {
           throw "script: step has no known action (known: $($known -join ' ')); got: $($s.PSObject.Properties.Name -join ' ')"
         }
+      }
+      # v4.11.0 (A4): --warmup prepends ONE warmup step (the flag is sugar for writing the step
+      # by hand - same probes, same failure semantics, no second implementation). The dedup rule:
+      # a steps file whose FIRST known action is already 'warmup' is left alone - the caller who
+      # wrote it chose the position, and a second pre-flight would double the OCR load it exists
+      # to pay once. Without the flag and without a warmup step, nothing changes byte for byte.
+      if ($warmupFlag) {
+        $wuFirst = @(@($steps)[0].PSObject.Properties.Name | Where-Object { $_ -in $known })[0]
+        if ([string]$wuFirst -cne 'warmup') { $steps = @([pscustomobject]@{ warmup = '' }) + @($steps) }
       }
       "script: $($steps.Count) step(s) from $file$(if ($dry) { ' (DRY RUN - nothing executed)' })"
       if ($dry) {
@@ -44216,7 +44331,7 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
         foreach ($s in $steps) {
           $i++
           $act = @($s.PSObject.Properties.Name | Where-Object { $_ -in $known })[0]
-          $mods = @(); if (Get-OptValue $s 'to') { $mods += "to=$(Get-OptValue $s 'to')" }; if (Get-OptValue $s 'guard-text') { $mods += 'guard-text' }; if (Get-OptValue $s 'guard-region') { $mods += 'guard-region' }; if (Get-OptValue $s 'retry') { $mods += "retry=$(Get-OptValue $s 'retry')" }; if (Get-OptValue $s 'expectText') { $mods += "expect=$(Get-OptValue $s 'expectText')" }; if (Get-OptValue $s 'expectGone') { $mods += "expect-gone=$(Get-OptValue $s 'expectGone')" }
+          $mods = @(); if (Get-OptValue $s 'to') { $mods += "to=$(Get-OptValue $s 'to')" }; if (Get-OptValue $s 'guard-text') { $mods += 'guard-text' }; if (Get-OptValue $s 'guard-region') { $mods += 'guard-region' }; if (Get-OptValue $s 'retry') { $mods += "retry=$(Get-OptValue $s 'retry')" }; if (Get-OptValue $s 'expectText') { $mods += "expect=$(Get-OptValue $s 'expectText')" }; if (Get-OptValue $s 'expectGone') { $mods += "expect-gone=$(Get-OptValue $s 'expectGone')" }; if ($act -ceq 'warmup') { $mods += 'probes=foreground,dpi,ocr' }
           $val = $s.$act
           $vs = if ($val -is [string]) { "'$val'" } else { ($val | ConvertTo-Json -Compress -Depth 3) }
           "#$i $act $vs$(if ($mods) { '  [' + ($mods -join ' ') + ']' })"
@@ -44263,7 +44378,20 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
         $val = $s.$act
         $desc = if (Get-OptValue $s 'desc') { " ($(Get-OptValue $s 'desc'))" } else { '' }
         try {
-          if ($act -eq 'require-popup') {
+          if ($act -ceq 'warmup') {
+            # v4.11.0 (A4): the pre-flight. Read-only probes (see Invoke-ScriptWarmupProbes); a
+            # probe that cannot produce its value aborts the WHOLE script here - nothing after
+            # this step runs, and the exit keeps every contract the other aborts keep (exit 1,
+            # the finally road for --reset-on-exit, no summary line pretending the rest ran).
+            $wuR = Invoke-ScriptWarmupProbes
+            if (-not [bool]$wuR.Ok) {
+              Write-Output "#$idx warmup FAIL: probe=$($wuR.Probe) reason=$($wuR.Reason)"
+              Write-Output "script aborted: warmup probe '$($wuR.Probe)' failed (nothing after this step ran)"
+              exit 1
+            }
+            "warmup: foreground=pid=$($wuR.Fg.Pid) dpi=$($wuR.DpiMode) ocr=available ($($wuR.Ocr.current), langs=$($wuR.Ocr.langs), maxDim=$($wuR.Ocr.maxDim)) elapsed=$($wuR.ElapsedMs)ms"
+          }
+          elseif ($act -eq 'require-popup') {
             if ($null -ne $popupGuard) { throw "require-popup: a popup guard is already armed (step $($popupGuard.ArmedAtStep)) - release-popup first, one guarded popup at a time" }
             $pgw = Resolve-Target ([string]$val) ([bool](Get-OptValue $s 'force')) $false
             Emit-ResolveNote
@@ -44312,7 +44440,7 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
               throw ("POPUP-GUARD-ABORT: popup guard: $($pgChk.Reason) before step $idx of $($steps.Count)`n  baseline: pid=$($popupGuard.Pid) hwnd=0x$($popupGuard.Hwnd.ToString('X')) class=$($popupGuard.Class) rect=($($popupGuard.X),$($popupGuard.Y),$($popupGuard.W)x$($popupGuard.H))`n  now     : $pgNow rect=$pgRectTxt`n  delta   : $($pgChk.Drift)")
             }
           }
-          if ($act -notin @('require-popup', 'release-popup')) {
+          if ($act -notin @('require-popup', 'release-popup', 'warmup')) {
             # hard foreground guard - aborts everything on failure
             if (Get-OptValue $s 'to') {
               $gt = Resolve-Target (Get-OptValue $s 'to') ([bool](Get-OptValue $s 'force')) ([bool](Get-OptValue $s 'alwaysActivate'))

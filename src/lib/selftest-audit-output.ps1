@@ -547,7 +547,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 19) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 25) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
@@ -560,6 +560,8 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # call-sites 13 -> 19 (UU-absorb, v4.10.0): the failure-receipt block adds six probes - doctor
   # text+json, proc-list --json, and the script reset trio (clean / dry / mistyped flag) - all
   # through the same runner, measured, not assumed.
+  # call-sites 19 -> 25 (A4, v4.11.0): the warmup block adds six probes - happy, handwritten,
+  # dedup, default-unchanged, dry plan, and the injected-failure road - same runner, measured.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -1497,5 +1499,46 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
     ($uarReset.code -eq 0) -and ($uarReset.out -cmatch 'script: reset-on-exit clipboard=(restored|nothing-to-restore|NOT-restored|partial) ') -and
     ($uarResetDry.code -eq 0) -and $uarResetDry.out.Contains('nothing to reset') -and
     ($uarResetBad.code -eq 1) -and $uarResetBad.out.Contains('--reset-on-exit'))
+  # v4.11.0 (A4): the script warmup step and the --warmup switch.
+  # The probes are reads through doctor's own helpers, so a real child runs them for real; the
+  # failure road is deterministic through the DTX_WARMUP_FAIL injection hook (the DTX_DPI_FORCE
+  # shape: save / set / restore in finally, never set by the product).
+  $wuSteps1 = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-wu1-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.json')
+  $wuSteps2 = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-wu2-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.json')
+  $wuEnc = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($wuSteps1, '[{"sleep":50}]', $wuEnc)
+  [System.IO.File]::WriteAllText($wuSteps2, '[{"warmup":""},{"sleep":50}]', $wuEnc)
+  $wuHappy = & $cnpRun -ChildArgs @('script', $wuSteps1, '--warmup')
+  $wuHand = & $cnpRun -ChildArgs @('script', $wuSteps2)
+  $wuDup = & $cnpRun -ChildArgs @('script', $wuSteps2, '--warmup')
+  $wuPlain = & $cnpRun -ChildArgs @('script', $wuSteps1)
+  $wuDry = & $cnpRun -ChildArgs @('script', $wuSteps1, '--warmup', '--dry-run')
+  $wuHadFail = Test-Path Env:\DTX_WARMUP_FAIL
+  $wuSavedFail = ''
+  if ($wuHadFail) { $wuSavedFail = [string]$env:DTX_WARMUP_FAIL }
+  $wuFail = $null
+  try {
+    $env:DTX_WARMUP_FAIL = 'ocr'
+    $wuFail = & $cnpRun -ChildArgs @('script', $wuSteps2)
+  } finally {
+    if ($wuHadFail) { $env:DTX_WARMUP_FAIL = $wuSavedFail } else { Remove-Item Env:\DTX_WARMUP_FAIL -ErrorAction SilentlyContinue }
+  }
+  if (Test-Path -LiteralPath $wuSteps1) { Remove-Item -LiteralPath $wuSteps1 -Force }
+  if (Test-Path -LiteralPath $wuSteps2) { Remove-Item -LiteralPath $wuSteps2 -Force }
+  ST-Check 'e2e (A4): script --warmup prepends one real pre-flight - the receipt names all three probes (foreground pid, dpi mode, ocr available) with an elapsed figure, the flag-inserted step is #1 and the later steps still run' (
+    ($wuHappy.code -eq 0) -and $wuHappy.out.Contains('#1 warmup ok') -and
+    ($wuHappy.out -cmatch 'warmup: foreground=pid=[0-9]+ dpi=\S+ ocr=available \(.+, langs=[0-9]+, maxDim=[0-9]+\) elapsed=[0-9]+ms') -and
+    $wuHappy.out.Contains('#2 sleep ok') -and $wuHappy.out.Contains('script: 2 steps, all ok'))
+  ST-Check 'e2e (A4): a handwritten first warmup step and the --warmup switch agree - both run exactly ONE warmup (the dedup rule), and without either the script is byte-for-byte today''s behavior (one step, no warmup receipt)' (
+    ($wuHand.code -eq 0) -and (@([regex]::Split($wuHand.out, "\r?\n") | Where-Object { $_ -like '#* warmup ok' }).Count -eq 1) -and
+    ($wuDup.code -eq 0) -and (@([regex]::Split($wuDup.out, "\r?\n") | Where-Object { $_ -like '#* warmup ok' }).Count -eq 1) -and
+    ($wuPlain.code -eq 0) -and ($wuPlain.out.Contains('script: 1 steps, all ok')) -and (-not $wuPlain.out.Contains('warmup ok')))
+  ST-Check 'e2e (A4): --warmup --dry-run prints the PLAN with the probe list and executes nothing (no probe receipt on the dry road)' (
+    ($wuDry.code -eq 0) -and $wuDry.out.Contains('#1 warmup') -and $wuDry.out.Contains('probes=foreground,dpi,ocr') -and
+    (-not $wuDry.out.Contains('warmup: foreground=')))
+  ST-Check 'e2e (A4): a failed warmup probe aborts by name - the injected ocr failure prints probe=ocr, says nothing after the step ran, runs NO later step, and exits 1' (
+    ($wuFail.code -eq 1) -and $wuFail.out.Contains('#1 warmup FAIL: probe=ocr') -and
+    $wuFail.out.Contains("script aborted: warmup probe 'ocr' failed (nothing after this step ran)") -and
+    (-not $wuFail.out.Contains('#2 sleep ok')))
 
 }
