@@ -226,8 +226,11 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue, $visibil
 # D-5 (v4.6.13): cluster-color is in it because a palette IS bulk data - every cluster the
 # file holds, not the ten lines the text report is willing to spend on it.
 function Get-JsonCapableCommandSet {
-  return (@('chrome-tabs', 'color-at', 'capabilities', 'cluster-color', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'clip-info', 'ocr-cap', 'pt-calibrate', 'read-text', 'rect-of', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
+  # v4.10.0 (UU-absorb): doctor / quirks join as machine-readable diagnostics (their product is
+  # structured state, so the JSON road is the primary one); proc-list / proc-info carry their
+  # Get-ProcSnapshot objects verbatim; uia-tree carries its lines and scan header verbatim.
+  return (@('chrome-tabs', 'color-at', 'capabilities', 'cluster-color', 'doctor', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
+    'clip-info', 'ocr-cap', 'pt-calibrate', 'proc-info', 'proc-list', 'quirks', 'read-text', 'rect-of', 'status-summary', 'tpl-find', 'uia-tree', 'wait-stable', 'wins') +
     @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
@@ -494,7 +497,10 @@ function Get-OwnFlagTable {
     # D-3 (v4.6.13): log-index is a READER - three verbatim knobs (a UTC day, an
     # origin tag and a log path). It strips them itself, which is why the entry
     # leaves a log-index --origin alone: here the flag is a filter, not a label.
-    'log-index' = @{ '--date' = @{ Raw = $true }; '--origin' = @{ Raw = $true }; '--log' = @{ Raw = $true }; '--scope' = @{ Raw = $true } }
+    'log-index' = @{ '--date' = @{ Raw = $true }; '--origin' = @{ Raw = $true }; '--log' = @{ Raw = $true }; '--scope' = @{ Raw = $true }; '--result' = @{ Raw = $true } }
+    # v4.10.0 (UU-absorb): quirks hand-parses everything else; --match names the window the
+    # policy question is ABOUT (a filter, like log-index's flags - not a target to activate).
+    'quirks' = @{ '--match' = @{ Raw = $true } }
     # D-2 (v4.6.13): the tile set's plan and destination. --tile/--grid/--overlap are
     # Raw or bounded ints here; the handler parses WxH and CxR itself (their grammar is
     # not a number) and Get-TilePlan validates the geometry. Note --grid is the shared
@@ -576,6 +582,10 @@ function Get-CommandSharedMap {
     # D-3 (v4.6.13): log-index hand-parses everything (it has no target and no
     # readback), so it routes none of the shared flags.
     'log-index' = @()
+    # v4.10.0 (UU-absorb): doctor takes no flag at all (one honest snapshot, nothing to
+    # configure); quirks routes no shared flag either - --match names a filter, not a target.
+    'doctor' = @()
+    'quirks' = @()
     # D-2 (v4.6.13): tile/stitch take a region or a directory plus a path - no target,
     # no guard and no readback, so neither routes a shared flag. Declared empty on
     # purpose: the error text must not advertise --to to a command that refuses it.

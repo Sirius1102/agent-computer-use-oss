@@ -348,7 +348,21 @@ function Invoke-Handler-uia-tree([string]$Cmd, [string[]]$Rest) {
         foreach ($fl in @($fp.Lines)) { [void]$outLines.Add($fl) }
         [void]$outLines.Add("filter: $($fp.Summary), walked depth=$depth")
       }
-      foreach ($ol in $outLines) { Write-Output $ol }
+      # v4.10.0 (UU-absorb): the JSON road carries the scan header fields and EVERY output
+      # line verbatim (lines are the product; a JSON tree re-parsed from printed lines would
+      # be a second parser lying about the first). The stderr cost self-report runs on both
+      # roads unchanged.
+      if ($script:Json) {
+        $filterJ = $null
+        if ($pathTok) { $filterJ = [pscustomobject]@{ path = [string]$pathTok; summary = [string]$fp.Summary } }
+        [pscustomobject]@{
+          scan = [pscustomobject]@{ handle = ([IntPtr]$w.Handle).ToInt64(); pid = [int]$w.Pid; title = [string]$w.Title; pick = [string]$w.Pick; roots = [int]$rr.Roots.Count; via = [string]$rr.Via; depth = [int]$depth }
+          filter = $filterJ
+          lines = @($outLines)
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        foreach ($ol in $outLines) { Write-Output $ol }
+      }
       # Cost self-report on STDERR, so --no-actions keeps stdout byte-identical to
       # the pre-2.4.0 output (the disabled marker still prints, on the diagnostic
       # stream where cost accounting belongs).

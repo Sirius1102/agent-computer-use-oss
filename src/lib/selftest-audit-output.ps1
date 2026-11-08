@@ -547,7 +547,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 13) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 19) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
@@ -557,6 +557,9 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # probe, again through the same runner - measured, not assumed.
   # call-sites 10 -> 12 (M8, 2026-11-06): the fallback e2e adds the dpi and wins --json child probes.
   # call-sites 12 -> 13 (M6, 2026-11-06): the stripped-switch e2e adds the dry-run child probe.
+  # call-sites 13 -> 19 (UU-absorb, v4.10.0): the failure-receipt block adds six probes - doctor
+  # text+json, proc-list --json, and the script reset trio (clean / dry / mistyped flag) - all
+  # through the same runner, measured, not assumed.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -1178,9 +1181,9 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   if (-not $script:PsChildOk) {
     ST-Skip 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch and log-index reads the log through the real entry with --origin as a FILTER' ($script:PsChildWhy + ' - the check spawns a child process')
   } else {
-  ST-Check 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch (exit 1, names --origin, actions.log line count unchanged) and log-index reaches the planted log through the real entry with --origin as a FILTER (the entry does not eat it)' (
+  ST-Check 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch (exit 1, names --origin, exactly ONE failure receipt appended) and log-index reaches the planted log through the real entry with --origin as a FILTER (the entry does not eat it)' (
     $d3BadChild.code -eq 1 -and (($d3BadChild.out + "`n" + $d3BadChild.err).Contains('--origin')) -and
-    ($d3RealBefore -eq $d3RealAfter) -and ($d3RealBefore -ge 0) -and
+    ($d3RealAfter -eq ($d3RealBefore + 1)) -and ($d3RealBefore -ge 0) -and
     $d3IdxChild.code -eq 0 -and $d3IdxChild.out.Contains('2 of 6') -and $d3IdxChild.out.Contains('origin=d3tag') -and
     (-not $d3IdxChild.out.Contains('origin=other')))
   Write-Output ('      D-3 children: bad-tag exit=' + [string]$d3BadChild.code + ' real-log=' + $d3RealBefore + '->' + $d3RealAfter +
@@ -1375,5 +1378,124 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $m6Dry = & $cnpRun -ChildArgs @('shots-cleanup', '--keep', '5', '--no-auto-trim')
   ST-Check 'e2e (M6): --no-auto-trim is stripped at the boundary, so shots-cleanup --keep 5 --no-auto-trim dry-runs (exit 0) instead of refusing an unknown flag' (
     ($m6Dry.code -eq 0) -and (-not $m6Dry.out.Contains('unknown flag')) -and (-not $m6Dry.err.Contains('unknown flag')))
+
+  # v4.10.0 (UU-absorb): the failure receipt, its reader, and the machine snapshots.
+  # The receipt writer is NOT the audited command (a different name on purpose, so its definition
+  # and call sites never enter the mention inventory), so these legs call it directly against a
+  # temp log the way the D-3 planted-writer block above does: save both mutable globals, plant,
+  # restore in finally. The child legs reuse $cnpRun; doctor and proc JSON are read-only commands,
+  # so running them in a child costs nothing but time and touches nothing.
+  $uarLog = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+  $uarSavedLog = [string]$Ctx['actionLog']
+  $uarSavedOrigin = [string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  if ($uarSavedOrigin -eq '') { $uarSavedOrigin = 'unknown' }
+  $uarErr = ''
+  $uarRows = @()
+  $uarNone = 0
+  $uarUnknown = 0
+  try {
+    $ActionLog = $uarLog
+    $script:LogOrigin = 'uartag'
+    Write-ActionResultLine 'move' 'error' "first line`r`n  second line   tail"
+    $script:LogOrigin = 'unknown'
+    Write-ActionResultLine 'move' 'ok' 'must not be written'
+    $uarNone = @(@([regex]::Split([System.IO.File]::ReadAllText($uarLog), "\r?\n")) | Where-Object { $_ -ne '' }).Count
+    Write-ActionResultLine 'DTX-Not-A-Command' 'error' 'must not be written either'
+    $uarUnknown = @(@([regex]::Split([System.IO.File]::ReadAllText($uarLog), "\r?\n")) | Where-Object { $_ -ne '' }).Count
+    $uarRows = @(@([regex]::Split([System.IO.File]::ReadAllText($uarLog), "\r?\n")) | Where-Object { $_ -ne '' })
+  } catch { $uarErr = $_.Exception.Message }
+  finally {
+    $ActionLog = $uarSavedLog
+    $script:LogOrigin = $uarSavedOrigin
+    if (Test-Path -LiteralPath $uarLog) { Remove-Item -LiteralPath $uarLog -Force }
+  }
+  $uarP1 = @()
+  if (@($uarRows).Count -ge 1) { $uarP1 = @([string]$uarRows[0] -split ' \| ') }
+  $uarRec1 = $null
+  if (@($uarP1).Count -eq 5) { $uarRec1 = ConvertFrom-ActionLogLine ([string]$uarRows[0]) }
+  ST-Check 'unit (UU-absorb): the failure-receipt writer emits exactly the 4/5-column shape (result=error in the args column, a folded one-line quoted note in the target, the origin token in the fifth) and the line parses like any other' (
+    ($uarErr -eq '') -and (@($uarRows).Count -eq 1) -and (@($uarP1).Count -eq 5) -and
+    ([string]$uarP1[1] -ceq 'move') -and ([string]$uarP1[2] -ceq 'result=error') -and
+    ([string]$uarP1[3].StartsWith("note='first line second line tail'")) -and ([string]$uarP1[4] -ceq 'origin=uartag') -and
+    (([string]$uarP1[0]).EndsWith(' UTC')) -and ($null -ne $uarRec1) -and ([string]$uarRec1.Args -ceq 'result=error'))
+  ST-Check 'unit (UU-absorb): the receipt writer refuses the ok road and the unknown-command road (one line on disk in both cases - a refusal that wrote nothing and a name that never reached a handler)' (
+    ($uarErr -eq '') -and ($uarNone -eq 1) -and ($uarUnknown -eq 1))
+  $uar2Log = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar2-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+  $uar2Err = ''
+  $uar2First = $null
+  $uar2Empty = 'sentinel'
+  try {
+    $ActionLog = $uar2Log
+    $script:LogOrigin = 'unknown'
+    Write-ActionResultLine 'click' 'error' 'older failure'
+    Write-ActionResultLine 'type-in' 'error' 'newer failure'
+    $uar2First = Get-LastActionResultError
+    $ActionLog = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar-absent-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+    $uar2Empty = Get-LastActionResultError
+  } catch { $uar2Err = $_.Exception.Message }
+  finally {
+    $ActionLog = $uarSavedLog
+    if (Test-Path -LiteralPath $uar2Log) { Remove-Item -LiteralPath $uar2Log -Force }
+  }
+  ST-Check 'unit (UU-absorb): the receipt reader returns the NEWEST result=error line with its date/cmd/note, and names none where no log exists' (
+    ($uar2Err -eq '') -and ($null -ne $uar2First) -and ([string]$uar2First.Cmd -ceq 'type-in') -and
+    ([string]$uar2First.Note -ceq "'newer failure'") -and ([string]$uar2First.Date -cmatch '^\d{4}-\d{2}-\d{2}$') -and
+    ($null -eq $uar2Empty))
+  $uar3Log = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar3-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+  $uar3Err = ''
+  $uar3Idx = @()
+  $uar3Bad = ''
+  try {
+    $ActionLog = $uar3Log
+    $script:LogOrigin = 'unknown'
+    Write-ActionResultLine 'click' 'error' 'planted receipt'
+    # The normal-line half goes through a local alias whose value is the assembled token, the same
+    # trick the D-3 planted writer uses: the real writer runs, but this family does not become one
+    # more call-site entry in the A-07 inventory it keeps.
+    Set-Alias -Name 'uar-planted-audit-call' -Value "$script:StCommandToken"
+    & 'uar-planted-audit-call' @('coords=1,2') 'id=1' 'move'
+  } catch { $uar3Err = $_.Exception.Message } finally {
+    $ActionLog = $uarSavedLog
+    if (Test-Path Alias:uar-planted-audit-call) { Remove-Item Alias:uar-planted-audit-call -Force }
+  }
+  try { $uar3Idx = @(Invoke-Handler-log-index 'log-index' @('--log', $uar3Log, '--result', 'error')) } catch { $uar3Err = $_.Exception.Message }
+  $uar3BadTry = ''
+  try { [void](Invoke-Handler-log-index 'log-index' @('--log', $uar3Log, '--result', 'ok')) } catch { $uar3BadTry = $_.Exception.Message }
+  if (Test-Path -LiteralPath $uar3Log) { Remove-Item -LiteralPath $uar3Log -Force }
+  ST-Check 'unit (UU-absorb): log-index --result error filters the receipt out of a mixed planted log, and --result ok is refused by name (success records no completion line, so asking for it would teach a lie)' (
+    ($uar3Err -eq '') -and ($uar3Idx.Count -ge 1) -and (($uar3Idx -join "`n")).Contains('1 of 2 non-empty line(s) matched') -and
+    (($uar3Idx -join "`n")).Contains('result=error') -and $uar3BadTry.Contains('--result must be'))
+  $uarDoctor = & $cnpRun -ChildArgs @('doctor')
+  $uarDoctorJ = & $cnpRun -ChildArgs @('doctor', '--json')
+  $uarDoctorObj = $null
+  $uarDoctorWhy = ''
+  if ($uarDoctorJ.code -eq 0) { try { $uarDoctorObj = ($uarDoctorJ.out | ConvertFrom-Json) } catch { $uarDoctorWhy = $_.Exception.Message } } else { $uarDoctorWhy = 'child exit ' + $uarDoctorJ.code }
+  # The key set is ASCII, so the console-pipe decode cannot corrupt it (the CJK lesson pins VALUES
+  # out, not keys); values are asserted on the text road instead.
+  $uarDoctorKeys = @()
+  if ($null -ne $uarDoctorObj) { $uarDoctorKeys = @($uarDoctorObj.PSObject.Properties.Name | Sort-Object) }
+  ST-Check 'e2e (UU-absorb): a real child doctor answers in both roads - text carries psVersion/screen/ocr/foreground/clipboard/quirks/lastError, --json publishes exactly the declared key set' (
+    ($uarDoctor.code -eq 0) -and $uarDoctor.out.Contains('psVersion=') -and $uarDoctor.out.Contains('screen=') -and
+    $uarDoctor.out.Contains('ocr=') -and $uarDoctor.out.Contains('foreground=') -and $uarDoctor.out.Contains('clipboard=') -and
+    $uarDoctor.out.Contains('quirks=') -and $uarDoctor.out.Contains('lastError=') -and
+    ($null -ne $uarDoctorObj) -and (($uarDoctorKeys -join ',') -ceq 'clipboard_kind,clipboard_read_error,dpi_mode,foreground,last_error,monitors,ocr_available,ocr_current,ocr_languages,ocr_max_dimension,os,ps_version,quirks,screen_h,screen_w,screen_x,screen_y'))
+  Write-Output ('      UU-absorb doctor: text-exit=' + [string]$uarDoctor.code + ' text-head=[' + $uarDoctor.out.Substring(0, [Math]::Min(80, $uarDoctor.out.Length)) + '] json-exit=' + [string]$uarDoctorJ.code + ' why=[' + $uarDoctorWhy + '] keys=' + ($uarDoctorKeys -join ','))
+  $uarProc = & $cnpRun -ChildArgs @('proc-list', '--json')
+  $uarProcObj = $null
+  $uarProcWhy = ''
+  if ($uarProc.code -eq 0) { try { $uarProcObj = @(($uarProc.out | ConvertFrom-Json)) } catch { $uarProcWhy = $_.Exception.Message } } else { $uarProcWhy = 'child exit ' + $uarProc.code }
+  ST-Check 'e2e (UU-absorb): a real child proc-list --json is an array of snapshot rows that all carry nowindow, and proc-info --json answers for pid 0 with a windows array present' (
+    ($uarProc.code -eq 0) -and (@($uarProcObj).Count -ge 1) -and ($null -ne $uarProcObj[0].nowindow) -and
+    ($null -ne @($uarProcObj)[0].pid))
+  $uarScript = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar-steps-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.json')
+  [System.IO.File]::WriteAllText($uarScript, '[{"sleep":50}]', (New-Object System.Text.UTF8Encoding($false)))
+  $uarReset = & $cnpRun -ChildArgs @('script', $uarScript, '--reset-on-exit')
+  $uarResetDry = & $cnpRun -ChildArgs @('script', $uarScript, '--dry-run', '--reset-on-exit')
+  $uarResetBad = & $cnpRun -ChildArgs @('script', $uarScript, '--reset-on-exit-typo')
+  if (Test-Path -LiteralPath $uarScript) { Remove-Item -LiteralPath $uarScript -Force }
+  ST-Check 'e2e (UU-absorb): script --reset-on-exit ends with the clipboard receipt in the paste-family vocabulary on a clean run, dry-run says there is nothing to reset, and a mistyped reset flag is refused with the flag named' (
+    ($uarReset.code -eq 0) -and ($uarReset.out -cmatch 'script: reset-on-exit clipboard=(restored|nothing-to-restore|NOT-restored|partial) ') -and
+    ($uarResetDry.code -eq 0) -and $uarResetDry.out.Contains('nothing to reset') -and
+    ($uarResetBad.code -eq 1) -and $uarResetBad.out.Contains('--reset-on-exit'))
 
 }

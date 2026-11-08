@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.9.1  (version sync list lives in the project overview doc)
+# version: 4.10.1  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.9.1'
+$script:ToolVersion = '4.10.1'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -569,7 +569,12 @@ Set-StrictMode -Version Latest
 # M4 (2026-11-06): +2 - the command-coverage lint and its teeth block: every capabilities command
 # has its own SKILL anchor, a reference mention, and an Example whose flags `help <name>` lists;
 # the planted missing anchor and the planted invented flag both have to be named (1366 -> 1368).
-$script:DeclaredCheckTotal = 1368
+# v4.10.0 (UU-absorb): +12 - the failure-receipt block (writer shape/refusal pair, reader, log-index
+# --result filter, doctor text+json e2e, proc-list --json e2e, script reset trio e2e) takes AuditOutput
+# 107 -> 114, and the quirks policy contract block (shipped-inert contract, validator accept, ten-case
+# rejection ladder, matcher semantics, window-lookup defaults) takes RepoContract 30 -> 35, both
+# measured by re-running the A-14b AST counter over the two family bodies; 1368 -> 1380.
+$script:DeclaredCheckTotal = 1380
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -626,7 +631,7 @@ function Get-LoadTimeInitsMissing([string[]]$Lines, [string[]]$Expected) {
 # !! Same-commit rule: a new lib file needs +1 here AND +1 dot-import line at the entry AND
 #    +1 in the overview's tracked list. Each missing half fails differently - a file absent
 #    from this list is never read by the gates, a list entry without its file throws above.
-$script:StSourceFiles = @('desktop.ps1', 'lib/handlers-read.ps1', 'lib/handlers-act.ps1', 'lib/handlers-ui.ps1', 'lib/handlers-batch.ps1', 'lib/caller-runtime.ps1', 'lib/selftest.ps1', 'lib/selftest-split-machine.ps1', 'lib/selftest-repo-contract.ps1', 'lib/selftest-clipboard-input.ps1', 'lib/selftest-challenge-workflow.ps1', 'lib/selftest-capture-ocr.ps1', 'lib/selftest-flags-grammar.ps1', 'lib/selftest-window-targeting.ps1', 'lib/selftest-chrome-cdp.ps1', 'lib/selftest-docs-contract.ps1', 'lib/selftest-popup-occlusion.ps1', 'lib/selftest-audit-output.ps1', 'lib/selftest-expect-family.ps1', 'lib/selftest-drag-press.ps1', 'lib/selftest-live-suite.ps1', 'lib/selftest-gate-meta.ps1', 'lib/help.ps1')
+$script:StSourceFiles = @('desktop.ps1', 'lib/handlers-read.ps1', 'lib/quirks.ps1', 'lib/handlers-act.ps1', 'lib/handlers-ui.ps1', 'lib/handlers-batch.ps1', 'lib/caller-runtime.ps1', 'lib/selftest.ps1', 'lib/selftest-split-machine.ps1', 'lib/selftest-repo-contract.ps1', 'lib/selftest-clipboard-input.ps1', 'lib/selftest-challenge-workflow.ps1', 'lib/selftest-capture-ocr.ps1', 'lib/selftest-flags-grammar.ps1', 'lib/selftest-window-targeting.ps1', 'lib/selftest-chrome-cdp.ps1', 'lib/selftest-docs-contract.ps1', 'lib/selftest-popup-occlusion.ps1', 'lib/selftest-audit-output.ps1', 'lib/selftest-expect-family.ps1', 'lib/selftest-drag-press.ps1', 'lib/selftest-live-suite.ps1', 'lib/selftest-gate-meta.ps1', 'lib/help.ps1')
 $script:StFileMap = @{}
 foreach ($sfName in @($script:StSourceFiles)) { $script:StFileMap[$sfName] = (Join-Path $PSScriptRoot "$sfName") }
 # ---------- v4.4.0 (A-11a): the path anchors ----------
@@ -811,7 +816,7 @@ function Get-PathReadCountInFunction($Parsed, [string]$FunctionName) {
 # moves its owner - a stale row reads as compliance for a function that no longer exists.
 $script:StPathReadOwners = @(
   '<script>::$PSCommandPath=1',
-  '<script>::$PSScriptRoot=26',
+  '<script>::$PSScriptRoot=27',
   'fn:Get-WorkspaceSummary::$PSCommandPath=1',
   'fn:Get-WorkspaceSummary::$PSScriptRoot=1',
   'fn:Invoke-ReplayLog::$PSCommandPath=1',
@@ -1167,7 +1172,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 98) { $notes += ('names-total=' + $total + '-want98') }
+  if ($total -ne 100) { $notes += ('names-total=' + $total + '-want100') }
   return ($notes -join ';')
 }
 
@@ -2462,10 +2467,12 @@ $script:StFamilyCounts = @{
   # R3 (2026-11-07): F-01c reads the CHANGELOG's newest version block only (a planted two-block
   # sample proves the extractor still matches), and its prose regex now covers "declares N checks":
   # 387 -> 406, banners unchanged at 5 (measured: span start line 14, end 420).
-  'repo-contract' = 'banners=5,lines=406'
+  'repo-contract' = 'banners=5,lines=480'
   # L10 (2026-11-07): the quoting lint gains a static scan over every array-form -File launch
   # site (24 of them) plus a planted bare line (+21 -> 3094); banners unchanged at 30.
-  'gate-meta' = 'banners=30,lines=3094'
+  # v4.10.0: the reference-before-assignment reorder of the L10 scan block adds four comment
+  # lines to the family body (3094 -> 3100 measured by the A-14a scan, banners unchanged at 30).
+  'gate-meta' = 'banners=30,lines=3100'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
   # D-5 (v4.6.13): the same prose names the new 97/100/111 and which round moved them (+1 -> 889).
@@ -2489,7 +2496,7 @@ $script:StFamilyCounts = @{
   # v4.8.0 (B-2) (b-wip-r3): the origin-resolution / archive-walk banner and its 5 checks (one
   # is the child-process e2e, one a conditional SKIP) add one banner and 99 lines
   # (+1 -> 12, +99 -> 1150), measured by the b-wip-r3 attribution run on this tree.
-  'audit-output' = 'banners=12,lines=1359'
+  'audit-output' = 'banners=12,lines=1481'
   # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
@@ -2652,7 +2659,11 @@ $script:StHandlerUnwrapped = 0
 #    translation model from two profile anchors and tests it against a third the fit never
 #    saw; it reads a surface, converts one point on request and acts on nothing) -
 #    39 read + 23 act + 26 ui + 10 batch = 98 names.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'cluster-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities', 'pt-profile', 'pt-anchor', 'pt-calibrate', 'log-index'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap', 'tile', 'stitch') }
+# v4.10.0 (UU-absorb) moves read from 39 to 41: 'doctor' (one read-only machine snapshot of
+#    "can this machine run this tool right now") and 'quirks' (the lib/quirks.json policy
+#    reader) -
+#    41 read + 23 act + 26 ui + 10 batch = 100 names.
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'cluster-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities', 'pt-profile', 'pt-anchor', 'pt-calibrate', 'log-index', 'doctor', 'quirks'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap', 'tile', 'stitch') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2705,13 +2716,13 @@ $script:StFamilyCheckCounts = @(
   # measured by re-running the same A-14b AST counter over lib/selftest-clipboard-input.ps1
   # (ST-Check=40, ST-Skip=0), not by adding the block's lines by hand.
   'Invoke-SelftestFamily-ClipboardInput=44',
-  'Invoke-SelftestFamily-RepoContract=30',
+  'Invoke-SelftestFamily-RepoContract=36',
   # 2026-11-07: the M2 mode branch adds one conditional ST-Skip emitter (aggregate still emits
   # the ST-Check), 67 -> 68, measured by re-running the A-14b counter over
   # lib/selftest-split-machine.ps1.
   'Invoke-SelftestFamily-SplitMachine=68',
   'Invoke-SelftestFamily-PopupOcclusion=48',
-  'Invoke-SelftestFamily-AuditOutput=107',
+  'Invoke-SelftestFamily-AuditOutput=114',
   'Invoke-SelftestFamily-ExpectFamily=101',
   'Invoke-SelftestFamily-DragPress=22',
   # v4.6.13: the occlusion true-negative leg grew its own ST-Skip branch (premise not established),
@@ -2788,7 +2799,7 @@ $script:StCommandOwners = @(
   'fn:Invoke-Handler-chrome-click=1',
   'fn:Invoke-Handler-uia-settext=1',
   'fn:Invoke-PressWatchdog=1',
-  'fn:Invoke-ScriptBatch=4',
+  'fn:Invoke-ScriptBatch=5',
   'fn:Invoke-UiaSettextByPath=1',
   'fn:Release-Press=1',
   'fn:Trim-ShotDir=1'
@@ -2958,9 +2969,11 @@ $script:StLoadTimeNames = @(
 # received, one from the watchdog's lower-case formal. 'ABSENT' has no row here, so a call that
 # still reads caller scope fails the lint by name instead of writing a column that only looks
 # like a command.
+# v4.10.0 (UU-absorb): the script batch's reset receipt is a new audited call at the same owner
+# (+1 -> 53, measured by the A-08 scanner, not by hand).
 $script:StCommandNameArgs = @(
   # N-3 (2026-11-06): copy-file's three added receipts also pass the dispatcher command (+3).
-  '3|$Cmd=52',
+  '3|$Cmd=53',
   '3|$CmdName=9',
   '3|$cmdName=1'
 )
@@ -2976,14 +2989,17 @@ $script:StCmdVarUses = @(
   # PT rounds 2026-11-02: the five observed-input handlers (click/dblclick/imgclick/rclick/
   # relclick) now hand the command name to Invoke-ObservedMouseInput as well, so each declares
   # two reads instead of one (+5 total -> 94); measured by the A-09 owner scan, not by hand.
-  '<script>=18',
+  # v4.10.0 (UU-absorb): +1 - the catch hands the dispatcher command to the failure-receipt
+  # writer once (the writer owns the known-command rule itself, so the top level reads the
+  # name exactly once, not twice); measured by the A-09 owner scan.
+  '<script>=19',
   'fn:Invoke-DesktopCommand=5',
   'fn:Get-HandlerName=1',
   'fn:Get-CommandCodeRanges=3',
   'fn:Get-CommandCodeText=1',
   'fn:Invoke-Handler-chrome-click=1',
   'fn:Invoke-Handler-uia-settext=2',
-  'fn:Invoke-ScriptBatch=4',
+  'fn:Invoke-ScriptBatch=5',
   'fn:Invoke-Handler-challenge-probe=8',
   'fn:Invoke-Handler-chrome-a11y=1',
   'fn:Invoke-Handler-chrome-debug-off=1',
@@ -3852,6 +3868,84 @@ function Log-Action([string[]]$restArgs, [string]$target, [string]$CmdName) {
   }
   $line = "$ts UTC | $CmdName | " + (($restArgs | ForEach-Object { Quote-LogArg $_ }) -join ' ') + " | $target | origin=$logOrigin"
   [System.IO.File]::AppendAllText($ActionLog, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# v4.10.0 (UU-absorb v1): the FAILURE receipt. The audit writer records events at write time, and
+# most of those events fire BEFORE the command's fate is known (a click's line precedes its
+# guards), so the log could name an attempt but never the ending. The entry catch is the one place
+# that knows the ending for every dispatched command, so it writes ONE extra line on the error
+# road only:
+#   <ts> UTC | <cmd> | result=error | note='<folded message>' | origin=<o>
+# Success writes NOTHING on purpose: the existing lines already are the success receipts, and
+# doubling every act's volume for a symmetry nobody reads would only halve the rotation window.
+# The asymmetry is the published contract - "no result=error line" is weaker than "ok", and
+# `log-index --result` documents exactly that. The line keeps the 4/5-column shape so
+# ConvertFrom-ActionLogLine parses it like any other; the origin token goes through the same
+# Resolve-AuditOrigin precedence the audit writer itself uses (read defensively, never set here).
+# This writer NEVER throws and never touches the console: an audit failure must not mask the
+# command's own error or change its exit code. The note is whitespace-folded to one line and
+# capped, because a multi-line message would manufacture unreadable lines out of a readable log.
+# (The name deliberately avoids the audited-command token as a substring: the A-07 mention scan
+# counts raw lines, and a function named after it would turn its own definition and call sites
+# into uncertified mentions.)
+function Write-ActionResultLine([string]$CmdName, [string]$Result, [string]$Note) {
+  if ([string]$CmdName -eq '') { return }
+  if ([string]$Result -cne 'error') { return }
+  try {
+    # Only a name the dispatcher actually knows is recorded - an unknown-command throw never
+    # reached a handler, and putting a non-command into the audit's command column would teach
+    # log-index to list shapes that never ran. (The rule lives HERE, not at the entry: the top
+    # level only hands the name over, and this way it gains no load-time assignment family
+    # member of its own.)
+    $arKnown = @('selftest', 'script', 'replay')
+    foreach ($arG in @(Get-HashKeys $script:StHandlerGroups)) { $arKnown = @($arKnown) + @($script:StHandlerGroups[$arG]) }
+    if (@($arKnown) -cnotcontains [string]$CmdName) { return }
+    Ensure-OutDir
+    $ts = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+    $arOrigin = [string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+    $arMode = [string](Get-Variable -Name 'LogOriginMode' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+    $arId = Get-DtxCallIdentity
+    $arOrigin = Resolve-AuditOrigin $arOrigin $arMode ([string]$arId.CallerLabel) ([string]$arId.IdentitySource)
+    $arNote = [regex]::Replace([string]$Note, '\s+', ' ').Trim()
+    if ($arNote.Length -gt 300) { $arNote = $arNote.Substring(0, 300) }
+    $line = "$ts UTC | $CmdName | result=error | note=$(Quote-LogArg $arNote) | origin=$arOrigin"
+    [System.IO.File]::AppendAllText($ActionLog, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  } catch { }
+}
+
+# v4.10.0 (UU-absorb v1): the reader for those failure receipts - the newest result=error
+# line in the CURRENT audit log (never the archives; log-index --scope owns history). The
+# tail is read with FileShare ReadWrite so a concurrent writer is never locked out, the
+# 8KB window keeps this O(1) on a rotated 512KB log, and a mid-line cut at the window's
+# head cannot manufacture a fake record: a line that fails ConvertFrom-ActionLogLine is
+# skipped, never guessed. Returns $null when there is no log or no receipt in the window -
+# "none found" is the honest answer, and doctor words it as exactly that.
+function Get-LastActionResultError {
+  try {
+    if (-not (Test-Path -LiteralPath $ActionLog -PathType Leaf)) { return $null }
+    $fs = [System.IO.File]::Open($ActionLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    $tail = ''
+    try {
+      $len = $fs.Length
+      $take = [int][math]::Min(8192, $len)
+      [void]$fs.Seek($len - $take, [System.IO.SeekOrigin]::Begin)
+      $buf = New-Object byte[] $take
+      $got = 0
+      while ($got -lt $take) { $n = $fs.Read($buf, $got, $take - $got); if ($n -le 0) { break }; $got += $n }
+      $tail = [System.Text.Encoding]::UTF8.GetString($buf, 0, $got)
+    } finally { $fs.Dispose() }
+    $best = $null
+    foreach ($ln in @([regex]::Split([string]$tail, "\r?\n"))) {
+      if ([string]$ln -eq '') { continue }
+      if ([string]$ln -notlike '*| result=error |*') { continue }
+      $rec = ConvertFrom-ActionLogLine ([string]$ln)
+      if ($null -eq $rec) { continue }
+      $noteTxt = [string]$rec.Target
+      if ($noteTxt.StartsWith('note=')) { $noteTxt = $noteTxt.Substring(5) }
+      $best = [pscustomobject]@{ Date = [string]$rec.Date; Cmd = [string]$rec.Cmd; Origin = [string]$rec.Origin; Note = $noteTxt; Raw = [string]$rec.Raw }
+    }
+    return $best
+  } catch { return $null }
 }
 
 # v1.5.7: SAFE key enumeration for a hashtable.
@@ -12796,6 +12890,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 }
 
 . (Join-Path $PSScriptRoot 'lib/handlers-read.ps1') # <<< stitch: lib/handlers-read.ps1
+. (Join-Path $PSScriptRoot 'lib/quirks.ps1') # <<< stitch: lib/quirks.ps1
 . (Join-Path $PSScriptRoot 'lib/handlers-act.ps1') # <<< stitch: lib/handlers-act.ps1
 . (Join-Path $PSScriptRoot 'lib/handlers-ui.ps1') # <<< stitch: lib/handlers-ui.ps1
 . (Join-Path $PSScriptRoot 'lib/handlers-batch.ps1') # <<< stitch: lib/handlers-batch.ps1
@@ -12818,7 +12913,7 @@ function ST-ReconcileRegion([string]$Tag, [array]$Emitted) {
 . (Join-Path $PSScriptRoot 'lib/selftest-gate-meta.ps1') # <<< stitch: lib/selftest-gate-meta.ps1
 function Get-UsageText {
   @'
-desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.10.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -13157,10 +13252,14 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
     proc-list [name-filter]         every process, visible window or not. A background
                                     process is listed too - "not in wins" is an absence
                                     of a window, not of the process. Read-only.
+                                    --json (v4.10.0): one array of Get-ProcSnapshot
+                                    objects, each plus nowindow=true|false.
     proc-info <pid>                 one identity: name/path/start time/responding/window/
                                     session/threads/working set, plus every top-level
                                     window the PID owns. Unreadable fields print as
                                     denied/unknown instead of disappearing.
+                                    --json (v4.10.0): the same snapshot object plus
+                                    windows=[] (empty array = no visible window).
     proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]
                                     bounded wait (default 20s) bound to the PID and,
                                     with --created, to that process's creation time.
@@ -13710,6 +13809,9 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
     uia-tree <sel> [maxDepth] [--path </0/1/...>] [--dump <file>]
                                     dump control tree (header shows scanned hwnd
                                     and the depth actually walked: depth=N).
+                                    --json (v4.10.0) carries the scan header and
+                                    EVERY line verbatim as {scan, filter, lines} -
+                                    grep-free capture, no re-parsed tree.
                                     v4.2.0: the whole tree to a UTF-8 file is
                                     `--dump <file>` (global flag, v3.0.0; uia-tree
                                     is in its accepted set) - NOT --out, which
@@ -13825,7 +13927,7 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
 
   batch
     (2 or more fixed steps: batch them here - one process, not one per step)
-    script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]
+    script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n] [--reset-on-exit]
                                     run a JSON array of steps in one process:
                                     per-step "to" = hard foreground guard (a
                                     guard failure aborts everything), asserts as
@@ -13860,7 +13962,14 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     execution receipt, not a business assertion. Use
                                     assert-text / expectText for the result. --json is
                                     refused: script has no JSON envelope. See README
-                                    for the step schema.
+                                    for the step schema. --reset-on-exit (v4.10.0)
+                                    snapshots the clipboard BEFORE step 1 and
+                                    restores it in `finally` - every exit road gets
+                                    the receipt "reset-on-exit clipboard=<verdict>"
+                                    (restored / nothing-to-restore / NOT-restored /
+                                    partial, the paste family's vocabulary); held
+                                    buttons stay covered by the P-3 exit watchdog.
+                                    Opt-in: without the flag nothing changes.
     replay [<actions.log>] [--last n] [--grep s] [--go]
                                     re-run recorded act/text/clipboard commands;
                                     DRY RUN by default, --go executes. Unknown
@@ -13873,12 +13982,17 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     A log slice carrying a popup-guard abort
                                     marker is refused outright (half-executed
                                     state must not be replayed).
-    log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]
+    log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all] [--result error]
                                     v4.6.13 (D-3): read-only index over actions.log
                                     (default: the one this tool writes). One row per
                                     matching audit line: #n date origin=tag cmd | target.
                                     --date filters the UTC day in the first column,
-                                    --origin filters the fifth column. Lines written
+                                    --origin filters the fifth column. --result
+                                    (v4.10.0) filters the completion receipts the
+                                    error road writes (result=error; success records
+                                    NO completion line, so no other value exists to
+                                    ask for - "no receipt" is weaker than "ok").
+                                    Lines written
                                     before v4.6.13 carry four columns and are reported
                                     as origin=unknown legacy=yes instead of crashing
                                     (they are history, not corruption); any OTHER
@@ -13900,6 +14014,38 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     the entry leaves it to this command's parser.
                                     From v4.8.0 that label is also DERIVED when nobody
                                     types it (see --origin under global flags).
+    doctor
+                                    v4.10.0 (UU-absorb): one read-only snapshot of
+                                    "can this machine run this tool right now" -
+                                    psVersion, os, screen+monitors+dpi-mode, OCR
+                                    availability and languages, the current
+                                    foreground window, the clipboard kind, the
+                                    quirks policy state, and the most recent
+                                    result=error receipt in the CURRENT audit log
+                                    (lastError=none when the log holds none;
+                                    archives are log-index --scope's job). Reads
+                                    only; never touches the desktop; writes nothing
+                                    except what clip-info's own road writes (the
+                                    image-clipboard PNG carrier in %TEMP%). --json
+                                    publishes the same fields as one object;
+                                    last_error is null when there is none.
+    quirks [--match <sel>]
+                                    v4.10.0 (UU-absorb): the lib/quirks.json policy
+                                    reader. Bare, it prints the policy state -
+                                    the loaded file and every rule (matcher, set,
+                                    note), or the built-in defaults, including WHY
+                                    a rejected file was rejected. --match <sel>
+                                    resolves one window and shows which rule hits
+                                    it and what it would change: waitStableIntervalMs
+                                    feeds wait-stable's DEFAULT poll interval (a
+                                    caller-passed --interval always wins), and the
+                                    rule's note surfaces in wait-stable's
+                                    not-stable message. The file is optional and
+                                    fail-closed: ANY schema violation rejects the
+                                    WHOLE file with one stderr WARNING and the
+                                    built-in defaults apply - a half-understood
+                                    policy never half-applies. First matching rule
+                                    wins; no merging. This command never acts.
     shots-cleanup [--keep n] [--go] [--quarantine <dir>]
                                     bound the runtime screenshot folder (it grows
                                     without limit - 100MB/213 files in 3 days was
@@ -14418,6 +14564,12 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
     'log-index' {
       Invoke-Handler-log-index 'log-index' $Rest
     }
+    'doctor' {
+      Invoke-Handler-doctor 'doctor' $Rest
+    }
+    'quirks' {
+      Invoke-Handler-quirks 'quirks' $Rest
+    }
 
     'paste' {
       Invoke-Handler-paste 'paste' $Rest
@@ -14507,7 +14659,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 # dispatch switch stays a dispatch). No direct Log-Action here - steps log
 # through their own commands, so audit semantics are unchanged.
 function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
-      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>]
+      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit]
       # Runs a JSON array of steps in ONE process launch, with a foreground
       # guard between steps and assert checkpoints - the replacement for
       # "action -> read echo -> screenshot -> next action" call cycles.
@@ -14534,12 +14686,13 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
       #   assert-window "sel"  assert-text {sel|region,needle}
       #   assert-color {at:[x,y],hex,tolerance}  assert-hash {region,op,hash}
       #   assert-stable {sel|region,timeout}
-      $file = $null; $dry = $false; $stopOnError = $false; $shotAt = -1
+      $file = $null; $dry = $false; $stopOnError = $false; $shotAt = -1; $resetOnExit = $false
       $tok = @($Rest)
       for ($ti = 0; $ti -lt $tok.Count; $ti++) {
         $t = "$($tok[$ti])"
         if ($t -eq '--dry-run' -or $t -eq '--dry') { $dry = $true }
         elseif ($t -eq '--stop-on-error') { $stopOnError = $true }
+        elseif ($t -eq '--reset-on-exit') { $resetOnExit = $true }
         elseif ($t -match '^--shot-at=(\d+)$') { $shotAt = [int]$Matches[1] }
         elseif ($t -eq '--shot-at') {
           # v1.5.2 (audit R-07): the space form is what README, help and this
@@ -14554,11 +14707,11 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
           # A mistyped safety flag must never degrade into "run it for real":
           # `--dry` used to fall through and be treated as nothing, so the
           # supposed dry run executed every step.
-          throw "script: unknown flag '$t' (valid: --dry-run | --stop-on-error | --shot-at <n>)"
+          throw "script: unknown flag '$t' (valid: --dry-run | --stop-on-error | --shot-at <n> | --reset-on-exit)"
         }
         elseif ($null -eq $file) { $file = $t }
       }
-      if (-not $file) { throw 'usage: script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>]' }
+      if (-not $file) { throw 'usage: script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit]' }
       if (-not (Test-Path $file)) { throw "file not found: $file" }
       # Assign BEFORE wrapping: ConvertFrom-Json emits a JSON array as ONE
       # Object[] on the pipeline, so @(expr | ConvertFrom-Json) yields
@@ -14599,10 +14752,23 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
         if (@($noExp).Count -gt 0) {
           Write-Output "NOTICE: $(@($noExp).Count) action step(s) have no expect/expect-gone: #$($noExp -join ' #') - they will report 'ok' if the input was DELIVERED, not if the interface MOVED. Add expectText/expectGone (CLI: --expect-change for a pixel-delta check)."
         }
+        if ($resetOnExit) { Write-Output "NOTICE: --reset-on-exit is armed, but a dry run executes nothing, so there is nothing to reset." }
         exit 0
       }
       $failed = 0
       $idx = 0
+      # v4.10.0 (UU-absorb): --reset-on-exit. A script's own writes are exactly the residue
+      # UU Remote's "auto-lock after the session" guards against: paste/paste-file/copy-file steps
+      # leave THEIR content on the clipboard after the batch ends. So the snapshot happens
+      # BEFORE step 1 and the restore runs in `finally` - every exit road gets it (clean
+      # summary, failed steps, --stop-on-error, GUARD-ABORT/POPUP-GUARD exit); the entry-level
+      # P-3 watchdog keeps releasing held buttons as it always did. Opt-in only: without the
+      # flag not one byte of behavior moves. The verdict reuses the paste/paste-file
+      # vocabulary (restored / nothing-to-restore / NOT-restored / partial) so a reader only
+      # learns it once, and the receipt lands in actions.log next to the steps that ran.
+      $clipSnap = $null
+      if ($resetOnExit) { $clipSnap = Save-ClipboardState }
+      try {
       # v1.9.0 (J-02 C): the popup survival guard. require-popup records the popup's
       # pid+hwnd+class+visible rect as the baseline; every later step is re-checked
       # BEFORE it runs, and any failure aborts the REST of the script (exit 1, measured
@@ -14742,6 +14908,18 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
       }
       if ($failed -gt 0) { "script: $($steps.Count) steps, $failed FAILED"; exit 1 }
       "script: $($steps.Count) steps, all ok"
+      } finally {
+        if ($resetOnExit) {
+          $rNote = Restore-ClipboardState $clipSnap
+          $rOut = Get-ClipboardRestoreOutcome $rNote
+          $rVerdict = 'NOT-restored'
+          if ($rOut -eq 'ok') { $rVerdict = 'restored' }
+          elseif (($rOut -eq 'skipped') -and ([string]$clipSnap.Kind -eq 'none')) { $rVerdict = 'nothing-to-restore' }
+          elseif ($rOut -eq 'partial') { $rVerdict = 'partial' }
+          "script: reset-on-exit clipboard=$rVerdict ($rNote)"
+          try { Log-Action @($file) "reset-on-exit clipboard=$rVerdict" $Cmd } catch { }
+        }
+      }
 }
 # v4.4.0 (A-15): the plain handlers carved out of the dispatcher, kept directly below it. Each body is
 #    the case text verbatim - no flag, no re-indent, no edit - and the case in the switch is the
@@ -15301,6 +15479,9 @@ try {
   $script:InvocationResult = 'error'
   $script:InvocationExitCode = 1
   try { $script:InvocationErrorCategory = [string]$_.CategoryInfo.Category } catch { $script:InvocationErrorCategory = 'unknown' }
+  # v4.10.0 (UU-absorb v1): the failure receipt. The writer decides by itself whether the name is
+  # a dispatched command - the top level only hands the name over, once.
+  try { Write-ActionResultLine $Cmd 'error' $_.Exception.Message } catch { }
   # M9 (2026-11-06): under --json the failure road keeps stdout parseable: one ok:false envelope
   # from the same producer family as the success envelope, and the human ERROR line moves to
   # stderr. Without the flag nothing changes - same text, same stream, same exit code 1.

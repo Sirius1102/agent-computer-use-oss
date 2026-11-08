@@ -1,10 +1,10 @@
-﻿# Agent Computer Use (Open Source Edition) v4.9.1
+# Agent Computer Use (Open Source Edition) v4.10.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Platform](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#requirements)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#requirements)
 [![Tool](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#repository-layout)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1368%20checks&color=informational)](#testing)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1380%20checks&color=informational)](#testing)
 
 A **single-file, stateless Windows desktop automation CLI** built to be driven by an AI agent — or by you, from a shell.
 
@@ -49,7 +49,7 @@ A **single-file, stateless Windows desktop automation CLI** built to be driven b
 - **Guarded by default.** Keystrokes physically go to whatever window is focused, so `type` / `keys` / `paste` / `paste-file` with `--to <sel>` **verify the target actually owns the foreground before sending a single key** — if it doesn't, the command fails with `ERROR` + exit 1 and nothing is sent. The foreground is re-checked *after* sending, so a mid-flight focus steal is a loud failure too. (`--force` opts out, legacy behavior.)
 - **It says how it knows what it knows.** This is the design rule the whole feature set grew around: a number or a "not found" is worthless unless the command also prints the measurement it came from. So `find` reports `source=uia|ocr`; a miss names what *both* roads measured; `hit-window:` prints the window your click actually landed on; capture echoes print the image→screen mapping they used; `--expect` verdicts name the patience and polling interval that were really applied; `paste` names which receipt leg accepted a folded payload. **Zero is never evidence of absence**, and a check that can only pass is not a check.
 - **Auditable.** Every executed act/text/clipboard/uia-settext command appends one line to `shots/actions.log`: UTC timestamp, command, arguments, resolved target. Typed payloads and guard needles are stored as `<redacted:Nchars>` (pass `--log-payload` to record them verbatim); file *paths* are recorded, never file or clipboard contents. The log rotates at 512 KB keeping the 5 newest archives beside it and moving older ones into a quarantine folder with a manifest (never deleting them), and `replay` refuses any step whose payload was redacted — replaying the placeholder would type the placeholder.
-- **Self-testing.** `selftest` runs the offline gate (currently 1368 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
+- **Self-testing.** `selftest` runs the offline gate (currently 1380 checks: source lints for the PowerShell 5.1 list-return trap, BOM/ASCII invariants, unit checks of every pure helper, and contract checks that pin documented key sets and README/dispatcher agreement). `selftest --live` adds real desktop round-trips against synthetic `DTX-*` fixture windows it owns, never against your apps.
 - **DPI-safe.** The process opts into **Per-Monitor V2** DPI awareness at startup (Windows 10 1703+; on older builds it falls back to System-aware and says so once in the output), before any coordinate is read. Without awareness, Windows virtualizes every value by the display scale factor (a 2100×1350 window reads as 1400×900 at 150 %), screenshots come out cropped, and clicks land in the wrong place. Per-Monitor V2 additionally keeps secondary monitors at *different* scale factors (mixed-DPI multi-monitor) pixel-exact. Run `dpi` to see the mode actually obtained and every monitor's bounds in physical pixels.
 - **Pure ASCII source.** PowerShell 5.1 misparses BOM-less UTF-8 scripts on non-ANSI systems, so the script contains zero non-ASCII literals (it does carry a UTF-8 BOM, which is what makes 5.1 decode it as UTF-8). Non-ASCII text (CJK and friends) enters through `paste <file>` or `uia-settext <sel> <name> <file>`, which read external UTF-8 files.
 
@@ -268,8 +268,10 @@ All coordinates are **physical screen pixels**. `|` marks the read-only/assertio
 | `cursor` | current cursor position |
 | `dpi` | DPI awareness mode obtained at startup + every monitor's bounds in physical pixels |
 | `capabilities [--json]` | the command surface **derived** from the dispatcher's own registry (group, private/shared flags, `--json` support) plus the entry path + SHA256 and the environment; a registered-but-unreachable command shows up instead of vanishing |
-| `proc-list [name-filter]` | every process, visible window or not — read-only; "not in `wins`" is an absence of a window, not of the process |
-| `proc-info <pid>` | name / path / start time / responding / windows / session / threads / working set; unreadable fields print `denied`/`unknown` instead of disappearing |
+| `proc-list [name-filter]` | every process, visible window or not — read-only; "not in `wins`" is an absence of a window, not of the process; `--json` is an array of snapshot rows each carrying `nowindow` |
+| `proc-info <pid>` | name / path / start time / responding / windows / session / threads / working set; unreadable fields print `denied`/`unknown` instead of disappearing. `--json` carries the same snapshot plus `windows=[]` (empty array = no visible window) |
+| `doctor` | one read-only snapshot answering "can this machine run this tool right now": psVersion / os / screen+monitors+DPI / OCR / foreground / clipboard kind / quirks policy state / the most recent failure receipt in the current audit log; `--json` publishes the same fields as one object |
+| `quirks [--match <sel>]` | the `lib/quirks.json` policy reader: list the rules in force (or why a file was rejected), or test which rule one window hits; the file is optional and fail-closed (any schema violation rejects the WHOLE file, built-in defaults apply) |
 | `tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen\|window\|client] [--tolerance n] [--scales 1\|1,1.25] [--index n] [--max-ms ms]` | deterministic template locator at bounded scales (≤3), region (≤3,000,000 px²) and time budget; multiple hits are a **refusal** unless `--index` names one; reports points and never clicks; `--force`/`--always-activate` are refused by name before resolve/capture/activation (`reason=read-only-override`) |
 | `color-at <x> <y>` | pixel colour as `#RRGGBB` (status LEDs, spinners that have no text) |
 | `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]` | first (or all, capped at 500) matching pixels in a region |

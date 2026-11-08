@@ -1,7 +1,7 @@
 ﻿# desktop.ps1 - Windows desktop automation helper. One fresh process per invocation,
 # no resident process: each invocation writes a local active/history record, recovered after a crash;
 # there is no daemon to attack or orphan. Long chains batch in-process via `script`.
-# version: 4.9.1  (version sync list lives in the project overview doc)
+# version: 4.10.1  (version sync list lives in the project overview doc)
 #
 # Source layout since the A-beta split (v4.4.0, cards A-01..A-25): this entry PLUS the files under
 # lib/, dot-imported in $script:StSourceFiles order. The DELIVERED tool is still one file -
@@ -28,7 +28,7 @@ param(
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)][string[]]$Rest = @()
 )
 
-$script:ToolVersion = '4.9.1'
+$script:ToolVersion = '4.10.1'
 
 $ErrorActionPreference = 'Stop'
 # X-02 (2026-10-06, landed after 6 batches of measurement): StrictMode is ON for this entire file.
@@ -569,7 +569,12 @@ Set-StrictMode -Version Latest
 # M4 (2026-11-06): +2 - the command-coverage lint and its teeth block: every capabilities command
 # has its own SKILL anchor, a reference mention, and an Example whose flags `help <name>` lists;
 # the planted missing anchor and the planted invented flag both have to be named (1366 -> 1368).
-$script:DeclaredCheckTotal = 1368
+# v4.10.0 (UU-absorb): +12 - the failure-receipt block (writer shape/refusal pair, reader, log-index
+# --result filter, doctor text+json e2e, proc-list --json e2e, script reset trio e2e) takes AuditOutput
+# 107 -> 114, and the quirks policy contract block (shipped-inert contract, validator accept, ten-case
+# rejection ladder, matcher semantics, window-lookup defaults) takes RepoContract 30 -> 35, both
+# measured by re-running the A-14b AST counter over the two family bodies; 1368 -> 1380.
+$script:DeclaredCheckTotal = 1380
 # ---------- v4.4.0 (A-03): the source set - ONE list, four consumers ----------
 # Three pure leaves first, because the configuration block below runs at LOAD time and a
 # function defined further down the file does not exist yet when it runs. Each leaf takes
@@ -626,7 +631,7 @@ function Get-LoadTimeInitsMissing([string[]]$Lines, [string[]]$Expected) {
 # !! Same-commit rule: a new lib file needs +1 here AND +1 dot-import line at the entry AND
 #    +1 in the overview's tracked list. Each missing half fails differently - a file absent
 #    from this list is never read by the gates, a list entry without its file throws above.
-$script:StSourceFiles = @('desktop.ps1', 'lib/handlers-read.ps1', 'lib/handlers-act.ps1', 'lib/handlers-ui.ps1', 'lib/handlers-batch.ps1', 'lib/caller-runtime.ps1', 'lib/selftest.ps1', 'lib/selftest-split-machine.ps1', 'lib/selftest-repo-contract.ps1', 'lib/selftest-clipboard-input.ps1', 'lib/selftest-challenge-workflow.ps1', 'lib/selftest-capture-ocr.ps1', 'lib/selftest-flags-grammar.ps1', 'lib/selftest-window-targeting.ps1', 'lib/selftest-chrome-cdp.ps1', 'lib/selftest-docs-contract.ps1', 'lib/selftest-popup-occlusion.ps1', 'lib/selftest-audit-output.ps1', 'lib/selftest-expect-family.ps1', 'lib/selftest-drag-press.ps1', 'lib/selftest-live-suite.ps1', 'lib/selftest-gate-meta.ps1', 'lib/help.ps1')
+$script:StSourceFiles = @('desktop.ps1', 'lib/handlers-read.ps1', 'lib/quirks.ps1', 'lib/handlers-act.ps1', 'lib/handlers-ui.ps1', 'lib/handlers-batch.ps1', 'lib/caller-runtime.ps1', 'lib/selftest.ps1', 'lib/selftest-split-machine.ps1', 'lib/selftest-repo-contract.ps1', 'lib/selftest-clipboard-input.ps1', 'lib/selftest-challenge-workflow.ps1', 'lib/selftest-capture-ocr.ps1', 'lib/selftest-flags-grammar.ps1', 'lib/selftest-window-targeting.ps1', 'lib/selftest-chrome-cdp.ps1', 'lib/selftest-docs-contract.ps1', 'lib/selftest-popup-occlusion.ps1', 'lib/selftest-audit-output.ps1', 'lib/selftest-expect-family.ps1', 'lib/selftest-drag-press.ps1', 'lib/selftest-live-suite.ps1', 'lib/selftest-gate-meta.ps1', 'lib/help.ps1')
 $script:StFileMap = @{}
 foreach ($sfName in @($script:StSourceFiles)) { $script:StFileMap[$sfName] = (Join-Path $PSScriptRoot "$sfName") }
 # ---------- v4.4.0 (A-11a): the path anchors ----------
@@ -811,7 +816,7 @@ function Get-PathReadCountInFunction($Parsed, [string]$FunctionName) {
 # moves its owner - a stale row reads as compliance for a function that no longer exists.
 $script:StPathReadOwners = @(
   '<script>::$PSCommandPath=1',
-  '<script>::$PSScriptRoot=26',
+  '<script>::$PSScriptRoot=27',
   'fn:Get-WorkspaceSummary::$PSCommandPath=1',
   'fn:Get-WorkspaceSummary::$PSScriptRoot=1',
   'fn:Invoke-ReplayLog::$PSCommandPath=1',
@@ -1167,7 +1172,7 @@ function Get-HandlerGroupGap([object]$Parsed, [hashtable]$Groups, [hashtable]$Fi
   }
   foreach ($f2 in @(Get-HashKeys $Files)) { if (-not $Groups.ContainsKey($f2)) { $notes += ('file-without-group=' + $f2) } }
   foreach ($h2 in @(Get-HashKeys $count)) { if ($h2 -notin $known) { $notes += ('ungrouped-handler=' + $h2) } }
-  if ($total -ne 98) { $notes += ('names-total=' + $total + '-want98') }
+  if ($total -ne 100) { $notes += ('names-total=' + $total + '-want100') }
   return ($notes -join ';')
 }
 
@@ -2462,10 +2467,12 @@ $script:StFamilyCounts = @{
   # R3 (2026-11-07): F-01c reads the CHANGELOG's newest version block only (a planted two-block
   # sample proves the extractor still matches), and its prose regex now covers "declares N checks":
   # 387 -> 406, banners unchanged at 5 (measured: span start line 14, end 420).
-  'repo-contract' = 'banners=5,lines=406'
+  'repo-contract' = 'banners=5,lines=480'
   # L10 (2026-11-07): the quoting lint gains a static scan over every array-form -File launch
   # site (24 of them) plus a planted bare line (+21 -> 3094); banners unchanged at 30.
-  'gate-meta' = 'banners=30,lines=3094'
+  # v4.10.0: the reference-before-assignment reorder of the L10 scan block adds four comment
+  # lines to the family body (3094 -> 3100 measured by the A-14a scan, banners unchanged at 30).
+  'gate-meta' = 'banners=30,lines=3100'
   # D-2 (v4.6.13): the A-15 prose is corrected to the measured unscoped count in one more
   # line (+1 -> 888).
   # D-5 (v4.6.13): the same prose names the new 97/100/111 and which round moved them (+1 -> 889).
@@ -2489,7 +2496,7 @@ $script:StFamilyCounts = @{
   # v4.8.0 (B-2) (b-wip-r3): the origin-resolution / archive-walk banner and its 5 checks (one
   # is the child-process e2e, one a conditional SKIP) add one banner and 99 lines
   # (+1 -> 12, +99 -> 1150), measured by the b-wip-r3 attribution run on this tree.
-  'audit-output' = 'banners=12,lines=1359'
+  'audit-output' = 'banners=12,lines=1481'
   # v4.6.9 fix-up (CU-467 install smoke): window-targeting gained the five-line .NET hash note and
   # helper the A1-b reused-output controls use (+5). CU-CLOSEOUT-REVIEW-20261029-01 (P2) and
   # CU-REMAINDER-FINAL-20261029-01 (A2/A3): the legacy-map, failed-map-write, no-sidecar,
@@ -2652,7 +2659,11 @@ $script:StHandlerUnwrapped = 0
 #    translation model from two profile anchors and tests it against a third the fit never
 #    saw; it reads a surface, converts one point on request and acts on nothing) -
 #    39 read + 23 act + 26 ui + 10 batch = 98 names.
-$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'cluster-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities', 'pt-profile', 'pt-anchor', 'pt-calibrate', 'log-index'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap', 'tile', 'stitch') }
+# v4.10.0 (UU-absorb) moves read from 39 to 41: 'doctor' (one read-only machine snapshot of
+#    "can this machine run this tool right now") and 'quirks' (the lib/quirks.json policy
+#    reader) -
+#    41 read + 23 act + 26 ui + 10 batch = 100 names.
+$script:StHandlerGroups = @{ 'read' = @('help', 'wins', 'win', 'info', 'rect', 'rect-of', 'cursor', 'dpi', 'status-summary', 'shot', 'ocr-cap', 'hash', 'read-text', 'focus', 'find', 'find-text', 'find-color', 'cluster-color', 'color-at', 'wait-win', 'wait-gone', 'wait-stable', 'assert-changed', 'assert-window', 'assert-text', 'assert-color', 'assert-hash', 'assert-stable', 'proc-list', 'proc-info', 'proc-wait', 'tpl-find', 'clip-info', 'wait-cond', 'capabilities', 'pt-profile', 'pt-anchor', 'pt-calibrate', 'log-index', 'doctor', 'quirks'); 'act' = @('move', 'hover', 'click', 'rclick', 'dblclick', 'wheel', 'relclick', 'drag', 'drag-to', 'press-down', 'press-up', 'find-click', 'win-move', 'win-resize', 'win-max', 'win-min', 'win-restore', 'win-close', 'dialog-cancel', 'menu-pick', 'open-and-pick', 'proc-start', 'proc-kill'); 'ui' = @('chrome-tabs', 'chrome-read', 'chrome-find', 'chrome-click', 'chrome-menu-read', 'chrome-debug-off', 'chrome-a11y', 'a11y-probe', 'uia-tree', 'uia-path', 'uia-find', 'uia-click', 'uia-focus', 'uia-settext', 'uia-state', 'uia-do', 'type', 'type-in', 'keys', 'key', 'key-state', 'key-release', 'ime', 'paste', 'paste-file', 'copy-file'); 'batch' = @('imgclick', 'zoom', 'ime-en', 'ime-cn', 'ime-state', 'challenge-probe', 'shots-cleanup', 'unmap', 'tile', 'stitch') }
 $script:StHandlerFiles = @{ 'read' = 'lib/handlers-read.ps1'; 'act' = 'lib/handlers-act.ps1'; 'ui' = 'lib/handlers-ui.ps1'; 'batch' = 'lib/handlers-batch.ps1' }
 $script:StCtxKeys = @('actionLog', 'clCount', 'code', 'codeLines', 'commaFns', 'dcCase', 'dcKnown', 'evMark', 'evWire', 'gaCaseIdx', 'gaCases', 'gaCasesCount', 'gaDispStart', 'gaHelpEnd', 'gaHelpStart', 'hCaseStarts', 'hFnEnd', 'hFnStart', 'hLines', 'j5ProdEnd', 'j5ProdStart', 'j5SelfParsed', 'live', 'mvProd', 'outDir', 'self', 'src', 'srcLines', 'stDefIdx', 'stEndIdx', 'ToolVersion', 'w0', 'wA', 'wB', 'wins', 'wT')
 
@@ -2705,13 +2716,13 @@ $script:StFamilyCheckCounts = @(
   # measured by re-running the same A-14b AST counter over lib/selftest-clipboard-input.ps1
   # (ST-Check=40, ST-Skip=0), not by adding the block's lines by hand.
   'Invoke-SelftestFamily-ClipboardInput=44',
-  'Invoke-SelftestFamily-RepoContract=30',
+  'Invoke-SelftestFamily-RepoContract=36',
   # 2026-11-07: the M2 mode branch adds one conditional ST-Skip emitter (aggregate still emits
   # the ST-Check), 67 -> 68, measured by re-running the A-14b counter over
   # lib/selftest-split-machine.ps1.
   'Invoke-SelftestFamily-SplitMachine=68',
   'Invoke-SelftestFamily-PopupOcclusion=48',
-  'Invoke-SelftestFamily-AuditOutput=107',
+  'Invoke-SelftestFamily-AuditOutput=114',
   'Invoke-SelftestFamily-ExpectFamily=101',
   'Invoke-SelftestFamily-DragPress=22',
   # v4.6.13: the occlusion true-negative leg grew its own ST-Skip branch (premise not established),
@@ -2788,7 +2799,7 @@ $script:StCommandOwners = @(
   'fn:Invoke-Handler-chrome-click=1',
   'fn:Invoke-Handler-uia-settext=1',
   'fn:Invoke-PressWatchdog=1',
-  'fn:Invoke-ScriptBatch=4',
+  'fn:Invoke-ScriptBatch=5',
   'fn:Invoke-UiaSettextByPath=1',
   'fn:Release-Press=1',
   'fn:Trim-ShotDir=1'
@@ -2958,9 +2969,11 @@ $script:StLoadTimeNames = @(
 # received, one from the watchdog's lower-case formal. 'ABSENT' has no row here, so a call that
 # still reads caller scope fails the lint by name instead of writing a column that only looks
 # like a command.
+# v4.10.0 (UU-absorb): the script batch's reset receipt is a new audited call at the same owner
+# (+1 -> 53, measured by the A-08 scanner, not by hand).
 $script:StCommandNameArgs = @(
   # N-3 (2026-11-06): copy-file's three added receipts also pass the dispatcher command (+3).
-  '3|$Cmd=52',
+  '3|$Cmd=53',
   '3|$CmdName=9',
   '3|$cmdName=1'
 )
@@ -2976,14 +2989,17 @@ $script:StCmdVarUses = @(
   # PT rounds 2026-11-02: the five observed-input handlers (click/dblclick/imgclick/rclick/
   # relclick) now hand the command name to Invoke-ObservedMouseInput as well, so each declares
   # two reads instead of one (+5 total -> 94); measured by the A-09 owner scan, not by hand.
-  '<script>=18',
+  # v4.10.0 (UU-absorb): +1 - the catch hands the dispatcher command to the failure-receipt
+  # writer once (the writer owns the known-command rule itself, so the top level reads the
+  # name exactly once, not twice); measured by the A-09 owner scan.
+  '<script>=19',
   'fn:Invoke-DesktopCommand=5',
   'fn:Get-HandlerName=1',
   'fn:Get-CommandCodeRanges=3',
   'fn:Get-CommandCodeText=1',
   'fn:Invoke-Handler-chrome-click=1',
   'fn:Invoke-Handler-uia-settext=2',
-  'fn:Invoke-ScriptBatch=4',
+  'fn:Invoke-ScriptBatch=5',
   'fn:Invoke-Handler-challenge-probe=8',
   'fn:Invoke-Handler-chrome-a11y=1',
   'fn:Invoke-Handler-chrome-debug-off=1',
@@ -3852,6 +3868,84 @@ function Log-Action([string[]]$restArgs, [string]$target, [string]$CmdName) {
   }
   $line = "$ts UTC | $CmdName | " + (($restArgs | ForEach-Object { Quote-LogArg $_ }) -join ' ') + " | $target | origin=$logOrigin"
   [System.IO.File]::AppendAllText($ActionLog, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+}
+
+# v4.10.0 (UU-absorb v1): the FAILURE receipt. The audit writer records events at write time, and
+# most of those events fire BEFORE the command's fate is known (a click's line precedes its
+# guards), so the log could name an attempt but never the ending. The entry catch is the one place
+# that knows the ending for every dispatched command, so it writes ONE extra line on the error
+# road only:
+#   <ts> UTC | <cmd> | result=error | note='<folded message>' | origin=<o>
+# Success writes NOTHING on purpose: the existing lines already are the success receipts, and
+# doubling every act's volume for a symmetry nobody reads would only halve the rotation window.
+# The asymmetry is the published contract - "no result=error line" is weaker than "ok", and
+# `log-index --result` documents exactly that. The line keeps the 4/5-column shape so
+# ConvertFrom-ActionLogLine parses it like any other; the origin token goes through the same
+# Resolve-AuditOrigin precedence the audit writer itself uses (read defensively, never set here).
+# This writer NEVER throws and never touches the console: an audit failure must not mask the
+# command's own error or change its exit code. The note is whitespace-folded to one line and
+# capped, because a multi-line message would manufacture unreadable lines out of a readable log.
+# (The name deliberately avoids the audited-command token as a substring: the A-07 mention scan
+# counts raw lines, and a function named after it would turn its own definition and call sites
+# into uncertified mentions.)
+function Write-ActionResultLine([string]$CmdName, [string]$Result, [string]$Note) {
+  if ([string]$CmdName -eq '') { return }
+  if ([string]$Result -cne 'error') { return }
+  try {
+    # Only a name the dispatcher actually knows is recorded - an unknown-command throw never
+    # reached a handler, and putting a non-command into the audit's command column would teach
+    # log-index to list shapes that never ran. (The rule lives HERE, not at the entry: the top
+    # level only hands the name over, and this way it gains no load-time assignment family
+    # member of its own.)
+    $arKnown = @('selftest', 'script', 'replay')
+    foreach ($arG in @(Get-HashKeys $script:StHandlerGroups)) { $arKnown = @($arKnown) + @($script:StHandlerGroups[$arG]) }
+    if (@($arKnown) -cnotcontains [string]$CmdName) { return }
+    Ensure-OutDir
+    $ts = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+    $arOrigin = [string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+    $arMode = [string](Get-Variable -Name 'LogOriginMode' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+    $arId = Get-DtxCallIdentity
+    $arOrigin = Resolve-AuditOrigin $arOrigin $arMode ([string]$arId.CallerLabel) ([string]$arId.IdentitySource)
+    $arNote = [regex]::Replace([string]$Note, '\s+', ' ').Trim()
+    if ($arNote.Length -gt 300) { $arNote = $arNote.Substring(0, 300) }
+    $line = "$ts UTC | $CmdName | result=error | note=$(Quote-LogArg $arNote) | origin=$arOrigin"
+    [System.IO.File]::AppendAllText($ActionLog, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  } catch { }
+}
+
+# v4.10.0 (UU-absorb v1): the reader for those failure receipts - the newest result=error
+# line in the CURRENT audit log (never the archives; log-index --scope owns history). The
+# tail is read with FileShare ReadWrite so a concurrent writer is never locked out, the
+# 8KB window keeps this O(1) on a rotated 512KB log, and a mid-line cut at the window's
+# head cannot manufacture a fake record: a line that fails ConvertFrom-ActionLogLine is
+# skipped, never guessed. Returns $null when there is no log or no receipt in the window -
+# "none found" is the honest answer, and doctor words it as exactly that.
+function Get-LastActionResultError {
+  try {
+    if (-not (Test-Path -LiteralPath $ActionLog -PathType Leaf)) { return $null }
+    $fs = [System.IO.File]::Open($ActionLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    $tail = ''
+    try {
+      $len = $fs.Length
+      $take = [int][math]::Min(8192, $len)
+      [void]$fs.Seek($len - $take, [System.IO.SeekOrigin]::Begin)
+      $buf = New-Object byte[] $take
+      $got = 0
+      while ($got -lt $take) { $n = $fs.Read($buf, $got, $take - $got); if ($n -le 0) { break }; $got += $n }
+      $tail = [System.Text.Encoding]::UTF8.GetString($buf, 0, $got)
+    } finally { $fs.Dispose() }
+    $best = $null
+    foreach ($ln in @([regex]::Split([string]$tail, "\r?\n"))) {
+      if ([string]$ln -eq '') { continue }
+      if ([string]$ln -notlike '*| result=error |*') { continue }
+      $rec = ConvertFrom-ActionLogLine ([string]$ln)
+      if ($null -eq $rec) { continue }
+      $noteTxt = [string]$rec.Target
+      if ($noteTxt.StartsWith('note=')) { $noteTxt = $noteTxt.Substring(5) }
+      $best = [pscustomobject]@{ Date = [string]$rec.Date; Cmd = [string]$rec.Cmd; Origin = [string]$rec.Origin; Note = $noteTxt; Raw = [string]$rec.Raw }
+    }
+    return $best
+  } catch { return $null }
 }
 
 # v1.5.7: SAFE key enumeration for a hashtable.
@@ -13786,10 +13880,11 @@ function Invoke-Handler-wait-stable([string]$Cmd, [string[]]$Rest) {
       $Rest = @($of.Words)
       $words = New-Object System.Collections.ArrayList
       $interval = 500
+      $intervalGiven = $false
       $changed = $false
       $i = 0
       while ($i -lt $Rest.Count) {
-        if ($Rest[$i] -eq '--interval') { $i++; $interval = Read-FlagNumber '--interval' $Rest[$i] $true '(milliseconds)' }
+        if ($Rest[$i] -eq '--interval') { $i++; $interval = Read-FlagNumber '--interval' $Rest[$i] $true '(milliseconds)'; $intervalGiven = $true }
         elseif ($Rest[$i] -eq '--changed') { $changed = $true }
         elseif ($Rest[$i] -like '--*') { throw (Get-UnknownFlagMessage 'wait-stable' "$($Rest[$i])") }
         else { [void]$words.Add($Rest[$i]) }
@@ -13798,6 +13893,16 @@ function Invoke-Handler-wait-stable([string]$Cmd, [string[]]$Rest) {
       $Rest = @($words)
       if ($Rest.Count -lt 2) { throw 'usage: wait-stable <sel|x y w h> <timeoutSec> [--interval ms] [--changed]' }
       $region = Resolve-Region $Rest 0
+      # v4.10.0 (UU-absorb): the per-window policy (lib/quirks.json) may set the DEFAULT poll
+      # interval for this window - a caller-passed --interval ALWAYS wins - and its note is
+      # surfaced on the failure road below. No guard semantics are touched: the settle rule
+      # (two identical consecutive hashes) is exactly what it was.
+      $qkRule = Get-WindowQuirks $region.Win
+      $qkNote = ''
+      if ([bool]$qkRule.Matched) {
+        if ((-not $intervalGiven) -and (Get-OptValue $qkRule.Set 'waitStableIntervalMs')) { $interval = [int](Get-OptValue $qkRule.Set 'waitStableIntervalMs') }
+        $qkNote = [string]$qkRule.Note
+      }
       # Occlusion is a snapshot at entry: if the window gets covered MID-poll
       # the pixel changes are the coverer's - the entry verdict is still the
       # honest statement about what the poll is allowed to prove.
@@ -13821,7 +13926,7 @@ function Invoke-Handler-wait-stable([string]$Cmd, [string[]]$Rest) {
         }
       } else {
         $r = Wait-RegionStable $region ([double]$Rest[1]) $interval
-        if (-not $r.Stable) { throw "not stable within $($Rest[1])s (last hash=$($r.Hash)). If the region holds a blinking caret, a spinner or video it never repeats two frames in a row - use wait-win/wait-gone or a sub-region that excludes it." }
+        if (-not $r.Stable) { throw "not stable within $($Rest[1])s (last hash=$($r.Hash)). If the region holds a blinking caret, a spinner or video it never repeats two frames in a row - use wait-win/wait-gone or a sub-region that excludes it.$(if ($qkNote -ne '') { " quirk: $qkNote" })" }
         if ($script:Json) {
           $occJ = $null; $covJ = @()
           if ($null -ne $gate) { if (-not $gate.Err) { $occJ = [int][math]::Round($gate.Pct) }; $covJ = @($gate.Covering | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; title = $_.Title; count = $_.Count } }) }
@@ -14104,6 +14209,23 @@ function Invoke-Handler-proc-list([string]$Cmd, [string[]]$Rest) {
     $filter = "$a"
   }
   $all = @(Get-Process | Sort-Object ProcessName, Id)
+  # v4.10.0 (UU-absorb): the JSON road carries each Get-ProcSnapshot object with the exact
+  # fields the text row prints, plus the nowindow fact the text appends as a suffix - a
+  # process without a visible window is listed either way, for the same reason.
+  if ($script:Json) {
+    $rows = New-Object System.Collections.ArrayList
+    foreach ($pr in $all) {
+      $name = ''
+      try { $name = [string]$pr.ProcessName } catch { $name = 'unknown' }
+      if ($filter -and ($name -notlike "*$filter*")) { continue }
+      $s = Get-ProcSnapshot ([int]$pr.Id)
+      $row = [pscustomobject]$s
+      $row | Add-Member -NotePropertyName nowindow -NotePropertyValue ([bool]($s.exists -eq $true -and $s.hwnd -eq 0)) -Force
+      [void]$rows.Add($row)
+    }
+    @($rows) | ConvertTo-Json -Compress -Depth 3
+    return
+  }
   $n = 0
   foreach ($pr in $all) {
     $name = ''
@@ -14126,6 +14248,19 @@ function Invoke-Handler-proc-info([string]$Cmd, [string[]]$Rest) {
   $pidNum = 0
   if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-info: '$($words[0])' is not a pid" }
   $s = Get-ProcSnapshot $pidNum
+  # v4.10.0 (UU-absorb): JSON carries the snapshot verbatim plus the window list; a process
+  # with no visible window is an EMPTY array, not a missing key - absence and emptiness are
+  # different facts and JSON should not confuse them either.
+  if ($script:Json) {
+    $winsJ = @()
+    if ($s.exists -eq $true) {
+      $winsJ = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum } | ForEach-Object { [pscustomobject]@{ hwnd = ([IntPtr]$_.Handle).ToInt64(); class = [string]$_.Class; x = [int]$_.Left; y = [int]$_.Top; w = [int]$_.W; h = [int]$_.H; title = [string]$_.Title } })
+    }
+    $o = [pscustomobject]$s
+    $o | Add-Member -NotePropertyName windows -NotePropertyValue @($winsJ) -Force
+    $o | ConvertTo-Json -Compress -Depth 4
+    return
+  }
   Format-ProcSnapshot $s
   if ($s.exists -eq $true) {
     $wins = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum })
@@ -15214,17 +15349,24 @@ function Invoke-Handler-pt-calibrate([string]$Cmd, [string[]]$Rest) {
 # is the lie this command refuses to tell.
 # ---------------------------------------------------------------------------
 function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
-      # log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]
+      # log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all] [--result error]
       $own = Strip-OwnFlags $Rest 'log-index'
       $words = @($own.Rest)
-      if ($words.Count -ne 0) { throw "log-index takes no positional argument (got '$($words[0])') - use --date <YYYY-MM-DD>, --origin <tag>, --log <path>, --scope current|day|all" }
+      if ($words.Count -ne 0) { throw "log-index takes no positional argument (got '$($words[0])') - use --date <YYYY-MM-DD>, --origin <tag>, --log <path>, --scope current|day|all, --result error" }
       $dateWant = [string]$own.Values['--date']
       $originWant = [string]$own.Values['--origin']
       $logPath = [string]$own.Values['--log']
       $scope = [string]$own.Values['--scope']
+      $resultWant = [string]$own.Values['--result']
       if ($scope -eq '') { $scope = 'current' }
       if (@('current', 'day', 'all') -notcontains $scope) {
         throw "log-index: --scope must be current|day|all, got '$scope' - current indexes the one file --log names, day indexes it plus every archive the rotator left in the same directory for one --date, all indexes that whole set without requiring a date"
+      }
+      if ($resultWant -ne '' -and ($resultWant -cne 'error')) {
+        # v4.10.0 (UU-absorb): result lines are written by the entry catch on the error road only
+        # (Write-ActionResultLine). There is deliberately no 'ok' value to ask for: success writes no
+        # completion line, so an --result ok filter would always answer "0 of N" and teach a lie.
+        throw "log-index: --result must be 'error' (the only completion value written; success records no completion line, so there is nothing else to filter on), got '$resultWant'"
       }
       if ($dateWant -ne '' -and $dateWant -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') {
         throw "log-index: --date must be a UTC day written YYYY-MM-DD, got '$dateWant'"
@@ -15279,6 +15421,7 @@ function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
           if ($null -eq $rec) { $skipped++; continue }
           if ($dateWant -ne '' -and ([string]$rec.Date -cne $dateWant)) { continue }
           if ($originWant -ne '' -and ([string]$rec.Origin -cne $originWant)) { continue }
+          if ($resultWant -ne '' -and ([string]$rec.Args -cne "result=$resultWant")) { continue }
           $rec | Add-Member -NotePropertyName File -NotePropertyValue ([string]$f.Path) -Force
           [void]$kept.Add($rec)
           $matched++
@@ -15291,6 +15434,7 @@ function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
       $filterNote = ''
       if ($dateWant -ne '') { $filterNote += " date=$dateWant" }
       if ($originWant -ne '') { $filterNote += " origin=$originWant" }
+      if ($resultWant -ne '') { $filterNote += " result=$resultWant" }
       # scope=current keeps the pre-B-2 line VERBATIM: readers of this echo exist, and a scope that
       # was not asked for must not change what they see.
       if ($scope -eq 'current') {
@@ -15322,6 +15466,135 @@ function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
         "  #$n $($rec.Date) origin=$($rec.Origin)$legacy $($rec.Cmd) | $($rec.Target)$fileTxt"
       }
       if ($skippedAll -gt 0) { "log-index: $($skippedAll) unreadable line(s) skipped (not four- or five-column audit lines)" }
+}
+
+# ---------------------------------------------------------------------------
+# v4.10.0 (UU-absorb v1): doctor - one read-only snapshot answering "can this
+# machine run this tool right now", the question uuyc-cli status answers for
+# its own app. Every fact is read through the SAME helper the working commands
+# use (no second reader for any fact), nothing is acted on, nothing is clicked
+# or focused; the only disk write is the one Save-ClipboardState already does
+# for an image clipboard (a PNG carrier in %TEMP%, same as clip-info's road).
+# lastError reads the v4.10.0 failure receipts back from the CURRENT audit log
+# only - archives are log-index --scope's job, not a doctor snapshot's.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-doctor([string]$Cmd, [string[]]$Rest) {
+      foreach ($a in @($Rest)) { throw (Get-UnknownFlagMessage 'doctor' ([string]$a)) }
+      $o = [System.Windows.Forms.SystemInformation]::VirtualScreen
+      $mons = @([System.Windows.Forms.Screen]::AllScreens)
+      $osV = [System.Environment]::OSVersion
+      $psV = $PSVersionTable.PSVersion.ToString()
+      $ocrAvail = $false
+      $ocrLangs = @()
+      $ocrCur = ''
+      $ocrCap = 0L
+      try {
+        $null = [Windows.Media.Ocr.OcrEngine,Windows.Media.Ocr,ContentType=WindowsRuntime]
+        $ocrLangs = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag })
+        $ocrCap = Get-OcrMaxDimension
+        $eng = Get-OcrEngine
+        if ($null -ne $eng) { $ocrAvail = $true; $ocrCur = $eng.RecognizerLanguage.LanguageTag }
+      } catch { }
+      $fg = Get-ForegroundIdentity
+      $clip = Save-ClipboardState
+      $qk = Get-QuirksState
+      $le = Get-LastActionResultError
+      if ($script:Json) {
+        $fgJ = $null
+        if ([int]$fg.Pid -ne 0) { $fgJ = [pscustomobject]@{ pid = [int]$fg.Pid; hwnd = [int64]$fg.Hwnd; title = [string]$fg.Title } }
+        $leJ = $null
+        if ($null -ne $le) { $leJ = [pscustomobject]@{ date = [string]$le.Date; cmd = [string]$le.Cmd; note = [string]$le.Note; origin = [string]$le.Origin } }
+        [pscustomobject]@{
+          ps_version = $psV
+          os = [string]$osV.VersionString
+          screen_w = [int]$o.Width; screen_h = [int]$o.Height; screen_x = [int]$o.X; screen_y = [int]$o.Y
+          monitors = @($mons).Count
+          dpi_mode = [string]$script:DpiMode
+          ocr_available = [bool]$ocrAvail
+          ocr_languages = @($ocrLangs)
+          ocr_current = $ocrCur
+          ocr_max_dimension = [int64]$ocrCap
+          foreground = $fgJ
+          clipboard_kind = [string]$clip.Kind
+          clipboard_read_error = [string]$clip.ReadError
+          quirks = [pscustomobject]@{ loaded = [bool]$qk.Loaded; file = [string]$qk.File; rules = [int]$qk.RuleCount; error = [string]$qk.Error }
+          last_error = $leJ
+        } | ConvertTo-Json -Compress -Depth 4
+        return
+      }
+      "psVersion=$psV"
+      "os=$($osV.VersionString)"
+      "screen=$($o.Width)x$($o.Height) origin=($($o.X),$($o.Y)) monitors=$(@($mons).Count) dpi-mode=$script:DpiMode"
+      $ocrTxt = 'unavailable'
+      if ($ocrAvail) { $ocrTxt = 'available' }
+      "ocr=$ocrTxt langs=$(@($ocrLangs).Count) current=$ocrCur maxDim=$ocrCap"
+      $fgTxt = 'none'
+      if ([int]$fg.Pid -ne 0) { $fgTxt = "pid=$($fg.Pid) hwnd=$('0x{0:X}' -f [long]$fg.Hwnd) title='$($fg.Title)'" }
+      "foreground=$fgTxt"
+      $clipTxt = [string]$clip.Kind
+      if ([string]$clip.ReadError -ne '') { $clipTxt = $clipTxt + ' (read error: ' + $clip.ReadError + ')' }
+      "clipboard=$clipTxt"
+      $qkTxt = 'defaults (no policy file)'
+      if ([bool]$qk.Loaded) { $qkTxt = 'loaded file=' + $qk.File + ' rules=' + $qk.RuleCount }
+      elseif ([string]$qk.Error -ne '') { $qkTxt = 'defaults (policy file rejected: ' + $qk.Error + ')' }
+      "quirks=$qkTxt"
+      if ($null -eq $le) { "lastError=none in the current audit log" }
+      else { "lastError=$($le.Date) cmd=$($le.Cmd) origin=$($le.Origin) note=$($le.Note)" }
+}
+
+# ---------------------------------------------------------------------------
+# v4.10.0 (UU-absorb v1): quirks - the policy file's own reader. Lists what is
+# in force (the file, its rules, or the built-in defaults) and, with --match,
+# which rule a window hits and what it would change. Read-only: the window is
+# resolved the same way win/info resolve theirs, and nothing is activated.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-quirks([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'quirks'
+      $words = @($own.Rest)
+      if ($words.Count -ne 0) { throw "quirks takes no positional argument (got '$($words[0])') - use --match <sel> to test which rule a window hits" }
+      $matchSel = [string]$own.Values['--match']
+      $st = Get-QuirksState
+      $matchJ = $null
+      $matchRow = @()
+      if ($matchSel -ne '') {
+        $w = Resolve-Window $matchSel
+        if (-not $w) { throw (Format-WindowMissMessage $matchSel) }
+        Emit-ResolveNote
+        $qk = Get-WindowQuirks $w
+        $setTxt = @()
+        foreach ($sk in @(Get-HashKeys $qk.Set)) { $setTxt += "$sk=$($qk.Set[$sk])" }
+        $matchRow = @(
+          "match pid=$($w.Pid) proc=$($w.Proc) class=$($w.Class) title='$($w.Title)'"
+          $(if ([bool]$qk.Matched) { "matched=rule #$($qk.RuleIndex)" } else { 'matched=none (built-in defaults apply)' })
+          "set={$($setTxt -join ' ')}"
+          "note=$([string]$qk.Note)"
+        )
+        $matchJ = [pscustomobject]@{ pid = [int]$w.Pid; proc = [string]$w.Proc; class = [string]$w.Class; title = [string]$w.Title; matched = [bool]$qk.Matched; rule_index = $(if ([bool]$qk.Matched) { [int]$qk.RuleIndex } else { $null }); set = [pscustomobject]$qk.Set; note = [string]$qk.Note }
+      }
+      if ($script:Json) {
+        [pscustomobject]@{
+          loaded = [bool]$st.Loaded
+          file = [string]$st.File
+          error = [string]$st.Error
+          rules = @($st.Rules | ForEach-Object { [pscustomobject]@{ note = [string]$_['Note']; match = [pscustomobject]$_['Match']; set = [pscustomobject]$_['Set'] } })
+          match = $matchJ
+        } | ConvertTo-Json -Compress -Depth 5
+        return
+      }
+      $stTxt = 'defaults (no policy file)'
+      if ([bool]$st.Loaded) { $stTxt = 'loaded file=' + $st.File + ' rules=' + $st.RuleCount }
+      elseif ([string]$st.Error -ne '') { $stTxt = 'defaults (policy file rejected: ' + $st.Error + ')' }
+      "quirks: $stTxt"
+      $i = 0
+      foreach ($r in @($st.Rules)) {
+        $i++
+        $mTxt = @()
+        foreach ($mk in @(Get-HashKeys $r.Match)) { $mTxt += "$mk='$($r.Match[$mk])'" }
+        $sTxt = @()
+        foreach ($sk in @(Get-HashKeys $r.Set)) { $sTxt += "$sk=$($r.Set[$sk])" }
+        "  rule #$i match={$($mTxt -join ' ')} set={$($sTxt -join ' ')}$(if ([string]$r.Note -ne '') { " note='$($r.Note)'" })"
+      }
+      foreach ($mr in @($matchRow)) { $mr }
 }
 
 # ---------------------------------------------------------------------------
@@ -15497,6 +15770,167 @@ function Invoke-Handler-cluster-color([string]$Cmd, [string[]]$Rest) {
         $ccMap = "$($ccImg.Path).map.txt"
         if (Test-Path -LiteralPath $ccMap -PathType Leaf) { "cluster-color: bbox is in IMAGE pixels; this file has a capture map ($ccMap) - 'unmap $($ccImg.Path) <ix> <iy>' turns one into screen coordinates" }
       }
+}
+
+# lib/quirks.ps1 - v4.10.0 (UU-absorb v1): the declarative per-window adaptation policy.
+#    Absorbed pattern: NetEase UU Remote's streamer-config.json ships device-specific behavior as DATA
+#    (declarative rules with regex matchers, remotely updatable, fail-closed on a rule the
+#    client cannot understand) instead of hardcoding every special case. This file is this
+#    repo's version of that: a JSON policy file (lib/quirks.json) matches windows by
+#    process/class/title and attaches per-window overrides, so a NEW quirk lands as a rule
+#    edit instead of a code branch.
+#
+#    Contract, stated so it can be tested:
+#    - The file is OPTIONAL. No file anywhere = built-in defaults = today's behavior, byte
+#      for byte. That is why nothing here can break an offline selftest run on a clean tree.
+#    - The file is fail-closed: ANY schema violation (unknown key, wrong type, a matcher
+#      regex that does not compile) rejects the WHOLE file, one WARNING on stderr, and
+#      built-in defaults apply. A half-understood policy must never half-apply.
+#    - First matching rule wins entirely. No merging - two rules fighting over one window
+#      is a policy-authoring bug, and a merge order would silently pick the winner.
+#    - v1 wires exactly ONE behavior knob (waitStableIntervalMs: the DEFAULT poll interval
+#      of wait-stable, always losing to a caller-passed --interval) plus `note`, a string
+#      surfaced at the point of failure (wait-stable's not-stable message) and by
+#      `quirks --match`. Notes carry knowledge ("this window animates forever - prefer
+#      wait-win or a sub-region") without changing any guard's semantics.
+#
+#    Data shapes (validated by Test-QuirksPolicyText):
+#      { "schemaVersion": 1, "rules": [ {
+#          "note":  "why this rule exists (optional, <= 200 chars)",
+#          "match": { "process": "regex", "windowClass": "regex", "title": "regex" },  # >= 1
+#          "set":   { "waitStableIntervalMs": 250 }                                    # optional
+#      } ] }
+
+# (No load-time $script: assignment on purpose: the cache initializes lazily through
+# Get/Set-Variable below, the same house pattern the DPI-fallback latch uses - a top-level
+# init here would join the load-time assignment family and owe the A-07 table a row.)
+
+# Pure. Parses and validates policy TEXT; never touches the console, the cache or the disk
+# beyond what the caller already read. Every violation names itself in Why - a rejected file
+# the operator cannot diagnose is a policy file that will stay broken.
+function Test-QuirksPolicyText([string]$text) {
+  if ([string]$text.Trim() -eq '') { return @{ Ok = $false; Why = 'file is empty'; Rules = @() } }
+  $doc = $null
+  try { $doc = $text | ConvertFrom-Json } catch { return @{ Ok = $false; Why = ('invalid JSON: ' + $_.Exception.Message); Rules = @() } }
+  if ($null -eq $doc) { return @{ Ok = $false; Why = 'JSON parsed to nothing'; Rules = @() } }
+  # !! [string] applied to an ARRAY joins it with spaces ("schemaVersion rules" was measured
+  # live through exactly this trap) - the property names go through one cast EACH, never a
+  # cast of the collection.
+  $topKeys = @($doc.PSObject.Properties.Name | ForEach-Object { [string]$_ })
+  foreach ($k in @($topKeys)) { if (@('schemaVersion', 'rules') -notcontains $k) { return @{ Ok = $false; Why = ("unknown top-level key '" + $k + "' (valid: schemaVersion, rules)"); Rules = @() } } }
+  if (-not ($topKeys -ccontains 'schemaVersion')) { return @{ Ok = $false; Why = 'missing schemaVersion'; Rules = @() } }
+  if (-not ($topKeys -ccontains 'rules')) { return @{ Ok = $false; Why = 'missing rules'; Rules = @() } }
+  if ("$($doc.schemaVersion)" -ne '1') { return @{ Ok = $false; Why = ("schemaVersion must be 1, got '" + "$($doc.schemaVersion)" + "'"); Rules = @() } }
+  $rawRules = @()
+  try { $rawRules = @($doc.rules) } catch { $rawRules = @() }
+  if ($null -eq $doc.rules) { return @{ Ok = $false; Why = 'rules must be an array (null is not an array)'; Rules = @() } }
+  $out = New-Object System.Collections.ArrayList
+  $i = 0
+  foreach ($r in $rawRules) {
+    $i++
+    if ($null -eq $r) { return @{ Ok = $false; Why = ("rule #$i is null"); Rules = @() } }
+    $rKeys = @($r.PSObject.Properties.Name | ForEach-Object { [string]$_ })
+    foreach ($k in @($rKeys)) { if (@('note', 'match', 'set') -notcontains $k) { return @{ Ok = $false; Why = ("rule #$i has unknown key '" + $k + "' (valid: note, match, set)"); Rules = @() } } }
+    if (-not ($rKeys -ccontains 'match')) { return @{ Ok = $false; Why = ("rule #$i has no match object"); Rules = @() } }
+    $mKeys = @($r.match.PSObject.Properties.Name | ForEach-Object { [string]$_ })
+    foreach ($k in @($mKeys)) { if (@('process', 'windowClass', 'title') -notcontains $k) { return @{ Ok = $false; Why = ("rule #$i match has unknown key '" + $k + "' (valid: process, windowClass, title)"); Rules = @() } } }
+    if (@($mKeys).Count -lt 1) { return @{ Ok = $false; Why = ("rule #$i match names no field (need at least one of: process, windowClass, title)"); Rules = @() } }
+    $mOut = @{}
+    foreach ($k in @($mKeys)) {
+      $pat = ''
+      try { $pat = [string]$r.match.$k } catch { $pat = '' }
+      if ($pat -eq '') { return @{ Ok = $false; Why = ("rule #$i match.$k is empty - drop the key instead of matching everything with an empty string"); Rules = @() } }
+      try { [void][regex]::new($pat) } catch { return @{ Ok = $false; Why = ("rule #$i match.$k is not a compilable regex ('" + $pat + "'): " + $_.Exception.Message); Rules = @() } }
+      $mOut[$k] = $pat
+    }
+    $setOut = @{}
+    if ($rKeys -ccontains 'set') {
+      if ($null -eq $r.set) { return @{ Ok = $false; Why = ("rule #$i set is null (drop the key instead)"); Rules = @() } }
+      $sKeys = @($r.set.PSObject.Properties.Name | ForEach-Object { [string]$_ })
+      foreach ($k in @($sKeys)) {
+        if (@('waitStableIntervalMs') -notcontains $k) { return @{ Ok = $false; Why = ("rule #$i set has unknown key '" + $k + "' (v1 wires exactly: waitStableIntervalMs)"); Rules = @() } }
+        $nv = 0
+        $sv = ''
+        try { $sv = [string]$r.set.$k } catch { $sv = '' }
+        if ($sv -notmatch '^[0-9]+$') { return @{ Ok = $false; Why = ("rule #$i set.waitStableIntervalMs must be a whole number, got '" + $sv + "'"); Rules = @() } }
+        $nv = [int]$sv
+        if ($nv -lt 50 -or $nv -gt 5000) { return @{ Ok = $false; Why = ("rule #$i set.waitStableIntervalMs must be 50..5000, got $nv"); Rules = @() } }
+        $setOut[$k] = $nv
+      }
+    }
+    $noteTxt = ''
+    if ($rKeys -ccontains 'note') {
+      try { $noteTxt = [string]$r.note } catch { $noteTxt = '' }
+      if ($noteTxt.Length -gt 200) { return @{ Ok = $false; Why = ("rule #$i note exceeds 200 chars (" + $noteTxt.Length + ") - it travels inside failure messages, so it stays short"); Rules = @() } }
+    }
+    [void]$out.Add(@{ Note = $noteTxt; Match = $mOut; Set = $setOut })
+  }
+  return @{ Ok = $true; Why = ''; Rules = @($out) }
+}
+
+# Lazy, cached, never throws. Resolves the policy file (script dir first - the stitched
+# single-file delivery - then lib\ next to it, the repository form), reads and validates it
+# once, and reports the verdict the same way whether or not a file exists: Loaded tells the
+# truth, Error names the reason, and a rejected or unreadable file warns ONCE on stderr and
+# then behaves, for the rest of the process, exactly like no file at all.
+function Get-QuirksState {
+  $cached = $null
+  try { $cached = Get-Variable -Name 'QuirksStateCache' -Scope Script -ValueOnly -ErrorAction SilentlyContinue } catch { $cached = $null }
+  if ($null -ne $cached) { return $cached }
+  $found = ''
+  foreach ($c in @((Join-Path $script:ToolRootPath 'quirks.json'), (Join-Path $script:ToolRootPath 'lib/quirks.json'))) {
+    if (Test-Path -LiteralPath $c -PathType Leaf) { $found = $c; break }
+  }
+  if ($found -eq '') {
+    Set-Variable -Name 'QuirksStateCache' -Scope Script -Value @{ Loaded = $false; File = ''; RuleCount = 0; Error = ''; Rules = @() }
+    return (Get-Variable -Name 'QuirksStateCache' -Scope Script -ValueOnly)
+  }
+  $text = ''
+  try { $text = [System.IO.File]::ReadAllText($found) } catch {
+    Set-Variable -Name 'QuirksStateCache' -Scope Script -Value @{ Loaded = $false; File = $found; RuleCount = 0; Error = ('read failed: ' + $_.Exception.Message); Rules = @() }
+    [Console]::Error.WriteLine('WARNING: quirks policy ' + $found + ' could not be read - built-in defaults apply (' + $script:QuirksStateCache.Error + ')')
+    return $script:QuirksStateCache
+  }
+  $v = Test-QuirksPolicyText $text
+  if (-not [bool]$v.Ok) {
+    Set-Variable -Name 'QuirksStateCache' -Scope Script -Value @{ Loaded = $false; File = $found; RuleCount = 0; Error = [string]$v.Why; Rules = @() }
+    [Console]::Error.WriteLine('WARNING: quirks policy ' + $found + ' rejected - built-in defaults apply (' + $v.Why + ')')
+    return $script:QuirksStateCache
+  }
+  Set-Variable -Name 'QuirksStateCache' -Scope Script -Value @{ Loaded = $true; File = $found; RuleCount = @($v.Rules).Count; Error = ''; Rules = @($v.Rules) }
+  return $script:QuirksStateCache
+}
+
+# Pure matcher: every field the rule NAMES must match (a rule that names nothing cannot
+# exist - the validator refuses it). An uncompilable regex cannot reach here (validated at
+# load), but the defensive catch keeps the matcher itself honest under any caller.
+function Test-QuirkRuleMatch($rule, [string]$proc, [string]$class, [string]$title) {
+  if ($null -eq $rule -or $null -eq $rule.Match) { return $false }
+  foreach ($k in @(Get-HashKeys $rule.Match)) {
+    $pat = [string]$rule.Match[$k]
+    $val = $proc
+    if ($k -ceq 'windowClass') { $val = $class }
+    elseif ($k -ceq 'title') { $val = $title }
+    try { if (-not [regex]::IsMatch([string]$val, $pat)) { return $false } } catch { return $false }
+  }
+  return $true
+}
+
+# The one lookup the wired commands call. Never throws, never returns $null: an unmatched
+# window (or a rejected policy) is Matched=$false with an empty Set - the built-in defaults.
+function Get-WindowQuirks($w) {
+  $res = @{ Matched = $false; RuleIndex = 0; Set = @{}; Note = '' }
+  if ($null -eq $w) { return $res }
+  $st = Get-QuirksState
+  if (-not [bool]$st.Loaded) { return $res }
+  $i = 0
+  foreach ($r in @($st.Rules)) {
+    $i++
+    if (Test-QuirkRuleMatch $r ([string]$w.Proc) ([string]$w.Class) ([string]$w.Title)) {
+      return @{ Matched = $true; RuleIndex = $i; Set = $r.Set; Note = [string]$r.Note }
+    }
+  }
+  return $res
 }
 
 # lib/handlers-act.ps1 - the act-group handlers, lifted out of desktop.ps1 (A-17..A-19 line).
@@ -17286,7 +17720,21 @@ function Invoke-Handler-uia-tree([string]$Cmd, [string[]]$Rest) {
         foreach ($fl in @($fp.Lines)) { [void]$outLines.Add($fl) }
         [void]$outLines.Add("filter: $($fp.Summary), walked depth=$depth")
       }
-      foreach ($ol in $outLines) { Write-Output $ol }
+      # v4.10.0 (UU-absorb): the JSON road carries the scan header fields and EVERY output
+      # line verbatim (lines are the product; a JSON tree re-parsed from printed lines would
+      # be a second parser lying about the first). The stderr cost self-report runs on both
+      # roads unchanged.
+      if ($script:Json) {
+        $filterJ = $null
+        if ($pathTok) { $filterJ = [pscustomobject]@{ path = [string]$pathTok; summary = [string]$fp.Summary } }
+        [pscustomobject]@{
+          scan = [pscustomobject]@{ handle = ([IntPtr]$w.Handle).ToInt64(); pid = [int]$w.Pid; title = [string]$w.Title; pick = [string]$w.Pick; roots = [int]$rr.Roots.Count; via = [string]$rr.Via; depth = [int]$depth }
+          filter = $filterJ
+          lines = @($outLines)
+        } | ConvertTo-Json -Compress -Depth 4
+      } else {
+        foreach ($ol in $outLines) { Write-Output $ol }
+      }
       # Cost self-report on STDERR, so --no-actions keeps stdout byte-identical to
       # the pre-2.4.0 output (the disabled marker still prints, on the diagnostic
       # stream where cost accounting belongs).
@@ -20561,11 +21009,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
       $m2B = [System.IO.File]::ReadAllBytes([string]$script:StFileMap[$m2F])
       if (-not ($m2B.Length -ge 3 -and $m2B[0] -eq 0xEF -and $m2B[1] -eq 0xBB -and $m2B[2] -eq 0xBF)) { $m2NoBom += [string]$m2F }
     }
-    ST-Check 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' (
-      (@($script:StSourceFiles).Count -eq 23) -and (@($m2NoBom).Count -eq 0))
+    ST-Check 'lint (M2): all 24 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' (
+      (@($script:StSourceFiles).Count -eq 24) -and (@($m2NoBom).Count -eq 0))
     if (@($m2NoBom).Count -gt 0) { Write-Output ('      missing BOM: ' + ($m2NoBom -join ',')) }
   } else {
-    ST-Skip 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' 'single-file source mode (no lib/ beside the entry) - the artifact inlines every file, so there is no per-file BOM table to measure'
+    ST-Skip 'lint (M2): all 24 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' 'single-file source mode (no lib/ beside the entry) - the artifact inlines every file, so there is no per-file BOM table to measure'
   }
   # ---------- v4.4.0 (A-03): the source set is under test, not merely in use ----------
   # Planted fixtures: until the first lib/ file exists the aggregate path is unreachable in
@@ -20779,9 +21227,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 62 sites, table sums to the same 62)' (
-    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 62) -and
-    ($a07OwnerSum -eq 62) -and (@($script:StCommandOwners).Count -eq 41))
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 63 sites, table sums to the same 63)' (
+    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 63) -and
+    ($a07OwnerSum -eq 63) -and (@($script:StCommandOwners).Count -eq 41))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -20792,8 +21240,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a07A2 in @($script:StCommandExclusions)) { if ([string]$a07A1 -ceq [string]$a07A2) { $a07C = $a07C + 1 } }
     if ($a07C -gt 1) { $a07AnchorDup = $a07AnchorDup + 1 }
   }
-  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the thirteen exclusions, and no exclusion certifies two lines (75 = 62 + 13)' (
-    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 75) -and (@($script:StCommandExclusions).Count -eq 13) -and
+  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the thirteen exclusions, and no exclusion certifies two lines (76 = 63 + 13)' (
+    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 76) -and (@($script:StCommandExclusions).Count -eq 13) -and
     ($a07AnchorDup -eq 0) -and (($a07SiteCount + 13) -eq $a07Mentions))
   if ($a07MentionGap -ne '') { Write-Output ('      mention gap: ' + $a07MentionGap) }
   $a07FtKeys = @()
@@ -20871,8 +21319,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all sixty-two (none left reading caller scope)' (
-    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 62) -and (@($script:StCommandNameArgs).Count -eq 3))
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all sixty-three (none left reading caller scope)' (
+    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 63) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
   ST-Check 'lint (A-08): the six helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all six are actually on the list' (
     (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 6))
@@ -20955,7 +21403,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09PlantNote = Get-UndeclaredVarUseDiscrepancy $a09PlantParsed $a09Var $true
   ST-Check 'lint (A-09): every use of the dispatcher command variable sits in an owner that declares it, a planted borrower is named with its count while a planted owner is left alone, and the top-level exemption is itself load-bearing' (
     ($a09Undeclared -ceq '') -and ($a09PlantNote.Contains('fn:F-Borrower=uses1-undeclared')) -and
-    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses18-without-entry-param')))
+    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses19-without-entry-param')))
   if ($a09Undeclared -ne '') { Write-Output ('      undeclared uses: ' + $a09Undeclared) }
   $a09DYes = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Owner' 'Cmd'
   $a09DNo = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Borrower' 'Cmd'
@@ -21003,7 +21451,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09HelperCmd = Get-VarUseCountInFunction $a07Parsed 'Invoke-ObservedMouseInput' $a09Var
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, the registered owners account for every use of the dispatcher variable, and each observed-input handler hands the name over at exactly two mutually exclusive sites (the counts are in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 98) -and (@($script:StCmdVarUses).Count -eq 46) -and
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 100) -and (@($script:StCmdVarUses).Count -eq 46) -and
     ($a09ObsOk) -and ($a09HelperCmd -ceq '0'))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
@@ -21036,7 +21484,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    mode-independent claims (the planted predicate, and the anchors resolving) stay executed in both.
   if ($script:StSourceMode -ceq 'aggregate') {
     ST-Check 'lint (A-11a): the selftest section no longer reads an automatic path variable, and the readers that remain are exactly the registered sections that have not moved yet' (
-      ($a11OwnerGap -ceq '') -and ($a11Total -eq 31) -and (@($script:StPathReadOwners).Count -eq 6) -and
+      ($a11OwnerGap -ceq '') -and ($a11Total -eq 32) -and (@($script:StPathReadOwners).Count -eq 6) -and
       ($a11SelfCount -ceq '0'))
     if ($a11OwnerGap -ne '') { Write-Output ('      path readers: ' + $a11OwnerGap) }
   } else {
@@ -21504,11 +21952,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (39/23/26/10 = all 98)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (41/23/26/10 = all 100)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (39/23/26/10 = all 98)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (41/23/26/10 = all 100)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +
@@ -22082,6 +22530,80 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
   } else {
     ST-Skip 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' 'published-only docs are not in this tree - this leg runs in the tree that ships them'
   }
+
+  # v4.10.0 (UU-absorb): the lib/quirks.json policy contract.
+  # The shipped file is DATA with a schema, so the schema is pinned here like any other contract:
+  # the validator is pure (feed it text, read the verdict), the matcher is pure, and the shipped
+  # file must stay INERT (zero rules) - the moment a rule ships, this leg and the README's
+  # "defaults unchanged" promise change in the same commit or the leg goes red.
+  # v4.10.1 fix: the shipped file is looked up by CANDIDATE, not one hardcoded path - the private
+  # checkout keeps it at lib/quirks.json, the open repository at src/lib/quirks.json (the root of
+  # that tree is the stitched artifact and carries no lib/), and an installed artifact may ship
+  # with the file deleted next to it (install.ps1 documents it as optional). A layout without the
+  # data file SKIPS this contract by name instead of failing - "no file ships here" is a fact
+  # about the layout, not a broken file. The LOADER's own resolution order is unchanged (script
+  # dir first, then lib/ beside it); these candidates answer "where does the SHIPPED data live in
+  # THIS checkout", which is a repo-layout question, not a runtime one.
+  $uqPath = ''
+  foreach ($uqCand in @((Join-Path $script:ToolRootPath 'lib/quirks.json'), (Join-Path $script:ToolRootPath 'src/lib/quirks.json'))) {
+    if (Test-Path -LiteralPath $uqCand -PathType Leaf) { $uqPath = $uqCand; break }
+  }
+  $uqText = ''
+  $uqReadErr = ''
+  if ($uqPath -ne '') {
+    try { $uqText = [System.IO.File]::ReadAllText($uqPath) } catch { $uqReadErr = $_.Exception.Message }
+  } else {
+    $uqReadErr = 'no quirks policy data file in this layout'
+  }
+  $uqShip = Test-QuirksPolicyText $uqText
+  $uqShipTop = @()
+  if ($uqReadErr -eq '') {
+    try { $uqShipTop = @((($uqText | ConvertFrom-Json).PSObject.Properties.Name | ForEach-Object { [string]$_ }) | Sort-Object) } catch { $uqReadErr = $_.Exception.Message }
+  }
+  if ($uqPath -ne '') {
+    ST-Check 'contract (UU-absorb): the shipped lib/quirks.json is valid policy text with an EMPTY rules array and exactly the two top-level keys - defaults ship inert, so the file can change no behavior until a rule is authored' (
+      ($uqReadErr -eq '') -and ([bool]$uqShip.Ok) -and (@($uqShip.Rules).Count -eq 0) -and (($uqShipTop -join ',') -ceq 'rules,schemaVersion'))
+    Write-Output ('      quirks shipped data: ' + $uqPath)
+  } else {
+    ST-Skip 'contract (UU-absorb): the shipped lib/quirks.json is valid policy text with an EMPTY rules array and exactly the two top-level keys - defaults ship inert, so the file can change no behavior until a rule is authored' 'no quirks policy data file in this layout (an artifact-only checkout ships none by design - built-in defaults apply, and the contract holds in the tree that ships the file)'
+  }
+  $uqOkText = '{"schemaVersion":1,"rules":[{"note":"anim window","match":{"process":"^anim\\.exe$","title":"Player"},"set":{"waitStableIntervalMs":250}}]}'
+  $uqOk = Test-QuirksPolicyText $uqOkText
+  ST-Check 'unit (UU-absorb): the validator accepts a well-formed rule and normalizes its match and set tables' (
+    ([bool]$uqOk.Ok) -and (@($uqOk.Rules).Count -eq 1) -and ([string]$uqOk.Rules[0].Note -ceq 'anim window') -and
+    ([string]$uqOk.Rules[0].Match['process'] -ceq '^anim\.exe$') -and ([int]$uqOk.Rules[0].Set['waitStableIntervalMs'] -eq 250))
+  $uqBadCases = @(
+    @('empty file', ''),
+    @('invalid json', '{nope'),
+    @('unknown top key', '{"schemaVersion":1,"rules":[],"extra":1}'),
+    @('wrong schemaVersion', '{"schemaVersion":2,"rules":[]}'),
+    @('missing rules', '{"schemaVersion":1}'),
+    @('rule without match', '{"schemaVersion":1,"rules":[{"note":"x"}]}'),
+    @('empty matcher', '{"schemaVersion":1,"rules":[{"match":{"process":""}}]}'),
+    @('uncompilable regex', '{"schemaVersion":1,"rules":[{"match":{"process":"("}}]}'),
+    @('unknown set key', '{"schemaVersion":1,"rules":[{"match":{"process":"a"},"set":{"noSuchKnob":1}}]}'),
+    @('interval out of range', '{"schemaVersion":1,"rules":[{"match":{"process":"a"},"set":{"waitStableIntervalMs":10}}]}')
+  )
+  $uqBadNotes = @()
+  foreach ($uqB in $uqBadCases) {
+    $uqV = Test-QuirksPolicyText ([string]$uqB[1])
+    if ([bool]$uqV.Ok -or ([string]$uqV.Why -eq '')) { $uqBadNotes += ('accepted-or-silent:' + [string]$uqB[0]) }
+  }
+  ST-Check 'unit (UU-absorb): every schema violation rejects the WHOLE file and names itself - empty, bad JSON, unknown top key, wrong version, missing rules, matchless rule, empty matcher, uncompilable regex, unknown knob, out-of-range interval' (
+    (@($uqBadNotes).Count -eq 0))
+  $uqRuleOne = @{ Note = ''; Match = @{ process = '^anim' }; Set = @{ waitStableIntervalMs = 250 } }
+  $uqRuleTwo = @{ Note = 't'; Match = @{ process = 'anim'; title = 'Player' }; Set = @{} }
+  ST-Check 'unit (UU-absorb): the matcher requires EVERY named field to match, skips unnamed ones, and fails closed on a null rule' (
+    (Test-QuirkRuleMatch $uqRuleOne 'animplayer' 'Other' 'x') -and
+    (-not (Test-QuirkRuleMatch $uqRuleOne 'other' 'Other' 'x')) -and
+    (Test-QuirkRuleMatch $uqRuleTwo 'anim' 'Any' 'Player') -and
+    (-not (Test-QuirkRuleMatch $uqRuleTwo 'anim' 'Any' 'Other')) -and
+    (-not (Test-QuirkRuleMatch $null 'a' 'b' 'c')))
+  $uqW = @{ Proc = 'animplayer'; Class = 'Other'; Title = 'x' }
+  $uqHit = Get-WindowQuirks $uqW
+  ST-Check 'unit (UU-absorb): the window lookup answers unmatched against the shipped (ruleless) file with an empty set and no note - built-in defaults, never null' (
+    (([bool]$uqHit.Matched) -eq $false) -and (@(Get-HashKeys $uqHit.Set).Count -eq 0) -and ([string]$uqHit.Note -ceq '') -and
+    (((Get-WindowQuirks $null).Matched) -eq $false))
 
 }
 
@@ -25299,8 +25821,8 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
       (@($bad).Count -eq 0) -and (@(Get-HashKeys $csMap).Count -ge 4)
     ))
   # the flag-reachability lint must now cover the migrated commands, not just three
-  ST-Check 'unit: the private-flag table covers 30 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; CU-OPS adds click/rclick/dblclick for their --mods/--button/space guards, key and key-release for the native-keyboard bounds, the three process entries (proc-wait, proc-start, proc-kill), uia-state for its opt-in --text, tpl-find/wait-cond for their bounded locator and wait values, D-1 adds pt-profile/pt-anchor for their profile paths and strict-drift bound, D-3 adds log-index for its date/origin/log filters, D-2 adds tile for its plan and destination, D-5 adds cluster-color for its per-channel tolerance and smallest cluster worth a line, and this round (B-1) adds pt-calibrate for its index lists, rectangle, point, residual bound, baseline floor and list switch; EXPECTATION RAISED 13->21->22->24->26->27->28->29->30, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
-    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 30)
+  ST-Check 'unit: the private-flag table covers 31 commands (J-06 migrated four, v1.6.0 adds open-and-pick, v2.0.0 adds wheel modifiers, v2.0.1 adds the press trio, v2.1.0 adds find, v3.0.0 adds dialog-cancel; CU-OPS adds click/rclick/dblclick for their --mods/--button/space guards, key and key-release for the native-keyboard bounds, the three process entries (proc-wait, proc-start, proc-kill), uia-state for its opt-in --text, tpl-find/wait-cond for their bounded locator and wait values, D-1 adds pt-profile/pt-anchor for their profile paths and strict-drift bound, D-3 adds log-index for its date/origin/log filters, D-2 adds tile for its plan and destination, D-5 adds cluster-color for its per-channel tolerance and smallest cluster worth a line, B-1 adds pt-calibrate for its index lists, rectangle, point, residual bound, baseline floor and list switch, and the UU-absorb round adds quirks for its --match filter; EXPECTATION RAISED 13->21->22->24->26->27->28->29->30->31, and the two lints either side still refuse an entry that is unused or a flag that is undeclared)' (
+    @(Get-HashKeys (Get-OwnFlagTable)).Count -eq 31)
 
   # the escape route must survive the strip: everything after a value-taking flag is DATA.
   # J-06's central unknown-flag refusal nearly ate `--needle <--payload>` and only a --live
@@ -25547,12 +26069,12 @@ function Invoke-SelftestFamily-FlagsGrammar($Ctx) {
   # why this gate (and the three older scans) must be scoped to the dispatcher, and why the difference
   # is asserted rather than a number being trusted. D-5 (v4.6.13) moved 96/99/110 to 97/100/111;
   # v4.7.0 (B-1) moves them to 98/101/112 for the pt-calibrate case.
-  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 98 101
+  $a15Gap = Get-CaseShapeGap $j5SelfParsed $srcLines 'Invoke-DesktopCommand' @('selftest', 'script', 'replay') 100 103
   $a15Unscoped = 0
   foreach ($a15l in $srcLines) { if ([regex]::IsMatch([string]$a15l, '^    ''[a-z0-9-]+'' \{$')) { $a15Unscoped = $a15Unscoped + 1 } }
-  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 98 and 101, and the unscoped count is larger, so the scope is what is being measured' (
-    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 98) -and ($hCaseStarts.Count -eq 98) -and
-    ($gaCasesCount -eq 101) -and ($a15Unscoped -gt 98))
+  ST-Check 'lint (A-15): every case the switch really has begins on a line the case scans can see (AST clauses = strict-shape cases + the three registered single-line cases), the three existing counts agree on 100 and 103, and the unscoped count is larger, so the scope is what is being measured' (
+    ($a15Gap -ceq '') -and ($d1CaseStarts.Count -eq 100) -and ($hCaseStarts.Count -eq 100) -and
+    ($gaCasesCount -eq 103) -and ($a15Unscoped -gt 100))
   Write-Output ('      A-15 case shape: gap=[' + $a15Gap + '] flag-scan=' + $d1CaseStarts.Count + ' help-index=' + $hCaseStarts.Count +
     ' f-00-a=' + $gaCasesCount + ' unscoped-file-wide=' + $a15Unscoped)
   # the teeth: every note this predicate can emit is planted, on text - not on the tree. The clean
@@ -31490,7 +32012,7 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $chPlantDefCaught = @($chPlant | Where-Object { $_.Contains($chDefMark) }).Count
   $chPlantCallCaught = @($chPlant | Where-Object { $_.Contains($chCallMark) }).Count
   ST-Check 'lint: every offline child probe in this family goes through the one runner (slice sized, one definition, one splatting spawn site, streams split by type, no merged face parsed as JSON) and each shape predicate catches its planted copy' (
-    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 13) -and
+    (@($chScope).Count -gt 400) -and (@($chDefSites).Count -eq 1) -and (@($chCallSites).Count -eq 19) -and
     (@($chSpawnSites).Count -eq 1) -and (@($chSpawnLoose).Count -eq 0) -and (@($chSplitSites).Count -eq 1) -and
     (@($chJsonMerged).Count -eq 0) -and ($chPlantSpawnCaught -eq 1) -and ($chPlantMergeCaught -eq 1) -and
     ($chPlantDefCaught -eq 1) -and ($chPlantCallCaught -eq 1))
@@ -31500,6 +32022,9 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   # probe, again through the same runner - measured, not assumed.
   # call-sites 10 -> 12 (M8, 2026-11-06): the fallback e2e adds the dpi and wins --json child probes.
   # call-sites 12 -> 13 (M6, 2026-11-06): the stripped-switch e2e adds the dry-run child probe.
+  # call-sites 13 -> 19 (UU-absorb, v4.10.0): the failure-receipt block adds six probes - doctor
+  # text+json, proc-list --json, and the script reset trio (clean / dry / mistyped flag) - all
+  # through the same runner, measured, not assumed.
   Write-Output ('      child channel: scope-lines=' + @($chScope).Count + ' runner-def=' + @($chDefSites).Count +
     ' call-sites=' + @($chCallSites).Count + ' spawn-sites=' + @($chSpawnSites).Count +
     ' unsplit-spawn=' + @($chSpawnLoose).Count + ' type-split=' + @($chSplitSites).Count +
@@ -32121,9 +32646,9 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   if (-not $script:PsChildOk) {
     ST-Skip 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch and log-index reads the log through the real entry with --origin as a FILTER' ($script:PsChildWhy + ' - the check spawns a child process')
   } else {
-  ST-Check 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch (exit 1, names --origin, actions.log line count unchanged) and log-index reaches the planted log through the real entry with --origin as a FILTER (the entry does not eat it)' (
+  ST-Check 'e2e (D-3): a real child refuses an unusable origin tag BEFORE dispatch (exit 1, names --origin, exactly ONE failure receipt appended) and log-index reaches the planted log through the real entry with --origin as a FILTER (the entry does not eat it)' (
     $d3BadChild.code -eq 1 -and (($d3BadChild.out + "`n" + $d3BadChild.err).Contains('--origin')) -and
-    ($d3RealBefore -eq $d3RealAfter) -and ($d3RealBefore -ge 0) -and
+    ($d3RealAfter -eq ($d3RealBefore + 1)) -and ($d3RealBefore -ge 0) -and
     $d3IdxChild.code -eq 0 -and $d3IdxChild.out.Contains('2 of 6') -and $d3IdxChild.out.Contains('origin=d3tag') -and
     (-not $d3IdxChild.out.Contains('origin=other')))
   Write-Output ('      D-3 children: bad-tag exit=' + [string]$d3BadChild.code + ' real-log=' + $d3RealBefore + '->' + $d3RealAfter +
@@ -32318,6 +32843,125 @@ function Invoke-SelftestFamily-AuditOutput($Ctx) {
   $m6Dry = & $cnpRun -ChildArgs @('shots-cleanup', '--keep', '5', '--no-auto-trim')
   ST-Check 'e2e (M6): --no-auto-trim is stripped at the boundary, so shots-cleanup --keep 5 --no-auto-trim dry-runs (exit 0) instead of refusing an unknown flag' (
     ($m6Dry.code -eq 0) -and (-not $m6Dry.out.Contains('unknown flag')) -and (-not $m6Dry.err.Contains('unknown flag')))
+
+  # v4.10.0 (UU-absorb): the failure receipt, its reader, and the machine snapshots.
+  # The receipt writer is NOT the audited command (a different name on purpose, so its definition
+  # and call sites never enter the mention inventory), so these legs call it directly against a
+  # temp log the way the D-3 planted-writer block above does: save both mutable globals, plant,
+  # restore in finally. The child legs reuse $cnpRun; doctor and proc JSON are read-only commands,
+  # so running them in a child costs nothing but time and touches nothing.
+  $uarLog = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+  $uarSavedLog = [string]$Ctx['actionLog']
+  $uarSavedOrigin = [string](Get-Variable -Name 'LogOrigin' -Scope Script -ValueOnly -ErrorAction SilentlyContinue)
+  if ($uarSavedOrigin -eq '') { $uarSavedOrigin = 'unknown' }
+  $uarErr = ''
+  $uarRows = @()
+  $uarNone = 0
+  $uarUnknown = 0
+  try {
+    $ActionLog = $uarLog
+    $script:LogOrigin = 'uartag'
+    Write-ActionResultLine 'move' 'error' "first line`r`n  second line   tail"
+    $script:LogOrigin = 'unknown'
+    Write-ActionResultLine 'move' 'ok' 'must not be written'
+    $uarNone = @(@([regex]::Split([System.IO.File]::ReadAllText($uarLog), "\r?\n")) | Where-Object { $_ -ne '' }).Count
+    Write-ActionResultLine 'DTX-Not-A-Command' 'error' 'must not be written either'
+    $uarUnknown = @(@([regex]::Split([System.IO.File]::ReadAllText($uarLog), "\r?\n")) | Where-Object { $_ -ne '' }).Count
+    $uarRows = @(@([regex]::Split([System.IO.File]::ReadAllText($uarLog), "\r?\n")) | Where-Object { $_ -ne '' })
+  } catch { $uarErr = $_.Exception.Message }
+  finally {
+    $ActionLog = $uarSavedLog
+    $script:LogOrigin = $uarSavedOrigin
+    if (Test-Path -LiteralPath $uarLog) { Remove-Item -LiteralPath $uarLog -Force }
+  }
+  $uarP1 = @()
+  if (@($uarRows).Count -ge 1) { $uarP1 = @([string]$uarRows[0] -split ' \| ') }
+  $uarRec1 = $null
+  if (@($uarP1).Count -eq 5) { $uarRec1 = ConvertFrom-ActionLogLine ([string]$uarRows[0]) }
+  ST-Check 'unit (UU-absorb): the failure-receipt writer emits exactly the 4/5-column shape (result=error in the args column, a folded one-line quoted note in the target, the origin token in the fifth) and the line parses like any other' (
+    ($uarErr -eq '') -and (@($uarRows).Count -eq 1) -and (@($uarP1).Count -eq 5) -and
+    ([string]$uarP1[1] -ceq 'move') -and ([string]$uarP1[2] -ceq 'result=error') -and
+    ([string]$uarP1[3].StartsWith("note='first line second line tail'")) -and ([string]$uarP1[4] -ceq 'origin=uartag') -and
+    (([string]$uarP1[0]).EndsWith(' UTC')) -and ($null -ne $uarRec1) -and ([string]$uarRec1.Args -ceq 'result=error'))
+  ST-Check 'unit (UU-absorb): the receipt writer refuses the ok road and the unknown-command road (one line on disk in both cases - a refusal that wrote nothing and a name that never reached a handler)' (
+    ($uarErr -eq '') -and ($uarNone -eq 1) -and ($uarUnknown -eq 1))
+  $uar2Log = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar2-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+  $uar2Err = ''
+  $uar2First = $null
+  $uar2Empty = 'sentinel'
+  try {
+    $ActionLog = $uar2Log
+    $script:LogOrigin = 'unknown'
+    Write-ActionResultLine 'click' 'error' 'older failure'
+    Write-ActionResultLine 'type-in' 'error' 'newer failure'
+    $uar2First = Get-LastActionResultError
+    $ActionLog = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar-absent-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+    $uar2Empty = Get-LastActionResultError
+  } catch { $uar2Err = $_.Exception.Message }
+  finally {
+    $ActionLog = $uarSavedLog
+    if (Test-Path -LiteralPath $uar2Log) { Remove-Item -LiteralPath $uar2Log -Force }
+  }
+  ST-Check 'unit (UU-absorb): the receipt reader returns the NEWEST result=error line with its date/cmd/note, and names none where no log exists' (
+    ($uar2Err -eq '') -and ($null -ne $uar2First) -and ([string]$uar2First.Cmd -ceq 'type-in') -and
+    ([string]$uar2First.Note -ceq "'newer failure'") -and ([string]$uar2First.Date -cmatch '^\d{4}-\d{2}-\d{2}$') -and
+    ($null -eq $uar2Empty))
+  $uar3Log = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar3-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.log')
+  $uar3Err = ''
+  $uar3Idx = @()
+  $uar3Bad = ''
+  try {
+    $ActionLog = $uar3Log
+    $script:LogOrigin = 'unknown'
+    Write-ActionResultLine 'click' 'error' 'planted receipt'
+    # The normal-line half goes through a local alias whose value is the assembled token, the same
+    # trick the D-3 planted writer uses: the real writer runs, but this family does not become one
+    # more call-site entry in the A-07 inventory it keeps.
+    Set-Alias -Name 'uar-planted-audit-call' -Value "$script:StCommandToken"
+    & 'uar-planted-audit-call' @('coords=1,2') 'id=1' 'move'
+  } catch { $uar3Err = $_.Exception.Message } finally {
+    $ActionLog = $uarSavedLog
+    if (Test-Path Alias:uar-planted-audit-call) { Remove-Item Alias:uar-planted-audit-call -Force }
+  }
+  try { $uar3Idx = @(Invoke-Handler-log-index 'log-index' @('--log', $uar3Log, '--result', 'error')) } catch { $uar3Err = $_.Exception.Message }
+  $uar3BadTry = ''
+  try { [void](Invoke-Handler-log-index 'log-index' @('--log', $uar3Log, '--result', 'ok')) } catch { $uar3BadTry = $_.Exception.Message }
+  if (Test-Path -LiteralPath $uar3Log) { Remove-Item -LiteralPath $uar3Log -Force }
+  ST-Check 'unit (UU-absorb): log-index --result error filters the receipt out of a mixed planted log, and --result ok is refused by name (success records no completion line, so asking for it would teach a lie)' (
+    ($uar3Err -eq '') -and ($uar3Idx.Count -ge 1) -and (($uar3Idx -join "`n")).Contains('1 of 2 non-empty line(s) matched') -and
+    (($uar3Idx -join "`n")).Contains('result=error') -and $uar3BadTry.Contains('--result must be'))
+  $uarDoctor = & $cnpRun -ChildArgs @('doctor')
+  $uarDoctorJ = & $cnpRun -ChildArgs @('doctor', '--json')
+  $uarDoctorObj = $null
+  $uarDoctorWhy = ''
+  if ($uarDoctorJ.code -eq 0) { try { $uarDoctorObj = ($uarDoctorJ.out | ConvertFrom-Json) } catch { $uarDoctorWhy = $_.Exception.Message } } else { $uarDoctorWhy = 'child exit ' + $uarDoctorJ.code }
+  # The key set is ASCII, so the console-pipe decode cannot corrupt it (the CJK lesson pins VALUES
+  # out, not keys); values are asserted on the text road instead.
+  $uarDoctorKeys = @()
+  if ($null -ne $uarDoctorObj) { $uarDoctorKeys = @($uarDoctorObj.PSObject.Properties.Name | Sort-Object) }
+  ST-Check 'e2e (UU-absorb): a real child doctor answers in both roads - text carries psVersion/screen/ocr/foreground/clipboard/quirks/lastError, --json publishes exactly the declared key set' (
+    ($uarDoctor.code -eq 0) -and $uarDoctor.out.Contains('psVersion=') -and $uarDoctor.out.Contains('screen=') -and
+    $uarDoctor.out.Contains('ocr=') -and $uarDoctor.out.Contains('foreground=') -and $uarDoctor.out.Contains('clipboard=') -and
+    $uarDoctor.out.Contains('quirks=') -and $uarDoctor.out.Contains('lastError=') -and
+    ($null -ne $uarDoctorObj) -and (($uarDoctorKeys -join ',') -ceq 'clipboard_kind,clipboard_read_error,dpi_mode,foreground,last_error,monitors,ocr_available,ocr_current,ocr_languages,ocr_max_dimension,os,ps_version,quirks,screen_h,screen_w,screen_x,screen_y'))
+  Write-Output ('      UU-absorb doctor: text-exit=' + [string]$uarDoctor.code + ' text-head=[' + $uarDoctor.out.Substring(0, [Math]::Min(80, $uarDoctor.out.Length)) + '] json-exit=' + [string]$uarDoctorJ.code + ' why=[' + $uarDoctorWhy + '] keys=' + ($uarDoctorKeys -join ','))
+  $uarProc = & $cnpRun -ChildArgs @('proc-list', '--json')
+  $uarProcObj = $null
+  $uarProcWhy = ''
+  if ($uarProc.code -eq 0) { try { $uarProcObj = @(($uarProc.out | ConvertFrom-Json)) } catch { $uarProcWhy = $_.Exception.Message } } else { $uarProcWhy = 'child exit ' + $uarProc.code }
+  ST-Check 'e2e (UU-absorb): a real child proc-list --json is an array of snapshot rows that all carry nowindow, and proc-info --json answers for pid 0 with a windows array present' (
+    ($uarProc.code -eq 0) -and (@($uarProcObj).Count -ge 1) -and ($null -ne $uarProcObj[0].nowindow) -and
+    ($null -ne @($uarProcObj)[0].pid))
+  $uarScript = Join-Path ([System.IO.Path]::GetTempPath()) ('acu-uar-steps-' + [System.Diagnostics.Process]::GetCurrentProcess().Id + '.json')
+  [System.IO.File]::WriteAllText($uarScript, '[{"sleep":50}]', (New-Object System.Text.UTF8Encoding($false)))
+  $uarReset = & $cnpRun -ChildArgs @('script', $uarScript, '--reset-on-exit')
+  $uarResetDry = & $cnpRun -ChildArgs @('script', $uarScript, '--dry-run', '--reset-on-exit')
+  $uarResetBad = & $cnpRun -ChildArgs @('script', $uarScript, '--reset-on-exit-typo')
+  if (Test-Path -LiteralPath $uarScript) { Remove-Item -LiteralPath $uarScript -Force }
+  ST-Check 'e2e (UU-absorb): script --reset-on-exit ends with the clipboard receipt in the paste-family vocabulary on a clean run, dry-run says there is nothing to reset, and a mistyped reset flag is refused with the flag named' (
+    ($uarReset.code -eq 0) -and ($uarReset.out -cmatch 'script: reset-on-exit clipboard=(restored|nothing-to-restore|NOT-restored|partial) ') -and
+    ($uarResetDry.code -eq 0) -and $uarResetDry.out.Contains('nothing to reset') -and
+    ($uarResetBad.code -eq 1) -and $uarResetBad.out.Contains('--reset-on-exit'))
 
 }
 
@@ -38448,14 +39092,18 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
     if ($e20s.Contains($bareJsonMark)) { $jBare++ }
     if ($e20s.Contains($cmdScriptMark)) { $dryLine = $e20s.Trim() }
   }
-  ST-Check 'lint: the live suite hands cmd a quoted temp step path and merges the JSON captures through cmd (no bare 2>&1 left on those two cases, and every array-form -File argument is wrapped by the quoting helper)' (
-    ($dryLine.Contains($quoteMark)) -and ($jBare -eq 0) -and ($stqSites -eq 24) -and ($stqBare -eq 0) -and $stqPlantCaught)
   # L10 (2026-11-07): the same quoting rule has to hold at EVERY array-form Start-Process in the
   # live suite, not just the cmd dry-run above. Start-Process joins -ArgumentList with single spaces
   # and adds no quotes of its own, so a '-File', $path element under a profile/TEMP that carries a
   # space arrives at the child as two arguments and the child silently never runs. Format-StProcArgs
   # is the only wrapper; the scan reads raw source, one site per line with the helper named on it,
   # and the planted bare site proves the predicate can go red.
+  # v4.10.0 fix: the scan block now runs BEFORE the ST-Check that reads its three variables. L10
+  # as committed put the reference first and the assignment second, and under StrictMode -Version
+  # Latest that read is a terminating error the moment the earlier conjuncts are true (measured
+  # this round: the full run died on an unset $stqSites; it had only survived on short-circuit
+  # paths where an earlier conjunct was false - which also means the check could never grade red
+  # on the stq conjuncts at all).
   $stqFileTok = ([string][char]39) + '-File' + ([string][char]39) + ', $'
   $stqWrap = 'Format-St' + 'ProcArgs'
   $stqSites = 0
@@ -38471,6 +39119,8 @@ function Invoke-SelftestFamily-GateMeta($Ctx) {
   $stqPlantLine = 'Start-Process x -ArgumentList ' + $stqFileTok + 'p'
   $stqPlantCaught = ([string]$stqPlantLine).Contains($stqFileTok) -and (-not ([string]$stqPlantLine).Contains($stqWrap))
   Write-Output ("      launch quoting: array-form -File sites=" + $stqSites + " unwrapped=" + $stqBare)
+  ST-Check 'lint: the live suite hands cmd a quoted temp step path and merges the JSON captures through cmd (no bare 2>&1 left on those two cases, and every array-form -File argument is wrapped by the quoting helper)' (
+    ($dryLine.Contains($quoteMark)) -and ($jBare -eq 0) -and ($stqSites -eq 24) -and ($stqBare -eq 0) -and $stqPlantCaught)
   Write-Output ("      env-robustness: dry-run line found=" + ($dryLine.Length -gt 0) + " quoted=" + $dryLine.Contains($quoteMark) + " bare-json-captures=$jBare")
   ST-Check 'lint: the BOM introduction anchor SKIPs when there is no git binary instead of reporting the history as broken' (
     ($bomGate -ge 3) -and ($bomAnchorSkip -eq 1))
@@ -40654,7 +41304,7 @@ public static class DtxWheelProbe {
 
 function Get-UsageText {
   @'
-desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
+desktop.ps1 v4.10.1 - Windows desktop automation (DPI-aware, absolute screen pixels)
 
   per-command help: `help <command>` prints just that command's entry (flags,
   semantics, the version note lines). `help` with no argument is this whole page.
@@ -40993,10 +41643,14 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
     proc-list [name-filter]         every process, visible window or not. A background
                                     process is listed too - "not in wins" is an absence
                                     of a window, not of the process. Read-only.
+                                    --json (v4.10.0): one array of Get-ProcSnapshot
+                                    objects, each plus nowindow=true|false.
     proc-info <pid>                 one identity: name/path/start time/responding/window/
                                     session/threads/working set, plus every top-level
                                     window the PID owns. Unreadable fields print as
                                     denied/unknown instead of disappearing.
+                                    --json (v4.10.0): the same snapshot object plus
+                                    windows=[] (empty array = no visible window).
     proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]
                                     bounded wait (default 20s) bound to the PID and,
                                     with --created, to that process's creation time.
@@ -41546,6 +42200,9 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
     uia-tree <sel> [maxDepth] [--path </0/1/...>] [--dump <file>]
                                     dump control tree (header shows scanned hwnd
                                     and the depth actually walked: depth=N).
+                                    --json (v4.10.0) carries the scan header and
+                                    EVERY line verbatim as {scan, filter, lines} -
+                                    grep-free capture, no re-parsed tree.
                                     v4.2.0: the whole tree to a UTF-8 file is
                                     `--dump <file>` (global flag, v3.0.0; uia-tree
                                     is in its accepted set) - NOT --out, which
@@ -41661,7 +42318,7 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
 
   batch
     (2 or more fixed steps: batch them here - one process, not one per step)
-    script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n]
+    script <steps.json> [--dry-run] [--stop-on-error] [--shot-at n] [--reset-on-exit]
                                     run a JSON array of steps in one process:
                                     per-step "to" = hard foreground guard (a
                                     guard failure aborts everything), asserts as
@@ -41696,7 +42353,14 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     execution receipt, not a business assertion. Use
                                     assert-text / expectText for the result. --json is
                                     refused: script has no JSON envelope. See README
-                                    for the step schema.
+                                    for the step schema. --reset-on-exit (v4.10.0)
+                                    snapshots the clipboard BEFORE step 1 and
+                                    restores it in `finally` - every exit road gets
+                                    the receipt "reset-on-exit clipboard=<verdict>"
+                                    (restored / nothing-to-restore / NOT-restored /
+                                    partial, the paste family's vocabulary); held
+                                    buttons stay covered by the P-3 exit watchdog.
+                                    Opt-in: without the flag nothing changes.
     replay [<actions.log>] [--last n] [--grep s] [--go]
                                     re-run recorded act/text/clipboard commands;
                                     DRY RUN by default, --go executes. Unknown
@@ -41709,12 +42373,17 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     A log slice carrying a popup-guard abort
                                     marker is refused outright (half-executed
                                     state must not be replayed).
-    log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]
+    log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all] [--result error]
                                     v4.6.13 (D-3): read-only index over actions.log
                                     (default: the one this tool writes). One row per
                                     matching audit line: #n date origin=tag cmd | target.
                                     --date filters the UTC day in the first column,
-                                    --origin filters the fifth column. Lines written
+                                    --origin filters the fifth column. --result
+                                    (v4.10.0) filters the completion receipts the
+                                    error road writes (result=error; success records
+                                    NO completion line, so no other value exists to
+                                    ask for - "no receipt" is weaker than "ok").
+                                    Lines written
                                     before v4.6.13 carry four columns and are reported
                                     as origin=unknown legacy=yes instead of crashing
                                     (they are history, not corruption); any OTHER
@@ -41736,6 +42405,38 @@ desktop.ps1 v4.9.1 - Windows desktop automation (DPI-aware, absolute screen pixe
                                     the entry leaves it to this command's parser.
                                     From v4.8.0 that label is also DERIVED when nobody
                                     types it (see --origin under global flags).
+    doctor
+                                    v4.10.0 (UU-absorb): one read-only snapshot of
+                                    "can this machine run this tool right now" -
+                                    psVersion, os, screen+monitors+dpi-mode, OCR
+                                    availability and languages, the current
+                                    foreground window, the clipboard kind, the
+                                    quirks policy state, and the most recent
+                                    result=error receipt in the CURRENT audit log
+                                    (lastError=none when the log holds none;
+                                    archives are log-index --scope's job). Reads
+                                    only; never touches the desktop; writes nothing
+                                    except what clip-info's own road writes (the
+                                    image-clipboard PNG carrier in %TEMP%). --json
+                                    publishes the same fields as one object;
+                                    last_error is null when there is none.
+    quirks [--match <sel>]
+                                    v4.10.0 (UU-absorb): the lib/quirks.json policy
+                                    reader. Bare, it prints the policy state -
+                                    the loaded file and every rule (matcher, set,
+                                    note), or the built-in defaults, including WHY
+                                    a rejected file was rejected. --match <sel>
+                                    resolves one window and shows which rule hits
+                                    it and what it would change: waitStableIntervalMs
+                                    feeds wait-stable's DEFAULT poll interval (a
+                                    caller-passed --interval always wins), and the
+                                    rule's note surfaces in wait-stable's
+                                    not-stable message. The file is optional and
+                                    fail-closed: ANY schema violation rejects the
+                                    WHOLE file with one stderr WARNING and the
+                                    built-in defaults apply - a half-understood
+                                    policy never half-applies. First matching rule
+                                    wins; no merging. This command never acts.
     shots-cleanup [--keep n] [--go] [--quarantine <dir>]
                                     bound the runtime screenshot folder (it grows
                                     without limit - 100MB/213 files in 3 days was
@@ -42109,8 +42810,11 @@ function New-OcrJsonEnvelope([string]$payloadKey, $gate, $payloadValue, $visibil
 # D-5 (v4.6.13): cluster-color is in it because a palette IS bulk data - every cluster the
 # file holds, not the ten lines the text report is willing to spend on it.
 function Get-JsonCapableCommandSet {
-  return (@('chrome-tabs', 'color-at', 'capabilities', 'cluster-color', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
-    'clip-info', 'ocr-cap', 'pt-calibrate', 'read-text', 'rect-of', 'status-summary', 'tpl-find', 'wait-stable', 'wins') +
+  # v4.10.0 (UU-absorb): doctor / quirks join as machine-readable diagnostics (their product is
+  # structured state, so the JSON road is the primary one); proc-list / proc-info carry their
+  # Get-ProcSnapshot objects verbatim; uia-tree carries its lines and scan header verbatim.
+  return (@('chrome-tabs', 'color-at', 'capabilities', 'cluster-color', 'doctor', 'find', 'find-color', 'find-text', 'hash', 'ime-state', 'info',
+    'clip-info', 'ocr-cap', 'pt-calibrate', 'proc-info', 'proc-list', 'quirks', 'read-text', 'rect-of', 'status-summary', 'tpl-find', 'uia-tree', 'wait-stable', 'wins') +
     @(Get-ActionJsonCommandSet))
 }
 function Test-JsonCapableCommand([string]$cmd) { return (@(Get-JsonCapableCommandSet) -contains $cmd) }
@@ -42377,7 +43081,10 @@ function Get-OwnFlagTable {
     # D-3 (v4.6.13): log-index is a READER - three verbatim knobs (a UTC day, an
     # origin tag and a log path). It strips them itself, which is why the entry
     # leaves a log-index --origin alone: here the flag is a filter, not a label.
-    'log-index' = @{ '--date' = @{ Raw = $true }; '--origin' = @{ Raw = $true }; '--log' = @{ Raw = $true }; '--scope' = @{ Raw = $true } }
+    'log-index' = @{ '--date' = @{ Raw = $true }; '--origin' = @{ Raw = $true }; '--log' = @{ Raw = $true }; '--scope' = @{ Raw = $true }; '--result' = @{ Raw = $true } }
+    # v4.10.0 (UU-absorb): quirks hand-parses everything else; --match names the window the
+    # policy question is ABOUT (a filter, like log-index's flags - not a target to activate).
+    'quirks' = @{ '--match' = @{ Raw = $true } }
     # D-2 (v4.6.13): the tile set's plan and destination. --tile/--grid/--overlap are
     # Raw or bounded ints here; the handler parses WxH and CxR itself (their grammar is
     # not a number) and Get-TilePlan validates the geometry. Note --grid is the shared
@@ -42459,6 +43166,10 @@ function Get-CommandSharedMap {
     # D-3 (v4.6.13): log-index hand-parses everything (it has no target and no
     # readback), so it routes none of the shared flags.
     'log-index' = @()
+    # v4.10.0 (UU-absorb): doctor takes no flag at all (one honest snapshot, nothing to
+    # configure); quirks routes no shared flag either - --match names a filter, not a target.
+    'doctor' = @()
+    'quirks' = @()
     # D-2 (v4.6.13): tile/stitch take a region or a directory plus a path - no target,
     # no guard and no readback, so neither routes a shared flag. Declared empty on
     # purpose: the error text must not advertise --to to a command that refuses it.
@@ -43335,6 +44046,12 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
     'log-index' {
       Invoke-Handler-log-index 'log-index' $Rest
     }
+    'doctor' {
+      Invoke-Handler-doctor 'doctor' $Rest
+    }
+    'quirks' {
+      Invoke-Handler-quirks 'quirks' $Rest
+    }
 
     'paste' {
       Invoke-Handler-paste 'paste' $Rest
@@ -43424,7 +44141,7 @@ function Invoke-DesktopCommand([string]$Cmd, [string[]]$Rest) {
 # dispatch switch stays a dispatch). No direct Log-Action here - steps log
 # through their own commands, so audit semantics are unchanged.
 function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
-      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>]
+      # script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit]
       # Runs a JSON array of steps in ONE process launch, with a foreground
       # guard between steps and assert checkpoints - the replacement for
       # "action -> read echo -> screenshot -> next action" call cycles.
@@ -43451,12 +44168,13 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
       #   assert-window "sel"  assert-text {sel|region,needle}
       #   assert-color {at:[x,y],hex,tolerance}  assert-hash {region,op,hash}
       #   assert-stable {sel|region,timeout}
-      $file = $null; $dry = $false; $stopOnError = $false; $shotAt = -1
+      $file = $null; $dry = $false; $stopOnError = $false; $shotAt = -1; $resetOnExit = $false
       $tok = @($Rest)
       for ($ti = 0; $ti -lt $tok.Count; $ti++) {
         $t = "$($tok[$ti])"
         if ($t -eq '--dry-run' -or $t -eq '--dry') { $dry = $true }
         elseif ($t -eq '--stop-on-error') { $stopOnError = $true }
+        elseif ($t -eq '--reset-on-exit') { $resetOnExit = $true }
         elseif ($t -match '^--shot-at=(\d+)$') { $shotAt = [int]$Matches[1] }
         elseif ($t -eq '--shot-at') {
           # v1.5.2 (audit R-07): the space form is what README, help and this
@@ -43471,11 +44189,11 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
           # A mistyped safety flag must never degrade into "run it for real":
           # `--dry` used to fall through and be treated as nothing, so the
           # supposed dry run executed every step.
-          throw "script: unknown flag '$t' (valid: --dry-run | --stop-on-error | --shot-at <n>)"
+          throw "script: unknown flag '$t' (valid: --dry-run | --stop-on-error | --shot-at <n> | --reset-on-exit)"
         }
         elseif ($null -eq $file) { $file = $t }
       }
-      if (-not $file) { throw 'usage: script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>]' }
+      if (-not $file) { throw 'usage: script <steps.json> [--dry-run] [--stop-on-error] [--shot-at <n>] [--reset-on-exit]' }
       if (-not (Test-Path $file)) { throw "file not found: $file" }
       # Assign BEFORE wrapping: ConvertFrom-Json emits a JSON array as ONE
       # Object[] on the pipeline, so @(expr | ConvertFrom-Json) yields
@@ -43516,10 +44234,23 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
         if (@($noExp).Count -gt 0) {
           Write-Output "NOTICE: $(@($noExp).Count) action step(s) have no expect/expect-gone: #$($noExp -join ' #') - they will report 'ok' if the input was DELIVERED, not if the interface MOVED. Add expectText/expectGone (CLI: --expect-change for a pixel-delta check)."
         }
+        if ($resetOnExit) { Write-Output "NOTICE: --reset-on-exit is armed, but a dry run executes nothing, so there is nothing to reset." }
         exit 0
       }
       $failed = 0
       $idx = 0
+      # v4.10.0 (UU-absorb): --reset-on-exit. A script's own writes are exactly the residue
+      # UU Remote's "auto-lock after the session" guards against: paste/paste-file/copy-file steps
+      # leave THEIR content on the clipboard after the batch ends. So the snapshot happens
+      # BEFORE step 1 and the restore runs in `finally` - every exit road gets it (clean
+      # summary, failed steps, --stop-on-error, GUARD-ABORT/POPUP-GUARD exit); the entry-level
+      # P-3 watchdog keeps releasing held buttons as it always did. Opt-in only: without the
+      # flag not one byte of behavior moves. The verdict reuses the paste/paste-file
+      # vocabulary (restored / nothing-to-restore / NOT-restored / partial) so a reader only
+      # learns it once, and the receipt lands in actions.log next to the steps that ran.
+      $clipSnap = $null
+      if ($resetOnExit) { $clipSnap = Save-ClipboardState }
+      try {
       # v1.9.0 (J-02 C): the popup survival guard. require-popup records the popup's
       # pid+hwnd+class+visible rect as the baseline; every later step is re-checked
       # BEFORE it runs, and any failure aborts the REST of the script (exit 1, measured
@@ -43659,6 +44390,18 @@ function Invoke-ScriptBatch([string[]]$Rest, [string]$Cmd) {
       }
       if ($failed -gt 0) { "script: $($steps.Count) steps, $failed FAILED"; exit 1 }
       "script: $($steps.Count) steps, all ok"
+      } finally {
+        if ($resetOnExit) {
+          $rNote = Restore-ClipboardState $clipSnap
+          $rOut = Get-ClipboardRestoreOutcome $rNote
+          $rVerdict = 'NOT-restored'
+          if ($rOut -eq 'ok') { $rVerdict = 'restored' }
+          elseif (($rOut -eq 'skipped') -and ([string]$clipSnap.Kind -eq 'none')) { $rVerdict = 'nothing-to-restore' }
+          elseif ($rOut -eq 'partial') { $rVerdict = 'partial' }
+          "script: reset-on-exit clipboard=$rVerdict ($rNote)"
+          try { Log-Action @($file) "reset-on-exit clipboard=$rVerdict" $Cmd } catch { }
+        }
+      }
 }
 # v4.4.0 (A-15): the plain handlers carved out of the dispatcher, kept directly below it. Each body is
 #    the case text verbatim - no flag, no re-indent, no edit - and the case in the switch is the
@@ -44218,6 +44961,9 @@ try {
   $script:InvocationResult = 'error'
   $script:InvocationExitCode = 1
   try { $script:InvocationErrorCategory = [string]$_.CategoryInfo.Category } catch { $script:InvocationErrorCategory = 'unknown' }
+  # v4.10.0 (UU-absorb v1): the failure receipt. The writer decides by itself whether the name is
+  # a dispatched command - the top level only hands the name over, once.
+  try { Write-ActionResultLine $Cmd 'error' $_.Exception.Message } catch { }
   # M9 (2026-11-06): under --json the failure road keeps stdout parseable: one ok:false envelope
   # from the same producer family as the success envelope, and the human ERROR line moves to
   # stderr. Without the flag nothing changes - same text, same stream, same exit code 1.

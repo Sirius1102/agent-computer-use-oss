@@ -1,6 +1,36 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project are documented in this file.
+
+## v4.10.1 - 2026-11-08
+
+- **The shipped-policy contract understands repository layouts (fix).** The "quirks.json ships
+  inert" contract leg looked for the data file at one hardcoded path; the open repository keeps
+  it under `src/lib/` (its root is the stitched artifact and carries no `lib/`). The leg now
+  looks in the declared candidate locations and SKIPs by name in a layout that ships no policy
+  file (an installed artifact may legitimately not have one - install.ps1 documents the file as
+  optional). Offline gate: the RepoContract family carries one more static emitter (35 -> 36; the two modes each run exactly one branch), the RUNTIME total stays 1380 in both - the same shape the X-07 visibility block documented.
+
+## v4.10.0 - 2026-11-07
+
+- **Failure receipts (audit).** A command that fails now leaves one closing line in
+  `actions.log` — `<ts> | <cmd> | result=error | note='<folded message>' | origin=<tag>` —
+  written by the entry catch for every dispatched command. Success records no completion line
+  (the action lines already are the receipts), so "no receipt" is weaker than "ok", and
+  `log-index --result error` filters exactly these.
+- **`doctor`.** One read-only snapshot answering "can this machine run this tool right now":
+  psVersion, os, screen+monitors+DPI, OCR, foreground, clipboard kind, quirks state, lastError.
+  `--json` publishes the same fields as one object.
+- **`quirks` — declarative per-window policy.** `lib/quirks.json` (optional and fail-closed: any
+  schema violation rejects the WHOLE file and built-in defaults apply; ships with zero rules).
+  v1 wires one knob: `waitStableIntervalMs` (wait-stable's DEFAULT poll interval; a caller-passed
+  `--interval` always wins) plus a per-rule `note` surfaced in wait-stable's not-stable message.
+- **`script --reset-on-exit`.** Snapshots the clipboard before step 1 and restores it on every
+  exit road with a receipt in the paste-family vocabulary. Opt-in; default behavior unchanged.
+- **More `--json`.** `proc-list` / `proc-info` (snapshot rows + `windows`), `uia-tree`
+  (`{scan, filter, lines}` verbatim) join the machine-readable set (19 -> 24 commands).
+- **Offline gate: 1368 -> 1380 checks** (+7 failure-receipt / doctor / proc / script-reset legs,
+  +5 quirks policy contract legs; mutation-verified).
 
 ## v4.9.1 - 2026-11-07
 

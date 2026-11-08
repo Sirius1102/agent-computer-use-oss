@@ -26,11 +26,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
       $m2B = [System.IO.File]::ReadAllBytes([string]$script:StFileMap[$m2F])
       if (-not ($m2B.Length -ge 3 -and $m2B[0] -eq 0xEF -and $m2B[1] -eq 0xBB -and $m2B[2] -eq 0xBF)) { $m2NoBom += [string]$m2F }
     }
-    ST-Check 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' (
-      (@($script:StSourceFiles).Count -eq 23) -and (@($m2NoBom).Count -eq 0))
+    ST-Check 'lint (M2): all 24 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' (
+      (@($script:StSourceFiles).Count -eq 24) -and (@($m2NoBom).Count -eq 0))
     if (@($m2NoBom).Count -gt 0) { Write-Output ('      missing BOM: ' + ($m2NoBom -join ',')) }
   } else {
-    ST-Skip 'lint (M2): all 23 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' 'single-file source mode (no lib/ beside the entry) - the artifact inlines every file, so there is no per-file BOM table to measure'
+    ST-Skip 'lint (M2): all 24 aggregated source files carry a UTF-8 BOM, and the entry still passes its own pure-ASCII rule' 'single-file source mode (no lib/ beside the entry) - the artifact inlines every file, so there is no per-file BOM table to measure'
   }
   # ---------- v4.4.0 (A-03): the source set is under test, not merely in use ----------
   # Planted fixtures: until the first lib/ file exists the aggregate path is unreachable in
@@ -244,9 +244,9 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a07OwnerSum = 0
   foreach ($a07D in @($script:StCommandOwners)) { $a07At = ([string]$a07D).LastIndexOf('='); $a07OwnerSum = $a07OwnerSum + [int]([string]$a07D).Substring($a07At + 1) }
   $a07SiteCount = @($a07Keys).Count
-  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 62 sites, table sums to the same 62)' (
-    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 62) -and
-    ($a07OwnerSum -eq 62) -and (@($script:StCommandOwners).Count -eq 41))
+  ST-Check 'lint (A-07): the source parses clean and its AST call-site owners equal the registered table (41 keys, 63 sites, table sums to the same 63)' (
+    ([int]$a07Parsed.ErrorCount -eq 0) -and ($a07OwnerGap -ceq '') -and ($a07SiteCount -eq 63) -and
+    ($a07OwnerSum -eq 63) -and (@($script:StCommandOwners).Count -eq 41))
   if ($a07OwnerGap -ne '') { Write-Output ('      owner drift: ' + $a07OwnerGap) }
   $a07Mentions = 0
   foreach ($a07Ln in @($script:StSourceLines)) { if (([string]$a07Ln).Contains("$script:StCommandToken")) { $a07Mentions = $a07Mentions + 1 } }
@@ -257,8 +257,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a07A2 in @($script:StCommandExclusions)) { if ([string]$a07A1 -ceq [string]$a07A2) { $a07C = $a07C + 1 } }
     if ($a07C -gt 1) { $a07AnchorDup = $a07AnchorDup + 1 }
   }
-  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the thirteen exclusions, and no exclusion certifies two lines (75 = 62 + 13)' (
-    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 75) -and (@($script:StCommandExclusions).Count -eq 13) -and
+  ST-Check 'lint (A-07): every line mentioning the audited command is either an AST call site or one of the thirteen exclusions, and no exclusion certifies two lines (76 = 63 + 13)' (
+    ($a07MentionGap -ceq '') -and ($a07Mentions -eq 76) -and (@($script:StCommandExclusions).Count -eq 13) -and
     ($a07AnchorDup -eq 0) -and (($a07SiteCount + 13) -eq $a07Mentions))
   if ($a07MentionGap -ne '') { Write-Output ('      mention gap: ' + $a07MentionGap) }
   $a07FtKeys = @()
@@ -336,8 +336,8 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
     foreach ($a08S in $a08Seen) { if ([string]$a08S -ceq [string]$a08H) { $a08C = $a08C + 1 } }
     if ($a08C -lt 1) { $a08SeenAll = $false }
   }
-  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all sixty-two (none left reading caller scope)' (
-    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 62) -and (@($script:StCommandNameArgs).Count -eq 3))
+  ST-Check 'lint (A-08): every call to the audited command passes the command name as its third argument and the registered sources account for all sixty-three (none left reading caller scope)' (
+    ($a08ArgGap -ceq '') -and (@($a08Args).Count -eq 63) -and (@($script:StCommandNameArgs).Count -eq 3))
   if ($a08ArgGap -ne '') { Write-Output ('      name sources: ' + $a08ArgGap) }
   ST-Check 'lint (A-08): the six helpers outside the dispatcher each declare a command-name parameter and hand that very parameter to their audit call, and all six are actually on the list' (
     (@($a08HandNotes).Count -eq 0) -and $a08SeenAll -and (@($a08Helpers).Count -eq 6))
@@ -420,7 +420,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09PlantNote = Get-UndeclaredVarUseDiscrepancy $a09PlantParsed $a09Var $true
   ST-Check 'lint (A-09): every use of the dispatcher command variable sits in an owner that declares it, a planted borrower is named with its count while a planted owner is left alone, and the top-level exemption is itself load-bearing' (
     ($a09Undeclared -ceq '') -and ($a09PlantNote.Contains('fn:F-Borrower=uses1-undeclared')) -and
-    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses18-without-entry-param')))
+    (-not $a09PlantNote.Contains('fn:F-Owner=')) -and ($a09NoExemption.Contains('script-uses19-without-entry-param')))
   if ($a09Undeclared -ne '') { Write-Output ('      undeclared uses: ' + $a09Undeclared) }
   $a09DYes = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Owner' 'Cmd'
   $a09DNo = Get-FunctionDeclaresParameter $a09PlantParsed 'F-Borrower' 'Cmd'
@@ -468,7 +468,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   $a09HelperCmd = Get-VarUseCountInFunction $a07Parsed 'Invoke-ObservedMouseInput' $a09Var
   ST-Check 'unit (A-09): the declare-check keeps yes, no and absent distinguishable, the registered owners account for every use of the dispatcher variable, and each observed-input handler hands the name over at exactly two mutually exclusive sites (the counts are in the detail line, not in the name)' (
     ($a09DYes -ceq 'yes') -and ($a09DNo -ceq 'no') -and ($a09DAbsent -ceq 'absent') -and
-    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 98) -and (@($script:StCmdVarUses).Count -eq 46) -and
+    ($a09OwnerGap -ceq '') -and ($a09Uses -eq 100) -and (@($script:StCmdVarUses).Count -eq 46) -and
     ($a09ObsOk) -and ($a09HelperCmd -ceq '0'))
   if ($a09OwnerGap -ne '') { Write-Output ('      use owners: ' + $a09OwnerGap) }
   Write-Output ('      A-09: uses=' + $a09Uses + ' owners=' + @($script:StCmdVarUses).Count + ' entry-declares=' + $a09EntryDeclares +
@@ -501,7 +501,7 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    mode-independent claims (the planted predicate, and the anchors resolving) stay executed in both.
   if ($script:StSourceMode -ceq 'aggregate') {
     ST-Check 'lint (A-11a): the selftest section no longer reads an automatic path variable, and the readers that remain are exactly the registered sections that have not moved yet' (
-      ($a11OwnerGap -ceq '') -and ($a11Total -eq 31) -and (@($script:StPathReadOwners).Count -eq 6) -and
+      ($a11OwnerGap -ceq '') -and ($a11Total -eq 32) -and (@($script:StPathReadOwners).Count -eq 6) -and
       ($a11SelfCount -ceq '0'))
     if ($a11OwnerGap -ne '') { Write-Output ('      path readers: ' + $a11OwnerGap) }
   } else {
@@ -969,11 +969,11 @@ function Invoke-SelftestFamily-SplitMachine($Ctx) {
   #    in aggregate mode. The count row below still prints in both modes, so a reader always sees what the
   #    tables hold even where the ownership claim is not the thing under test.
   if ($script:StSourceMode -ceq 'aggregate') {
-    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (39/23/26/10 = all 98)' (
+    ST-Check 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (41/23/26/10 = all 100)' (
       ($a16Gap -ceq ''))
     if ($a16Gap -ne '') { Write-Output ('      group gap: ' + $a16Gap) }
   } else {
-    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (39/23/26/10 = all 98)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
+    ST-Skip 'lint (A-16): every declared handler group is defined exactly once, in the file it names, with nothing left behind in the entry and nothing ungrouped (41/23/26/10 = all 100)' 'single-file source mode (no lib/ beside the entry) - the artifact has one file by construction, so file ownership is not a claim it can carry'
   }
   Write-Output ('      A-16 groups: declared=' + @(Get-HashKeys $script:StHandlerGroups).Count + ' named-files=' +
     (@(Get-HashKeys $script:StHandlerFiles | Where-Object { [string]$script:StHandlerFiles[$_] -ne '' }).Count) + ' handlers-seen=' +

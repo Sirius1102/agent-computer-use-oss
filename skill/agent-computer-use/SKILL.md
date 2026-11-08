@@ -5,7 +5,7 @@ description: Operates a real Windows desktop for an agent — screenshots, windo
 
 # Agent Computer Use
 
-Tool version: v4.9.1.
+Tool version: v4.10.1.
 
 首次使用先阅读[电脑操控快速上手](快速上手指南.md)。这份文档随技能包一起交付（仓库根目录与本目录各一份，两份逐字节相同由离线判据钉死，改一处必改两处），它把截图、定位、动作和回读串成一条标准流程，并说明中文输入法下 `type`、`uia-settext`、`paste` 的选择。
 
@@ -62,7 +62,9 @@ Each entry: command — what it does — minimal example.
 - `win-move <sel> <x> <y>` / `win-resize <sel> <w> <h>` — place / size a window; e.g. `win-move "Notepad" 0 0`
 - `win-max` / `win-min` / `win-restore` / `win-close <sel>` — window state changes; e.g. `win-restore "Notepad"`
 - `wait-win <sel> <sec>` / `wait-gone <sel> <sec>` — poll for appearance / disappearance; e.g. `wait-win "Save As" 10`
-- `wait-stable <sel|x y w h> <sec>` — wait until two consecutive frames are pixel-identical; e.g. `wait-stable "Notepad" 5`
+- `wait-stable <sel|x y w h> <sec>` — wait until two consecutive frames are pixel-identical; a `lib/quirks.json` rule matching the window may set the DEFAULT poll interval and its note is appended when the wait fails; e.g. `wait-stable "Notepad" 5`
+- `doctor` — one read-only snapshot of machine readiness: psVersion / os / screen+monitors+dpi / OCR / foreground / clipboard kind / quirks policy state / the most recent failure receipt in the current audit log (`--json` publishes the same fields as one object); e.g. `doctor`
+- `quirks [--match <sel>]` — the `lib/quirks.json` policy reader: list the rules in force (or why a file was rejected), or test which rule one window hits; e.g. `quirks --match "Notepad"`
 
 ### Locate (UIA accessibility tree — preferred when available)
 
@@ -113,7 +115,7 @@ Use `--guard-text` or `--guard-region` when the expected pre-action content is r
 
 ### Batch And Replay
 
-- `script <steps.json> [--dry-run] [--stop-on-error]` — run a JSON list of steps in one process (guards as checkpoints); add `desc` to name receipts; default continues after an ordinary failure and exits 1, while `--stop-on-error` stops there; `ok` means the step ran, not that the business result succeeded; use an assertion such as `assert-text`; `script --json` is refused because this command has no JSON envelope; e.g. `script plan.json --dry-run`
+- `script <steps.json> [--dry-run] [--stop-on-error] [--reset-on-exit]` — run a JSON list of steps in one process (guards as checkpoints); add `desc` to name receipts; default continues after an ordinary failure and exits 1, while `--stop-on-error` stops there; `ok` means the step ran, not that the business result succeeded; use an assertion such as `assert-text`; `--reset-on-exit` snapshots the clipboard before step 1 and restores it on every exit road with a receipt; `script --json` is refused because this command has no JSON envelope; e.g. `script plan.json --dry-run`
 - `replay [<actions.log>] [--go]` — re-run recorded commands (dry by default); e.g. `replay --last 10`
 
 ### Self-Check
@@ -227,8 +229,16 @@ Example: desktop.ps1 help
 Example: desktop.ps1 info "Untitled - Notepad"
 
 ### log-index
-`log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]`
-Example: desktop.ps1 log-index
+`log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all] [--result error]`
+Example: desktop.ps1 log-index --result error
+
+### doctor
+`doctor`
+Example: desktop.ps1 doctor
+
+### quirks
+`quirks [--match <sel>]`
+Example: desktop.ps1 quirks --match "Notepad"
 
 ### ocr-cap
 `ocr-cap`

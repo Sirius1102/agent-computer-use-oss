@@ -2,7 +2,7 @@
 
 One level below `SKILL.md`. Everything here is optional depth: the quick reference in `SKILL.md` is enough to start; come here for flags, exit codes and recipes.
 
-Current tool version: v4.9.1.
+Current tool version: v4.10.1.
 
 ## Invocation
 
@@ -203,7 +203,7 @@ selftest
 ```
 
 
-## Command Index (all 98 capabilities names)
+## Command Index (all 100 capabilities names)
 
 One row per `capabilities` command; the usage column is the line `desktop.ps1 help <name>` prints (a `\|` is table escaping).
 
@@ -228,11 +228,13 @@ One row per `capabilities` command; the usage column is the line `desktop.ps1 he
 | `hash` | `hash <sel\|x y w h>` |
 | `help` | `help [<cmd>\|--<flag>]` |
 | `info` | `info <sel>` |
-| `log-index` | `log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current\|day\|all]` |
+| `log-index` | `log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current\|day\|all] [--result error]` |
+| `doctor` | `doctor` |
 | `ocr-cap` | `ocr-cap` |
 | `proc-info` | `proc-info <pid>` |
 | `proc-list` | `proc-list [name-filter]` |
 | `proc-wait` | `proc-wait <pid> [--exit] [--window] [--created <iso>] [--timeout s] [--interval ms]` |
+| `quirks` | `quirks [--match <sel>]` |
 | `pt-anchor` | `pt-anchor <profile> --needle <text> [--strict] [--max-drift px]` |
 | `pt-calibrate` | `pt-calibrate <profile> --estimate <i,j> --verify <k[,...]> [--file <png>]` |
 | `pt-profile` | `pt-profile <sel> [--samples 1..16] [--save <path>] [--file <png>]` |

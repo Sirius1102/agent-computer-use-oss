@@ -315,6 +315,16 @@ try {
 } catch { Say ('ERROR: ' + $_.Exception.Message); Say 'Nothing was installed for desktop.ps1 - the entry was left alone.'; exit 4 }
 [System.IO.File]::WriteAllText((Join-Path $scriptsDir 'desktop.ps1'), (([string][char]0xFEFF) + $stitched), (New-Object System.Text.UTF8Encoding($false)))
 Say ('stitched : desktop.ps1 from the split tree (' + (@($stitched -split "`n").Count) + ' lines)')
+# v4.10.0 (UU-absorb): the quirks policy ships as DATA next to the stitched entry (the loader's
+#    first candidate path). An OPTIONAL file by design: a missing copy means built-in defaults,
+#    never an error - refusing the install over an empty rules array would invert its whole design.
+$srcQuirks = Join-Path $RepoRoot 'lib/quirks.json'
+if (Test-Path -LiteralPath $srcQuirks -PathType Leaf) {
+  Copy-Item -LiteralPath $srcQuirks -Destination (Join-Path $scriptsDir 'quirks.json') -Force
+  Say ('installed : quirks.json (optional policy data from lib/quirks.json)')
+} else {
+  Say ('note      : lib/quirks.json not found - installing without a policy file (built-in defaults apply)')
+}
 Say ('installed  : ' + $skillDir)
 
 # ---------- optional registration in skills.config.json ----------

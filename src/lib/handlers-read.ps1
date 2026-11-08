@@ -989,10 +989,11 @@ function Invoke-Handler-wait-stable([string]$Cmd, [string[]]$Rest) {
       $Rest = @($of.Words)
       $words = New-Object System.Collections.ArrayList
       $interval = 500
+      $intervalGiven = $false
       $changed = $false
       $i = 0
       while ($i -lt $Rest.Count) {
-        if ($Rest[$i] -eq '--interval') { $i++; $interval = Read-FlagNumber '--interval' $Rest[$i] $true '(milliseconds)' }
+        if ($Rest[$i] -eq '--interval') { $i++; $interval = Read-FlagNumber '--interval' $Rest[$i] $true '(milliseconds)'; $intervalGiven = $true }
         elseif ($Rest[$i] -eq '--changed') { $changed = $true }
         elseif ($Rest[$i] -like '--*') { throw (Get-UnknownFlagMessage 'wait-stable' "$($Rest[$i])") }
         else { [void]$words.Add($Rest[$i]) }
@@ -1001,6 +1002,16 @@ function Invoke-Handler-wait-stable([string]$Cmd, [string[]]$Rest) {
       $Rest = @($words)
       if ($Rest.Count -lt 2) { throw 'usage: wait-stable <sel|x y w h> <timeoutSec> [--interval ms] [--changed]' }
       $region = Resolve-Region $Rest 0
+      # v4.10.0 (UU-absorb): the per-window policy (lib/quirks.json) may set the DEFAULT poll
+      # interval for this window - a caller-passed --interval ALWAYS wins - and its note is
+      # surfaced on the failure road below. No guard semantics are touched: the settle rule
+      # (two identical consecutive hashes) is exactly what it was.
+      $qkRule = Get-WindowQuirks $region.Win
+      $qkNote = ''
+      if ([bool]$qkRule.Matched) {
+        if ((-not $intervalGiven) -and (Get-OptValue $qkRule.Set 'waitStableIntervalMs')) { $interval = [int](Get-OptValue $qkRule.Set 'waitStableIntervalMs') }
+        $qkNote = [string]$qkRule.Note
+      }
       # Occlusion is a snapshot at entry: if the window gets covered MID-poll
       # the pixel changes are the coverer's - the entry verdict is still the
       # honest statement about what the poll is allowed to prove.
@@ -1024,7 +1035,7 @@ function Invoke-Handler-wait-stable([string]$Cmd, [string[]]$Rest) {
         }
       } else {
         $r = Wait-RegionStable $region ([double]$Rest[1]) $interval
-        if (-not $r.Stable) { throw "not stable within $($Rest[1])s (last hash=$($r.Hash)). If the region holds a blinking caret, a spinner or video it never repeats two frames in a row - use wait-win/wait-gone or a sub-region that excludes it." }
+        if (-not $r.Stable) { throw "not stable within $($Rest[1])s (last hash=$($r.Hash)). If the region holds a blinking caret, a spinner or video it never repeats two frames in a row - use wait-win/wait-gone or a sub-region that excludes it.$(if ($qkNote -ne '') { " quirk: $qkNote" })" }
         if ($script:Json) {
           $occJ = $null; $covJ = @()
           if ($null -ne $gate) { if (-not $gate.Err) { $occJ = [int][math]::Round($gate.Pct) }; $covJ = @($gate.Covering | ForEach-Object { [pscustomobject]@{ pid = $_.Pid; proc = $_.Proc; title = $_.Title; count = $_.Count } }) }
@@ -1307,6 +1318,23 @@ function Invoke-Handler-proc-list([string]$Cmd, [string[]]$Rest) {
     $filter = "$a"
   }
   $all = @(Get-Process | Sort-Object ProcessName, Id)
+  # v4.10.0 (UU-absorb): the JSON road carries each Get-ProcSnapshot object with the exact
+  # fields the text row prints, plus the nowindow fact the text appends as a suffix - a
+  # process without a visible window is listed either way, for the same reason.
+  if ($script:Json) {
+    $rows = New-Object System.Collections.ArrayList
+    foreach ($pr in $all) {
+      $name = ''
+      try { $name = [string]$pr.ProcessName } catch { $name = 'unknown' }
+      if ($filter -and ($name -notlike "*$filter*")) { continue }
+      $s = Get-ProcSnapshot ([int]$pr.Id)
+      $row = [pscustomobject]$s
+      $row | Add-Member -NotePropertyName nowindow -NotePropertyValue ([bool]($s.exists -eq $true -and $s.hwnd -eq 0)) -Force
+      [void]$rows.Add($row)
+    }
+    @($rows) | ConvertTo-Json -Compress -Depth 3
+    return
+  }
   $n = 0
   foreach ($pr in $all) {
     $name = ''
@@ -1329,6 +1357,19 @@ function Invoke-Handler-proc-info([string]$Cmd, [string[]]$Rest) {
   $pidNum = 0
   if (-not [int]::TryParse([string]$words[0], [ref]$pidNum)) { throw "proc-info: '$($words[0])' is not a pid" }
   $s = Get-ProcSnapshot $pidNum
+  # v4.10.0 (UU-absorb): JSON carries the snapshot verbatim plus the window list; a process
+  # with no visible window is an EMPTY array, not a missing key - absence and emptiness are
+  # different facts and JSON should not confuse them either.
+  if ($script:Json) {
+    $winsJ = @()
+    if ($s.exists -eq $true) {
+      $winsJ = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum } | ForEach-Object { [pscustomobject]@{ hwnd = ([IntPtr]$_.Handle).ToInt64(); class = [string]$_.Class; x = [int]$_.Left; y = [int]$_.Top; w = [int]$_.W; h = [int]$_.H; title = [string]$_.Title } })
+    }
+    $o = [pscustomobject]$s
+    $o | Add-Member -NotePropertyName windows -NotePropertyValue @($winsJ) -Force
+    $o | ConvertTo-Json -Compress -Depth 4
+    return
+  }
   Format-ProcSnapshot $s
   if ($s.exists -eq $true) {
     $wins = @(Get-WinList | Where-Object { [int]$_.Pid -eq $pidNum })
@@ -2417,17 +2458,24 @@ function Invoke-Handler-pt-calibrate([string]$Cmd, [string[]]$Rest) {
 # is the lie this command refuses to tell.
 # ---------------------------------------------------------------------------
 function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
-      # log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all]
+      # log-index [--date <YYYY-MM-DD>] [--origin <tag>] [--log <path>] [--scope current|day|all] [--result error]
       $own = Strip-OwnFlags $Rest 'log-index'
       $words = @($own.Rest)
-      if ($words.Count -ne 0) { throw "log-index takes no positional argument (got '$($words[0])') - use --date <YYYY-MM-DD>, --origin <tag>, --log <path>, --scope current|day|all" }
+      if ($words.Count -ne 0) { throw "log-index takes no positional argument (got '$($words[0])') - use --date <YYYY-MM-DD>, --origin <tag>, --log <path>, --scope current|day|all, --result error" }
       $dateWant = [string]$own.Values['--date']
       $originWant = [string]$own.Values['--origin']
       $logPath = [string]$own.Values['--log']
       $scope = [string]$own.Values['--scope']
+      $resultWant = [string]$own.Values['--result']
       if ($scope -eq '') { $scope = 'current' }
       if (@('current', 'day', 'all') -notcontains $scope) {
         throw "log-index: --scope must be current|day|all, got '$scope' - current indexes the one file --log names, day indexes it plus every archive the rotator left in the same directory for one --date, all indexes that whole set without requiring a date"
+      }
+      if ($resultWant -ne '' -and ($resultWant -cne 'error')) {
+        # v4.10.0 (UU-absorb): result lines are written by the entry catch on the error road only
+        # (Write-ActionResultLine). There is deliberately no 'ok' value to ask for: success writes no
+        # completion line, so an --result ok filter would always answer "0 of N" and teach a lie.
+        throw "log-index: --result must be 'error' (the only completion value written; success records no completion line, so there is nothing else to filter on), got '$resultWant'"
       }
       if ($dateWant -ne '' -and $dateWant -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') {
         throw "log-index: --date must be a UTC day written YYYY-MM-DD, got '$dateWant'"
@@ -2482,6 +2530,7 @@ function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
           if ($null -eq $rec) { $skipped++; continue }
           if ($dateWant -ne '' -and ([string]$rec.Date -cne $dateWant)) { continue }
           if ($originWant -ne '' -and ([string]$rec.Origin -cne $originWant)) { continue }
+          if ($resultWant -ne '' -and ([string]$rec.Args -cne "result=$resultWant")) { continue }
           $rec | Add-Member -NotePropertyName File -NotePropertyValue ([string]$f.Path) -Force
           [void]$kept.Add($rec)
           $matched++
@@ -2494,6 +2543,7 @@ function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
       $filterNote = ''
       if ($dateWant -ne '') { $filterNote += " date=$dateWant" }
       if ($originWant -ne '') { $filterNote += " origin=$originWant" }
+      if ($resultWant -ne '') { $filterNote += " result=$resultWant" }
       # scope=current keeps the pre-B-2 line VERBATIM: readers of this echo exist, and a scope that
       # was not asked for must not change what they see.
       if ($scope -eq 'current') {
@@ -2525,6 +2575,135 @@ function Invoke-Handler-log-index([string]$Cmd, [string[]]$Rest) {
         "  #$n $($rec.Date) origin=$($rec.Origin)$legacy $($rec.Cmd) | $($rec.Target)$fileTxt"
       }
       if ($skippedAll -gt 0) { "log-index: $($skippedAll) unreadable line(s) skipped (not four- or five-column audit lines)" }
+}
+
+# ---------------------------------------------------------------------------
+# v4.10.0 (UU-absorb v1): doctor - one read-only snapshot answering "can this
+# machine run this tool right now", the question uuyc-cli status answers for
+# its own app. Every fact is read through the SAME helper the working commands
+# use (no second reader for any fact), nothing is acted on, nothing is clicked
+# or focused; the only disk write is the one Save-ClipboardState already does
+# for an image clipboard (a PNG carrier in %TEMP%, same as clip-info's road).
+# lastError reads the v4.10.0 failure receipts back from the CURRENT audit log
+# only - archives are log-index --scope's job, not a doctor snapshot's.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-doctor([string]$Cmd, [string[]]$Rest) {
+      foreach ($a in @($Rest)) { throw (Get-UnknownFlagMessage 'doctor' ([string]$a)) }
+      $o = [System.Windows.Forms.SystemInformation]::VirtualScreen
+      $mons = @([System.Windows.Forms.Screen]::AllScreens)
+      $osV = [System.Environment]::OSVersion
+      $psV = $PSVersionTable.PSVersion.ToString()
+      $ocrAvail = $false
+      $ocrLangs = @()
+      $ocrCur = ''
+      $ocrCap = 0L
+      try {
+        $null = [Windows.Media.Ocr.OcrEngine,Windows.Media.Ocr,ContentType=WindowsRuntime]
+        $ocrLangs = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag })
+        $ocrCap = Get-OcrMaxDimension
+        $eng = Get-OcrEngine
+        if ($null -ne $eng) { $ocrAvail = $true; $ocrCur = $eng.RecognizerLanguage.LanguageTag }
+      } catch { }
+      $fg = Get-ForegroundIdentity
+      $clip = Save-ClipboardState
+      $qk = Get-QuirksState
+      $le = Get-LastActionResultError
+      if ($script:Json) {
+        $fgJ = $null
+        if ([int]$fg.Pid -ne 0) { $fgJ = [pscustomobject]@{ pid = [int]$fg.Pid; hwnd = [int64]$fg.Hwnd; title = [string]$fg.Title } }
+        $leJ = $null
+        if ($null -ne $le) { $leJ = [pscustomobject]@{ date = [string]$le.Date; cmd = [string]$le.Cmd; note = [string]$le.Note; origin = [string]$le.Origin } }
+        [pscustomobject]@{
+          ps_version = $psV
+          os = [string]$osV.VersionString
+          screen_w = [int]$o.Width; screen_h = [int]$o.Height; screen_x = [int]$o.X; screen_y = [int]$o.Y
+          monitors = @($mons).Count
+          dpi_mode = [string]$script:DpiMode
+          ocr_available = [bool]$ocrAvail
+          ocr_languages = @($ocrLangs)
+          ocr_current = $ocrCur
+          ocr_max_dimension = [int64]$ocrCap
+          foreground = $fgJ
+          clipboard_kind = [string]$clip.Kind
+          clipboard_read_error = [string]$clip.ReadError
+          quirks = [pscustomobject]@{ loaded = [bool]$qk.Loaded; file = [string]$qk.File; rules = [int]$qk.RuleCount; error = [string]$qk.Error }
+          last_error = $leJ
+        } | ConvertTo-Json -Compress -Depth 4
+        return
+      }
+      "psVersion=$psV"
+      "os=$($osV.VersionString)"
+      "screen=$($o.Width)x$($o.Height) origin=($($o.X),$($o.Y)) monitors=$(@($mons).Count) dpi-mode=$script:DpiMode"
+      $ocrTxt = 'unavailable'
+      if ($ocrAvail) { $ocrTxt = 'available' }
+      "ocr=$ocrTxt langs=$(@($ocrLangs).Count) current=$ocrCur maxDim=$ocrCap"
+      $fgTxt = 'none'
+      if ([int]$fg.Pid -ne 0) { $fgTxt = "pid=$($fg.Pid) hwnd=$('0x{0:X}' -f [long]$fg.Hwnd) title='$($fg.Title)'" }
+      "foreground=$fgTxt"
+      $clipTxt = [string]$clip.Kind
+      if ([string]$clip.ReadError -ne '') { $clipTxt = $clipTxt + ' (read error: ' + $clip.ReadError + ')' }
+      "clipboard=$clipTxt"
+      $qkTxt = 'defaults (no policy file)'
+      if ([bool]$qk.Loaded) { $qkTxt = 'loaded file=' + $qk.File + ' rules=' + $qk.RuleCount }
+      elseif ([string]$qk.Error -ne '') { $qkTxt = 'defaults (policy file rejected: ' + $qk.Error + ')' }
+      "quirks=$qkTxt"
+      if ($null -eq $le) { "lastError=none in the current audit log" }
+      else { "lastError=$($le.Date) cmd=$($le.Cmd) origin=$($le.Origin) note=$($le.Note)" }
+}
+
+# ---------------------------------------------------------------------------
+# v4.10.0 (UU-absorb v1): quirks - the policy file's own reader. Lists what is
+# in force (the file, its rules, or the built-in defaults) and, with --match,
+# which rule a window hits and what it would change. Read-only: the window is
+# resolved the same way win/info resolve theirs, and nothing is activated.
+# ---------------------------------------------------------------------------
+function Invoke-Handler-quirks([string]$Cmd, [string[]]$Rest) {
+      $own = Strip-OwnFlags $Rest 'quirks'
+      $words = @($own.Rest)
+      if ($words.Count -ne 0) { throw "quirks takes no positional argument (got '$($words[0])') - use --match <sel> to test which rule a window hits" }
+      $matchSel = [string]$own.Values['--match']
+      $st = Get-QuirksState
+      $matchJ = $null
+      $matchRow = @()
+      if ($matchSel -ne '') {
+        $w = Resolve-Window $matchSel
+        if (-not $w) { throw (Format-WindowMissMessage $matchSel) }
+        Emit-ResolveNote
+        $qk = Get-WindowQuirks $w
+        $setTxt = @()
+        foreach ($sk in @(Get-HashKeys $qk.Set)) { $setTxt += "$sk=$($qk.Set[$sk])" }
+        $matchRow = @(
+          "match pid=$($w.Pid) proc=$($w.Proc) class=$($w.Class) title='$($w.Title)'"
+          $(if ([bool]$qk.Matched) { "matched=rule #$($qk.RuleIndex)" } else { 'matched=none (built-in defaults apply)' })
+          "set={$($setTxt -join ' ')}"
+          "note=$([string]$qk.Note)"
+        )
+        $matchJ = [pscustomobject]@{ pid = [int]$w.Pid; proc = [string]$w.Proc; class = [string]$w.Class; title = [string]$w.Title; matched = [bool]$qk.Matched; rule_index = $(if ([bool]$qk.Matched) { [int]$qk.RuleIndex } else { $null }); set = [pscustomobject]$qk.Set; note = [string]$qk.Note }
+      }
+      if ($script:Json) {
+        [pscustomobject]@{
+          loaded = [bool]$st.Loaded
+          file = [string]$st.File
+          error = [string]$st.Error
+          rules = @($st.Rules | ForEach-Object { [pscustomobject]@{ note = [string]$_['Note']; match = [pscustomobject]$_['Match']; set = [pscustomobject]$_['Set'] } })
+          match = $matchJ
+        } | ConvertTo-Json -Compress -Depth 5
+        return
+      }
+      $stTxt = 'defaults (no policy file)'
+      if ([bool]$st.Loaded) { $stTxt = 'loaded file=' + $st.File + ' rules=' + $st.RuleCount }
+      elseif ([string]$st.Error -ne '') { $stTxt = 'defaults (policy file rejected: ' + $st.Error + ')' }
+      "quirks: $stTxt"
+      $i = 0
+      foreach ($r in @($st.Rules)) {
+        $i++
+        $mTxt = @()
+        foreach ($mk in @(Get-HashKeys $r.Match)) { $mTxt += "$mk='$($r.Match[$mk])'" }
+        $sTxt = @()
+        foreach ($sk in @(Get-HashKeys $r.Set)) { $sTxt += "$sk=$($r.Set[$sk])" }
+        "  rule #$i match={$($mTxt -join ' ')} set={$($sTxt -join ' ')}$(if ([string]$r.Note -ne '') { " note='$($r.Note)'" })"
+      }
+      foreach ($mr in @($matchRow)) { $mr }
 }
 
 # ---------------------------------------------------------------------------

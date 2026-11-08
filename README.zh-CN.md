@@ -1,10 +1,10 @@
-﻿# Agent Computer Use 开源版 v4.9.1
+# Agent Computer Use 开源版 v4.10.1
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![平台](https://img.shields.io/static/v1?label=platform&message=Windows%2010%20%7C%2011&color=blue)](#环境要求)
 [![Shell](https://img.shields.io/static/v1?label=shell&message=PowerShell%205.1&color=blue)](#环境要求)
 [![形态](https://img.shields.io/static/v1?label=tool&message=single%20file&color=blue)](#目录结构)
-[![selftest](https://img.shields.io/static/v1?label=selftest&message=1368%20checks&color=informational)](#自测)
+[![selftest](https://img.shields.io/static/v1?label=selftest&message=1380%20checks&color=informational)](#自测)
 
 一个**单文件、无状态的 Windows 桌面自动化命令行工具**，为 AI agent 驱动而生——你自己在 shell 里用也一样。
 
@@ -49,7 +49,7 @@
 - **默认带守卫。** 按键物理上永远落在"当前焦点窗口"上，所以 `type` / `keys` / `paste` / `paste-file` 带 `--to <sel>` 时，会**先校验目标确实拿到了前台，才发第一个键**；校验不过直接 `ERROR` + 退出码 1，一个键都不发（`--force` 可跳过，退回旧行为）。发完之后**还会再查一次前台**，中途被抢走焦点同样算失败并告警。这条规则来自真实事故：`SetForegroundWindow` 可能被系统前台锁静默拒绝，盲发的按键落进了别的程序。
 - **知道自己是怎么知道的，并且说出来。** 这是整套功能围绕生长的设计准则：一个数字、一句"没找到"，如果不同时打印它来自哪次测量，就没有价值。于是 `find` 会报 `source=uia|ocr`；落空时会说出两条路各自量到了什么；`hit-window:` 打印你的点击**真实落在**哪个窗口；截图类命令回显图像→屏幕的换算式；`--expect` 的判词会写明实际生效的耐心值与轮询间隔；`paste` 会点名它凭哪种"回执"接受了一个被折叠成附件条的长文本。**0 从来不是"不存在"的证据**，一个只可能通过的检查不算检查。
 - **有审计。** 每条实际执行的 act/text/clipboard/uia-settext 命令向 `shots/actions.log` 追加一行：UTC 时间戳、命令、参数、解析到的目标。键入内容与守卫串以 `<redacted:Nchars>` 存（要原文就显式传 `--log-payload`）；只记文件**路径**，绝不记剪贴板内容和文件正文。日志 512KB 轮转，同目录保留最新 5 个 `actions_*.log` 存档，更旧的移入隔离区并记入清单（不再删除）；`replay` 会**拒绝**正文已被脱敏的步骤——把占位符重放出去就等于把占位符打进目标。
-- **自带回归。** `selftest` 跑离线门禁（当前 1368 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
+- **自带回归。** `selftest` 跑离线门禁（当前 1380 条：针对 PowerShell 5.1 `@(Fn)` 列表返回陷阱的源码 lint、BOM/ASCII 不变式、每个纯函数的单元检查，以及钉住文档与分派器一致性的契约检查）。`selftest --live` 追加真实桌面往返，只操作自己创建的 `DTX-*` 夹具窗口，不碰你的应用。
 - **DPI 安全。** 读取任何坐标前，进程先声明 **Per-Monitor V2** DPI 感知（Windows 10 1703+；更老的系统自动回退 System-aware，并在输出里明说一次）。不做这一步，Windows 会按显示缩放比例虚拟化所有数值（150% 缩放下，2100×1350 的窗口会被读成 1400×900），截图裁切、点击偏移。Per-Monitor V2 还额外保证多块显示器**缩放比例不一致**（混合 DPI 多屏）时，副屏上的坐标与截图同样逐像素准确。用 `dpi` 命令可查看实际拿到的感知模式和每块显示器的物理像素边界。
 - **源码纯 ASCII。** PowerShell 5.1 会把无 BOM 的 UTF-8 脚本按 ANSI 误读，所以脚本里没有任何非 ASCII 字面量（文件本身带 UTF-8 BOM，这正是 5.1 按 UTF-8 解码的原因）。中文等非 ASCII 文本一律通过 `paste <file>` 或 `uia-settext <sel> <name> <file>` 从外部 UTF-8 文件进入。
 
@@ -152,8 +152,10 @@ powershell -ExecutionPolicy Bypass -File desktop.ps1 paste-file --to "MyChatWind
 | `cursor` | 当前光标位置 |
 | `dpi` | 启动时实际拿到的 DPI 感知模式 + 每块显示器的物理像素边界 |
 | `capabilities [--json]` | 从分派器**自己的注册表**推导出的命令面（分组、私有/共享 flag、`--json` 支持），外加入口路径 + SHA256 与环境；注册了却走不到的命令会显形，而不是悄悄消失 |
-| `proc-list [name-filter]` | 列出全部进程（有没有可见窗口都列）——只读；"不在 `wins` 里"是**没有窗口**，不是没有进程 |
-| `proc-info <pid>` | 名称／路径／创建时间／是否响应／窗口／会话／线程／工作集；读不到的字段打印 `denied`/`unknown`，不会凭空消失 |
+| `proc-list [name-filter]` | 列出全部进程（有没有可见窗口都列）——只读；"不在 `wins` 里"是**没有窗口**，不是没有进程；`--json` 是快照对象数组、每行带 `nowindow` |
+| `proc-info <pid>` | 名称／路径／创建时间／是否响应／窗口／会话／线程／工作集；读不到的字段打印 `denied`/`unknown`，不会凭空消失。`--json` 携带同一快照外加 `windows=[]`（空数组=没有可见窗口） |
+| `doctor` | 一条只读快照回答"这台机器现在能不能干活"：psVersion / os / 屏幕+显示器+DPI / OCR / 前台窗口 / 剪贴板种类 / quirks 策略状态 / 当前审计日志最近一条失败回执；`--json` 把同一批字段发成一个对象 |
+| `quirks [--match <sel>]` | `lib/quirks.json` 策略读取器：列出生效规则（或文件被拒的原因），或试匹配某个窗口命中哪条规则；文件可选且 fail-closed（任何 schema 违规拒绝整个文件，回落内建默认） |
 | `tpl-find <templatePng> [--to <sel>] [--region x,y,w,h] [--space screen\|window\|client] [--tolerance n] [--scales 1\|1,1.25] [--index n] [--max-ms ms]` | 确定性模板定位：受限的缩放档（≤3）、区域（≤3,000,000 px²）与耗时预算；多命中**默认拒绝**，除非 `--index` 点名一个；只报点，绝不点击；`--force`/`--always-activate` 在解析/抓屏/激活之前按名拒绝（`reason=read-only-override`） |
 | `color-at <x> <y>` | 取某像素颜色，输出 `#RRGGBB`（指示灯、转圈等没有文字的反馈） |
 | `find-color <x> <y> <w> <h> <#RRGGBB> [--tolerance n] [--all]` | 区域内首个（或全部，上限 500）匹配像素 |

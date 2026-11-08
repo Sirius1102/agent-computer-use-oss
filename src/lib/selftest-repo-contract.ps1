@@ -416,4 +416,78 @@ function Invoke-SelftestFamily-RepoContract($Ctx) {
     ST-Skip 'lint (F-01c): every offline-check total written in README/README.zh-CN/CHANGELOG equals DeclaredCheckTotal' 'published-only docs are not in this tree - this leg runs in the tree that ships them'
   }
 
+  # v4.10.0 (UU-absorb): the lib/quirks.json policy contract.
+  # The shipped file is DATA with a schema, so the schema is pinned here like any other contract:
+  # the validator is pure (feed it text, read the verdict), the matcher is pure, and the shipped
+  # file must stay INERT (zero rules) - the moment a rule ships, this leg and the README's
+  # "defaults unchanged" promise change in the same commit or the leg goes red.
+  # v4.10.1 fix: the shipped file is looked up by CANDIDATE, not one hardcoded path - the private
+  # checkout keeps it at lib/quirks.json, the open repository at src/lib/quirks.json (the root of
+  # that tree is the stitched artifact and carries no lib/), and an installed artifact may ship
+  # with the file deleted next to it (install.ps1 documents it as optional). A layout without the
+  # data file SKIPS this contract by name instead of failing - "no file ships here" is a fact
+  # about the layout, not a broken file. The LOADER's own resolution order is unchanged (script
+  # dir first, then lib/ beside it); these candidates answer "where does the SHIPPED data live in
+  # THIS checkout", which is a repo-layout question, not a runtime one.
+  $uqPath = ''
+  foreach ($uqCand in @((Join-Path $script:ToolRootPath 'lib/quirks.json'), (Join-Path $script:ToolRootPath 'src/lib/quirks.json'))) {
+    if (Test-Path -LiteralPath $uqCand -PathType Leaf) { $uqPath = $uqCand; break }
+  }
+  $uqText = ''
+  $uqReadErr = ''
+  if ($uqPath -ne '') {
+    try { $uqText = [System.IO.File]::ReadAllText($uqPath) } catch { $uqReadErr = $_.Exception.Message }
+  } else {
+    $uqReadErr = 'no quirks policy data file in this layout'
+  }
+  $uqShip = Test-QuirksPolicyText $uqText
+  $uqShipTop = @()
+  if ($uqReadErr -eq '') {
+    try { $uqShipTop = @((($uqText | ConvertFrom-Json).PSObject.Properties.Name | ForEach-Object { [string]$_ }) | Sort-Object) } catch { $uqReadErr = $_.Exception.Message }
+  }
+  if ($uqPath -ne '') {
+    ST-Check 'contract (UU-absorb): the shipped lib/quirks.json is valid policy text with an EMPTY rules array and exactly the two top-level keys - defaults ship inert, so the file can change no behavior until a rule is authored' (
+      ($uqReadErr -eq '') -and ([bool]$uqShip.Ok) -and (@($uqShip.Rules).Count -eq 0) -and (($uqShipTop -join ',') -ceq 'rules,schemaVersion'))
+    Write-Output ('      quirks shipped data: ' + $uqPath)
+  } else {
+    ST-Skip 'contract (UU-absorb): the shipped lib/quirks.json is valid policy text with an EMPTY rules array and exactly the two top-level keys - defaults ship inert, so the file can change no behavior until a rule is authored' 'no quirks policy data file in this layout (an artifact-only checkout ships none by design - built-in defaults apply, and the contract holds in the tree that ships the file)'
+  }
+  $uqOkText = '{"schemaVersion":1,"rules":[{"note":"anim window","match":{"process":"^anim\\.exe$","title":"Player"},"set":{"waitStableIntervalMs":250}}]}'
+  $uqOk = Test-QuirksPolicyText $uqOkText
+  ST-Check 'unit (UU-absorb): the validator accepts a well-formed rule and normalizes its match and set tables' (
+    ([bool]$uqOk.Ok) -and (@($uqOk.Rules).Count -eq 1) -and ([string]$uqOk.Rules[0].Note -ceq 'anim window') -and
+    ([string]$uqOk.Rules[0].Match['process'] -ceq '^anim\.exe$') -and ([int]$uqOk.Rules[0].Set['waitStableIntervalMs'] -eq 250))
+  $uqBadCases = @(
+    @('empty file', ''),
+    @('invalid json', '{nope'),
+    @('unknown top key', '{"schemaVersion":1,"rules":[],"extra":1}'),
+    @('wrong schemaVersion', '{"schemaVersion":2,"rules":[]}'),
+    @('missing rules', '{"schemaVersion":1}'),
+    @('rule without match', '{"schemaVersion":1,"rules":[{"note":"x"}]}'),
+    @('empty matcher', '{"schemaVersion":1,"rules":[{"match":{"process":""}}]}'),
+    @('uncompilable regex', '{"schemaVersion":1,"rules":[{"match":{"process":"("}}]}'),
+    @('unknown set key', '{"schemaVersion":1,"rules":[{"match":{"process":"a"},"set":{"noSuchKnob":1}}]}'),
+    @('interval out of range', '{"schemaVersion":1,"rules":[{"match":{"process":"a"},"set":{"waitStableIntervalMs":10}}]}')
+  )
+  $uqBadNotes = @()
+  foreach ($uqB in $uqBadCases) {
+    $uqV = Test-QuirksPolicyText ([string]$uqB[1])
+    if ([bool]$uqV.Ok -or ([string]$uqV.Why -eq '')) { $uqBadNotes += ('accepted-or-silent:' + [string]$uqB[0]) }
+  }
+  ST-Check 'unit (UU-absorb): every schema violation rejects the WHOLE file and names itself - empty, bad JSON, unknown top key, wrong version, missing rules, matchless rule, empty matcher, uncompilable regex, unknown knob, out-of-range interval' (
+    (@($uqBadNotes).Count -eq 0))
+  $uqRuleOne = @{ Note = ''; Match = @{ process = '^anim' }; Set = @{ waitStableIntervalMs = 250 } }
+  $uqRuleTwo = @{ Note = 't'; Match = @{ process = 'anim'; title = 'Player' }; Set = @{} }
+  ST-Check 'unit (UU-absorb): the matcher requires EVERY named field to match, skips unnamed ones, and fails closed on a null rule' (
+    (Test-QuirkRuleMatch $uqRuleOne 'animplayer' 'Other' 'x') -and
+    (-not (Test-QuirkRuleMatch $uqRuleOne 'other' 'Other' 'x')) -and
+    (Test-QuirkRuleMatch $uqRuleTwo 'anim' 'Any' 'Player') -and
+    (-not (Test-QuirkRuleMatch $uqRuleTwo 'anim' 'Any' 'Other')) -and
+    (-not (Test-QuirkRuleMatch $null 'a' 'b' 'c')))
+  $uqW = @{ Proc = 'animplayer'; Class = 'Other'; Title = 'x' }
+  $uqHit = Get-WindowQuirks $uqW
+  ST-Check 'unit (UU-absorb): the window lookup answers unmatched against the shipped (ruleless) file with an empty set and no note - built-in defaults, never null' (
+    (([bool]$uqHit.Matched) -eq $false) -and (@(Get-HashKeys $uqHit.Set).Count -eq 0) -and ([string]$uqHit.Note -ceq '') -and
+    (((Get-WindowQuirks $null).Matched) -eq $false))
+
 }
